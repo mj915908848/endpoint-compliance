@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+.superpowers/
+data/
+artifacts/
+*.user
+*.db*
+*.log
+*.pem
+*.pfx
+.env

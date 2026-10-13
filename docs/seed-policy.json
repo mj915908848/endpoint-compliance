@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "policy_id": "customer-no-foreign-ai-20261013",
+  "policy_version": "1",
+  "deny_installed": true,
+  "deny_proxy_configuration": true,
+  "products": [
+    {
+      "id": "clash",
+      "name": "Clash / Mihomo",
+      "category": "proxy",
+      "patterns": [
+        "^(clash(?:x|[ -]?(?:verge|for windows|meta))?|mihomo)(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "surge",
+      "name": "Surge",
+      "category": "proxy",
+      "patterns": [
+        "^surge(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "sing-box",
+      "name": "sing-box",
+      "category": "proxy",
+      "patterns": [
+        "^sing[-_ ]?box(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "v2ray",
+      "name": "V2Ray / Xray / v2rayN",
+      "category": "proxy",
+      "patterns": [
+        "^(v2rayn?|xray|nekoray|nekobox)(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "category": "ai",
+      "patterns": [
+        "^(openai[ ._-]+)?chatgpt(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "claude",
+      "name": "Claude / Claude Code",
+      "category": "ai",
+      "patterns": [
+        "^(anthropic[ ._-]+)?claude(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "codex",
+      "name": "OpenAI Codex",
+      "category": "ai",
+      "patterns": [
+        "^(openai[ ._-]+)?codex(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": [
+        "openai.chatgpt"
+      ]
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "category": "ai",
+      "patterns": [
+        "^cursor(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "windsurf",
+      "name": "Windsurf / Devin Desktop",
+      "category": "ai",
+      "patterns": [
+        "^(windsurf|devin(?: desktop)?|codeium)(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "antigravity",
+      "name": "Google Antigravity",
+      "category": "ai",
+      "patterns": [
+        "^antigravity(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "kiro",
+      "name": "Kiro",
+      "category": "ai",
+      "patterns": [
+        "^kiro(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "zed",
+      "name": "Zed",
+      "category": "ai",
+      "patterns": [
+        "^zed(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "category": "ai",
+      "patterns": [
+        "^gemini(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "perplexity",
+      "name": "Perplexity",
+      "category": "ai",
+      "patterns": [
+        "^perplexity(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "grok",
+      "name": "Grok",
+      "category": "ai",
+      "patterns": [
+        "^grok(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "poe",
+      "name": "Poe",
+      "category": "ai",
+      "patterns": [
+        "^poe(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": []
+    },
+    {
+      "id": "copilot",
+      "name": "GitHub / Microsoft Copilot",
+      "category": "ide_ai",
+      "patterns": [
+        "^(github[ ._-]+copilot|microsoft[ ._-]+copilot|copilot)(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": [
+        "github.copilot",
+        "github.copilot-chat"
+      ]
+    },
+    {
+      "id": "jetbrains-ai",
+      "name": "JetBrains AI Assistant / Junie",
+      "category": "ide_ai",
+      "patterns": [
+        "^(jetbrains ai assistant|junie)(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": [
+        "com.intellij.ml.llm",
+        "org.jetbrains.junie"
+      ]
+    },
+    {
+      "id": "codeium-extension",
+      "name": "Codeium AI extension",
+      "category": "ide_ai",
+      "patterns": [
+        "^codeium(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": [
+        "codeium.codeium"
+      ]
+    },
+    {
+      "id": "gemini-code-assist",
+      "name": "Gemini Code Assist",
+      "category": "ide_ai",
+      "patterns": [
+        "^gemini code assist(?:[ ._-]|$)"
+      ],
+      "bundle_ids": [],
+      "extensions": [
+        "google.geminicodeassist"
+      ]
+    }
+  ]
+}
