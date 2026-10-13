@@ -1,0 +1,59 @@
+namespace Compliance.Core;
+public static class ReportEngine
+{
+    public static ComplianceReport Evaluate(PolicyDocument policy, ScanSnapshot snapshot, DateTimeOffset now)
+    {
+        snapshot = EvidenceSanitizer.Sanitize(snapshot);
+        var gaps = new List<string>();
+        if (policy.SchemaVersion != 1 || snapshot.SchemaVersion != 1) gaps.Add("不支持的数据版本");
+        if (!policy.DenyInstalled || !policy.DenyProxy || policy.RequiredModules.Length == 0) gaps.Add("禁用策略不完整");
+        if (policy.Mode is not ("Audit" or "Enforce")) gaps.Add("未知策略模式");
+        if (policy.ExpiresAt < now || policy.IssuedAt > now.AddMinutes(2)) gaps.Add("策略过期或时间异常");
+        if (snapshot.PolicyVersion != policy.Version) gaps.Add("目标策略与采集策略版本不一致");
+        if (snapshot.Simulated) gaps.Add("模拟终端数据，未完成 Windows 实机验证");
+        if (!snapshot.Platform.Equals("Windows",StringComparison.OrdinalIgnoreCase)) gaps.Add("未支持的平台");
+        bool current = snapshot.CollectedAt <= now.AddMinutes(2) && snapshot.CollectedAt >= now.AddMinutes(-policy.LightweightFreshMinutes);
+        if (!current) gaps.Add("检查结果过期或采集时间异常");
+        foreach (var module in policy.RequiredModules)
+        {
+            var entries = snapshot.Modules.Where(m=>m.Module == module).ToArray();
+            if (entries.Length == 0) { gaps.Add($"{module}: 缺少必需采集模块"); continue; }
+            foreach(var entry in entries)
+            {
+                if (entry.Status != "Complete") gaps.Add($"{module}/{entry.Scope}: {entry.Status} {entry.Error}");
+                var minutes = module is "installed" or "extensions" or "appx" or "users" ? policy.InventoryFreshMinutes : policy.LightweightFreshMinutes;
+                if(entry.CollectedAt < now.AddMinutes(-minutes) || entry.CollectedAt > now.AddMinutes(2)) gaps.Add($"{module}/{entry.Scope}: 数据过期或时间异常");
+            }
+        }
+        foreach(var m in snapshot.Modules.Where(m=>m.Status != "Complete"))
+            gaps.Add($"{m.Module}/{m.Scope}: {m.Status} {m.Error}");
+        var controlsMissing = new List<string>();
+        foreach(var id in policy.RequiredControls)
+        {
+            var c = snapshot.Controls.FirstOrDefault(c=>c.Id==id);
+            if(c is null || !c.Verified || c.Version!=policy.Version || c.RebootRequired || c.State is not ("Verified" or "Applied"))
+                controlsMissing.Add($"{id}: {c?.Detail ?? "未覆盖"}");
+        }
+        if(policy.Mode=="Enforce") gaps.AddRange(controlsMissing);
+        string protection = policy.Mode == "Audit" ? "审计模式，未启用强制防护" : controlsMissing.Count==0 ? "声明范围执行层已验证" : "强制防护未完整验证："+string.Join("；",controlsMissing);
+        var knownIds = policy.Products.Select(x=>x.Id).ToHashSet(StringComparer.Ordinal);
+        foreach(var e in snapshot.Evidence.Where(e=>e.Confirmed && e.Kind is EvidenceKind.Installation or EvidenceKind.Process or EvidenceKind.Extension && !knownIds.Contains(e.ProductId)))
+            gaps.Add($"未识别的确认对象：{e.ProductId}，需核查规则");
+        bool EvidenceFresh(Evidence e)
+        {
+            var module = e.Kind switch { EvidenceKind.Installation=>"installed", EvidenceKind.Extension=>"extensions", EvidenceKind.Proxy=>"proxy", _=>"processes" };
+            var moduleTimes=snapshot.Modules.Where(m=>m.Module==module && (m.Scope==e.UserSid || m.Scope=="machine")).Select(m=>m.CollectedAt).ToArray();
+            var time=e.CollectedAt ?? (moduleTimes.Length>0?moduleTimes.Min():snapshot.CollectedAt);
+            var minutes = e.Kind is EvidenceKind.Installation or EvidenceKind.Extension ? policy.InventoryFreshMinutes : policy.LightweightFreshMinutes;
+            return time>=now.AddMinutes(-minutes) && time<=now.AddMinutes(2);
+        }
+        var confirmed = snapshot.Evidence.Where(e=>current && EvidenceFresh(e) && e.Confirmed &&
+            e.Kind is EvidenceKind.Installation or EvidenceKind.Process or EvidenceKind.Extension or EvidenceKind.Proxy &&
+            (e.Kind==EvidenceKind.Proxy || knownIds.Contains(e.ProductId))).ToArray();
+        var reasons = confirmed.Select(e=>$"{e.ProductName}：{e.Kind}，{e.Summary}").Distinct().ToArray();
+        int count = confirmed.Select(e=>e.ProductId+"|"+(e.UserSid??"machine")+(e.Kind==EvidenceKind.Proxy?"|"+e.ObjectKey:"")).Distinct().Count();
+        var verdict = confirmed.Length>0 ? Verdict.FAIL : gaps.Count>0 ? Verdict.UNKNOWN : Verdict.PASS;
+        string summary = verdict switch { Verdict.FAIL=>$"不通过：发现 {count} 个违规对象", Verdict.UNKNOWN=>"无法判断：检查或防护覆盖不完整", _=>"范围内通过：必需采集新鲜且无确认违规" };
+        return new(verdict,summary,reasons,gaps.Distinct().ToArray(),count,confirmed.Length,protection, EvidenceSanitizer.Sanitize(snapshot));
+    }
+}

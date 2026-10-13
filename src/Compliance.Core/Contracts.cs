@@ -11,7 +11,10 @@ public static class Wire
 }
 public enum Verdict { PASS, FAIL, UNKNOWN }
 public enum EvidenceKind { Installation, Process, Extension, Proxy, Clue, BlockedAttempt }
-public record ProductRule(string Id, string Name, string Category, string[] PackageIds, string[] ExecutableNames, string[] ExtensionIds, string[] Domains);
+public record ProductRule(string Id, string Name, string Category, string[] PackageIds, string[] ExecutableNames, string[] ExtensionIds, string[] Domains)
+{
+    public string[] DisplayNames { get; init; } = [];
+}
 public record PolicyDocument
 {
     public int SchemaVersion { get; init; } = 1;
@@ -33,7 +36,10 @@ public record PolicyDocument
 }
 public record ApplicationDenyRule(string ProductId, string Name, string Sha256, string Type = "Exe");
 public record SignedPolicy(string Payload, string Signature, string KeyId);
-public record Evidence(string ProductId, string ProductName, EvidenceKind Kind, string ObjectKey, string Source, string Summary, string? UserSid = null, bool Confirmed = true);
+public record Evidence(string ProductId, string ProductName, EvidenceKind Kind, string ObjectKey, string Source, string Summary, string? UserSid = null, bool Confirmed = true)
+{
+    public DateTimeOffset? CollectedAt { get; init; }
+}
 public record ModuleResult(string Module, string Scope, string Status, DateTimeOffset CollectedAt, string? Error = null);
 public record ControlState(string Id, long Version, string State, string Detail, bool Verified = false, bool RebootRequired = false);
 public record ScanSnapshot
