@@ -21,7 +21,7 @@ public static class ReportEngine
             foreach(var entry in entries)
             {
                 if (entry.Status != "Complete") gaps.Add($"{module}/{entry.Scope}: {entry.Status} {entry.Error}");
-                var minutes = module is "installed" or "extensions" or "appx" or "users" ? policy.InventoryFreshMinutes : policy.LightweightFreshMinutes;
+                var minutes = module is "installed" or "extensions" or "appx" or "users" or "cli" ? policy.InventoryFreshMinutes : policy.LightweightFreshMinutes;
                 if(entry.CollectedAt < now.AddMinutes(-minutes) || entry.CollectedAt > now.AddMinutes(2)) gaps.Add($"{module}/{entry.Scope}: 数据过期或时间异常");
             }
         }
@@ -47,6 +47,8 @@ public static class ReportEngine
             var minutes = e.Kind is EvidenceKind.Installation or EvidenceKind.Extension ? policy.InventoryFreshMinutes : policy.LightweightFreshMinutes;
             return time>=now.AddMinutes(-minutes) && time<=now.AddMinutes(2);
         }
+        foreach(var e in snapshot.Evidence.Where(e=>e.Confirmed && !EvidenceFresh(e)))
+            gaps.Add($"{e.ProductName}: 证据过期或时间异常，需要重新采集");
         var confirmed = snapshot.Evidence.Where(e=>current && EvidenceFresh(e) && e.Confirmed &&
             e.Kind is EvidenceKind.Installation or EvidenceKind.Process or EvidenceKind.Extension or EvidenceKind.Proxy &&
             (e.Kind==EvidenceKind.Proxy || knownIds.Contains(e.ProductId))).ToArray();

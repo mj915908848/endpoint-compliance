@@ -42,5 +42,6 @@ Test("fixed report has nine sections and includes missing coverage", () => { var
 Test("Markdown evidence cannot inject hidden headings", () => { var r=ReportEngine.Evaluate(p,clean with {Evidence=[violation with {Summary="oops\n## fake <script>alert(1)</script>"}]},now); var md=ReportRenderer.Markdown(r); Eq(9,md.Split('\n').Count(x=>x.StartsWith("## "))); Yes(!md.Contains("<script>")); });
 Test("old inventory evidence cannot become fresh through new light scan", () => Eq(Verdict.UNKNOWN,ReportEngine.Evaluate(p,clean with {Evidence=[violation], Modules=[new("installed","machine","Complete",now.AddHours(-3)),..clean.Modules[1..]]},now).Verdict));
 Test("unknown confirmed product is unresolved rather than PASS", () => Eq(Verdict.UNKNOWN,ReportEngine.Evaluate(p,clean with {Evidence=[violation with {ProductId="unlisted"}]},now).Verdict));
+Test("explicit aged evidence cannot become current even with fresh module metadata", () => Eq(Verdict.UNKNOWN,ReportEngine.Evaluate(p,clean with {Evidence=[violation with {CollectedAt=now.AddHours(-3)}]},now).Verdict));
 Console.WriteLine($"Core tests: {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

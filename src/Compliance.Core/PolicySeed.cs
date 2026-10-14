@@ -27,6 +27,6 @@ public static class PolicySeed
             R("codeium-extension","Codeium AI extension","ide_ai",["Codeium"],[],extensions:["codeium.codeium"]),
             R("gemini-code-assist","Gemini Code Assist","ide_ai",["Gemini Code Assist"],[],extensions:["google.geminicodeassist"])
         };
-        return new PolicyDocument { Products=rules, BlockDomains=rules.SelectMany(r=>r.Domains).Distinct().ToArray() };
+        return new PolicyDocument { RequiredModules=["installed","processes","proxy","extensions","appx","ports","users","cli"], Products=rules, BlockDomains=rules.SelectMany(r=>r.Domains).Distinct().ToArray() };
     }
 }
