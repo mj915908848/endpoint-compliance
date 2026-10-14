@@ -515,6 +515,17 @@ await Check(
     }
 );
 await Check(
+    "user accounts are shown by name, falling back to the profile folder",
+    async () =>
+    {
+        Assert(WindowsCollector.DisplayAccountName(@"LAPTOP-U6EEGUHI\kaiyu", @"C:\Users\kaiyu") == "kaiyu", "local");
+        Assert(WindowsCollector.DisplayAccountName(@"CORP\zhang.san", @"C:\Users\zs") == "zhang.san", "domain");
+        Assert(WindowsCollector.DisplayAccountName(null, @"C:\Users\AzureAD_lisi") == "AzureAD_lisi", "folder");
+        Assert(WindowsCollector.DisplayAccountName(null, "") is null, "no name invented");
+        await Task.CompletedTask;
+    }
+);
+await Check(
     "approved VPN adapters are skipped and known proxy tunnels name their product as a clue",
     async () =>
     {

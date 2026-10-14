@@ -54,6 +54,11 @@ export interface Snapshot {
   evidence: Evidence[];
   modules: ModuleResult[];
   controls: Control[];
+  users?: UserAccount[];
+}
+export interface UserAccount {
+  sid: string;
+  name: string;
 }
 export interface Report {
   verdict: Verdict;

@@ -271,6 +271,12 @@ public static class EvidenceSanitizer
                 .Modules.Select(m => m with { Error = m.Error is null ? null : Clean(m.Error), Scope = Clean(m.Scope) })
                 .ToArray(),
             Controls = snapshot.Controls.Select(c => c with { Detail = Clean(c.Detail) }).ToArray(),
+            Users = (snapshot.Users ?? [])
+                .Where(u => !string.IsNullOrWhiteSpace(u.Sid) && !string.IsNullOrWhiteSpace(u.Name))
+                .Select(u => new UserAccount(Clean(u.Sid), Clean(u.Name)))
+                .DistinctBy(u => u.Sid)
+                .Take(200)
+                .ToArray(),
         };
 }
 
@@ -297,6 +303,7 @@ public static class ReportRenderer
     public static string Markdown(ComplianceReport report)
     {
         var s = report.Snapshot;
+        var names = Labels.AccountNames(s);
         var b = new StringBuilder("# 终端合规检查报告\n\n");
         b.AppendLine("## 1. 基本信息\n")
             .AppendLine($"- 终端：{Cell(s.HostName)}")
@@ -305,7 +312,10 @@ public static class ReportRenderer
             .AppendLine($"- 采集时间：{Time(s.CollectedAt)}")
             .AppendLine($"- 策略版本：v{s.PolicyVersion}")
             .AppendLine($"- 数据格式版本：{s.SchemaVersion}")
-            .AppendLine($"- 数据来源：{(s.Simulated ? "模拟数据，不能作为实机验收依据" : "终端实机采集")}\n");
+            .AppendLine($"- 数据来源：{(s.Simulated ? "模拟数据，不能作为实机验收依据" : "终端实机采集")}");
+        if (s.Users.Length > 0)
+            b.AppendLine("- 用户账户：" + string.Join("；", s.Users.Select(u => $"{Cell(u.Name)}（{Cell(u.Sid)}）")));
+        b.AppendLine();
         b.AppendLine("## 2. 检查结论\n")
             .AppendLine($"**{Cell(report.Summary)}**\n")
             .AppendLine($"- 违规对象：{report.ViolationCount}")
@@ -323,15 +333,17 @@ public static class ReportRenderer
             s.Evidence.Where(e =>
                 e.Kind is EvidenceKind.Installation or EvidenceKind.Process or EvidenceKind.Extension
             ),
-            "未发现相关软件的安装或运行记录。"
+            "未发现相关软件的安装或运行记录。",
+            names
         );
         b.AppendLine("\n## 5. 代理设置\n");
-        Table(b, s.Evidence.Where(e => e.Kind == EvidenceKind.Proxy), "未发现代理设置。");
+        Table(b, s.Evidence.Where(e => e.Kind == EvidenceKind.Proxy), "未发现代理设置。", names);
         b.AppendLine("\n## 6. 网络线索与防护措施\n");
         Table(
             b,
             s.Evidence.Where(e => e.Kind is EvidenceKind.Clue or EvidenceKind.BlockedAttempt),
-            "没有网络线索或拦截记录。"
+            "没有网络线索或拦截记录。",
+            names
         );
         if (s.Controls.Length == 0)
             b.AppendLine("\n终端未上报防护措施，因此不能认定拦截已经生效。");
@@ -356,7 +368,7 @@ public static class ReportRenderer
         b.AppendLine("| 检查项 | 范围 | 状态 | 采集时间 | 说明 |\n| --- | --- | --- | --- | --- |");
         foreach (var m in s.Modules)
             b.AppendLine(
-                $"| {Cell(Labels.Module(m.Module))} | {Cell(Labels.Scope(m.Scope))} | {Labels.Status(m.Status)} | {Time(m.CollectedAt)} | {Cell(m.Error ?? "—")} |"
+                $"| {Cell(Labels.Module(m.Module))} | {Cell(Labels.Scope(m.Scope, names))} | {Labels.Status(m.Status)} | {Time(m.CollectedAt)} | {Cell(m.Error ?? "—")} |"
             );
         b.AppendLine(
             "\n## 8. 处理建议\n\n"
@@ -375,7 +387,12 @@ public static class ReportRenderer
         return b.ToString();
     }
 
-    private static void Table(StringBuilder b, IEnumerable<Evidence> records, string empty)
+    private static void Table(
+        StringBuilder b,
+        IEnumerable<Evidence> records,
+        string empty,
+        IReadOnlyDictionary<string, string> names
+    )
     {
         var rows = records.ToArray();
         if (rows.Length == 0)
@@ -386,7 +403,7 @@ public static class ReportRenderer
         b.AppendLine("| 产品 | 类型 | 范围 | 说明 | 来源 |\n| --- | --- | --- | --- | --- |");
         foreach (var e in rows)
             b.AppendLine(
-                $"| {Cell(e.ProductName)} | {(e.Confirmed ? "确认" : "线索")} · {Labels.Evidence(e.Kind)} | {Cell(Labels.Scope(e.UserSid))} | {Cell(e.Summary)} | {Cell(e.Source)} |"
+                $"| {Cell(e.ProductName)} | {(e.Confirmed ? "确认" : "线索")} · {Labels.Evidence(e.Kind)} | {Cell(Labels.Scope(e.UserSid, names))} | {Cell(e.Summary)} | {Cell(e.Source)} |"
             );
     }
 }

@@ -1,5 +1,15 @@
 import { type ReactNode } from "react";
-import { Anchor, Descriptions, Flex, List as AntList, Space, Table, Tag, Typography } from "antd";
+import {
+  Anchor,
+  Descriptions,
+  Flex,
+  List as AntList,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from "antd";
 import {
   CheckCircleFilled,
   CloseCircleFilled,
@@ -16,7 +26,7 @@ import {
   scopeLabel,
   statusLabel,
 } from "./labels";
-import type { Control, Evidence, ModuleResult, Report } from "../types";
+import type { Control, Evidence, ModuleResult, Report, UserAccount } from "../types";
 
 /** Section titles; keep in sync with ReportRenderer.Markdown in Compliance.Core. */
 export const reportSections = [
@@ -45,7 +55,27 @@ export const reportLimits = [
   "检查不读取聊天内容、密码或浏览记录，也不会自动卸载软件。",
 ];
 
-export function EvidenceTable({ values, empty }: { values: Evidence[]; empty?: string }) {
+/** Scope cell: account name, with the SID on hover for exact matching. */
+function Scope({ scope, users }: { scope: string | null | undefined; users?: UserAccount[] }) {
+  const label = scopeLabel(scope, users);
+  return scope && scope !== "machine" && !label.endsWith(scope) ? (
+    <Tooltip title={scope}>
+      <span className="scope-name">{label}</span>
+    </Tooltip>
+  ) : (
+    <span>{label}</span>
+  );
+}
+
+export function EvidenceTable({
+  values,
+  empty,
+  users,
+}: {
+  values: Evidence[];
+  empty?: string;
+  users?: UserAccount[];
+}) {
   return (
     <Table<Evidence>
       rowKey={(e, i) => `${e.objectKey}-${i}`}
@@ -79,13 +109,24 @@ export function EvidenceTable({ values, empty }: { values: Evidence[]; empty?: s
         },
         { title: "说明", dataIndex: "summary" },
         { title: "来源", dataIndex: "source", width: 160 },
-        { title: "范围", key: "scope", width: 140, render: (_, e) => scopeLabel(e.userSid) },
+        {
+          title: "范围",
+          key: "scope",
+          width: 140,
+          render: (_, e) => <Scope scope={e.userSid} users={users} />,
+        },
       ]}
     />
   );
 }
 
-export function CoverageTable({ modules }: { modules: ModuleResult[] }) {
+export function CoverageTable({
+  modules,
+  users,
+}: {
+  modules: ModuleResult[];
+  users?: UserAccount[];
+}) {
   return (
     <Table<ModuleResult>
       rowKey={(m, i) => `${m.module}-${m.scope}-${i}`}
@@ -96,7 +137,7 @@ export function CoverageTable({ modules }: { modules: ModuleResult[] }) {
       locale={{ emptyText: <Empty title="没有检查项结果" /> }}
       columns={[
         { title: "检查项", key: "module", render: (_, m) => moduleLabel(m.module) },
-        { title: "范围", key: "scope", render: (_, m) => scopeLabel(m.scope) },
+        { title: "范围", key: "scope", render: (_, m) => <Scope scope={m.scope} users={users} /> },
         {
           title: "状态",
           key: "status",
@@ -196,6 +237,15 @@ export function ReportView({ report: r }: { report: Report }) {
         { label: "平台", children: s.platform },
         { label: "采集时间", children: time(s.collectedAt) },
         { label: "策略版本", children: `v${s.policyVersion}` },
+        ...(s.users?.length
+          ? [
+              {
+                label: "用户账户",
+                span: "filled" as const,
+                children: s.users.map((u) => `${u.name}（${u.sid}）`).join("；"),
+              },
+            ]
+          : []),
         {
           label: "数据来源",
           children: s.simulated ? (
@@ -242,10 +292,10 @@ export function ReportView({ report: r }: { report: Report }) {
         未发现确认违规。结论的完整性以“检查覆盖”一节为准。
       </Typography.Text>
     ),
-    <EvidenceTable values={installation} empty="未发现相关软件的安装或运行记录" />,
-    <EvidenceTable values={proxy} empty="未发现代理设置" />,
+    <EvidenceTable values={installation} empty="未发现相关软件的安装或运行记录" users={s.users} />,
+    <EvidenceTable values={proxy} empty="未发现代理设置" users={s.users} />,
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <EvidenceTable values={clue} empty="没有网络线索或拦截记录" />
+      <EvidenceTable values={clue} empty="没有网络线索或拦截记录" users={s.users} />
       <ControlList controls={s.controls} />
     </Space>,
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -264,7 +314,7 @@ export function ReportView({ report: r }: { report: Report }) {
           )}
         />
       )}
-      <CoverageTable modules={s.modules} />
+      <CoverageTable modules={s.modules} users={s.users} />
     </Space>,
     <Bullets items={reportAdvice} empty="" />,
     <Bullets items={reportLimits} empty="" />,

@@ -163,7 +163,11 @@ export function DeviceDetailPage({
                     key: "evidence",
                     label: `全部证据（${snapshot?.evidence.length ?? 0}）`,
                     children: (
-                      <EvidenceTable values={snapshot?.evidence ?? []} empty="终端未上报证据" />
+                      <EvidenceTable
+                        values={snapshot?.evidence ?? []}
+                        empty="终端未上报证据"
+                        users={snapshot?.users}
+                      />
                     ),
                   },
                   {
@@ -172,7 +176,7 @@ export function DeviceDetailPage({
                     children: snapshot ? (
                       <Space orientation="vertical" size={12} style={{ width: "100%" }}>
                         <CoverageGuide modules={snapshot.modules} />
-                        <CoverageTable modules={snapshot.modules} />
+                        <CoverageTable modules={snapshot.modules} users={snapshot.users} />
                       </Space>
                     ) : (
                       <Empty title="暂无检查数据" />

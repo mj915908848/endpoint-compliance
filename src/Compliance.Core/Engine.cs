@@ -2,13 +2,14 @@ namespace Compliance.Core;
 
 public static class ReportEngine
 {
-    private static string ModuleGap(ModuleResult m) =>
-        $"{Labels.Module(m.Module)}（{Labels.Scope(m.Scope)}）：{Labels.Status(m.Status)}"
+    private static string ModuleGap(ModuleResult m, IReadOnlyDictionary<string, string> names) =>
+        $"{Labels.Module(m.Module)}（{Labels.Scope(m.Scope, names)}）：{Labels.Status(m.Status)}"
         + (string.IsNullOrWhiteSpace(m.Error) ? "" : "，" + m.Error);
 
     public static ComplianceReport Evaluate(PolicyDocument policy, ScanSnapshot snapshot, DateTimeOffset now)
     {
         snapshot = EvidenceSanitizer.Sanitize(snapshot);
+        var names = Labels.AccountNames(snapshot);
         var gaps = new List<string>();
         if (policy.SchemaVersion != 1 || snapshot.SchemaVersion != 1)
             gaps.Add("策略或检查数据的格式版本不受支持");
@@ -40,16 +41,16 @@ public static class ReportEngine
             foreach (var entry in entries)
             {
                 if (entry.Status != "Complete")
-                    gaps.Add(ModuleGap(entry));
+                    gaps.Add(ModuleGap(entry, names));
                 var minutes = module is "installed" or "extensions" or "appx" or "users" or "cli"
                     ? policy.InventoryFreshMinutes
                     : policy.LightweightFreshMinutes;
                 if (entry.CollectedAt < now.AddMinutes(-minutes) || entry.CollectedAt > now.AddMinutes(2))
-                    gaps.Add($"{Labels.Module(module)}（{Labels.Scope(entry.Scope)}）：数据已过期或时间异常");
+                    gaps.Add($"{Labels.Module(module)}（{Labels.Scope(entry.Scope, names)}）：数据已过期或时间异常");
             }
         }
         foreach (var m in snapshot.Modules.Where(m => m.Status != "Complete"))
-            gaps.Add(ModuleGap(m));
+            gaps.Add(ModuleGap(m, names));
         var controlsMissing = new List<string>();
         foreach (var id in policy.RequiredControls)
         {
@@ -117,7 +118,7 @@ public static class ReportEngine
             .Select(group =>
             {
                 var kinds = group.Select(e => Labels.Evidence(e.Kind)).Distinct();
-                return $"{group.First().ProductName}（{Labels.Scope(group.Key.Scope)}）：{string.Join("、", kinds)}，共 {group.Count()} 条证据";
+                return $"{group.First().ProductName}（{Labels.Scope(group.Key.Scope, names)}）：{string.Join("、", kinds)}，共 {group.Count()} 条证据";
             })
             .ToArray();
         int count = objects.Length;

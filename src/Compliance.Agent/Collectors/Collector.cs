@@ -6,7 +6,7 @@ using Microsoft.Win32;
 namespace Compliance.Agent;
 
 /// <summary>A user profile from ProfileList; per-user collectors need its hive, its folder, or both.</summary>
-public sealed record Profile(string Sid, string Path, bool HiveLoaded, bool PathAvailable);
+public sealed record Profile(string Sid, string Path, bool HiveLoaded, bool PathAvailable, string? Name = null);
 
 public sealed record ScanContext(PolicyDocument Policy, IReadOnlyList<Profile> Profiles);
 
@@ -175,6 +175,7 @@ public sealed partial class WindowsCollector
             Evidence = evidence.ToArray(),
             Modules = modules.ToArray(),
             Controls = [],
+            Users = profiles.Where(p => p.Name is not null).Select(p => new UserAccount(p.Sid, p.Name!)).ToArray(),
         };
     }
 
@@ -200,9 +201,36 @@ public sealed partial class WindowsCollector
             var raw = key?.GetValue("ProfileImagePath") as string;
             var path = string.IsNullOrWhiteSpace(raw) ? "" : Environment.ExpandEnvironmentVariables(raw);
             using var hive = Registry.Users.OpenSubKey(sid);
-            profiles.Add(new(sid, path, hive is not null, path.Length > 0 && DirectoryPresent(path)));
+            profiles.Add(
+                new(sid, path, hive is not null, path.Length > 0 && DirectoryPresent(path), AccountName(sid, path))
+            );
         }
         return profiles.ToArray();
+    }
+
+    private static string? AccountName(string sid, string profilePath)
+    {
+        string? translated = null;
+        try
+        {
+            translated = new System.Security.Principal.SecurityIdentifier(sid)
+                .Translate(typeof(System.Security.Principal.NTAccount))
+                .Value;
+        }
+        catch (Exception ex) when (ex is System.Security.Principal.IdentityNotMappedException or SystemException)
+        {
+            // Offline Entra ID or deleted accounts cannot be translated; the profile folder name is used instead.
+        }
+        return DisplayAccountName(translated, profilePath);
+    }
+
+    /// <summary>"LAPTOP\\kaiyu" -> "kaiyu"; without a translated account, the profile folder name.</summary>
+    public static string? DisplayAccountName(string? translated, string profilePath)
+    {
+        if (!string.IsNullOrWhiteSpace(translated))
+            return translated[(translated.LastIndexOf('\\') + 1)..];
+        var folder = Path.GetFileName(profilePath.Replace('\\', '/').TrimEnd('/'));
+        return string.IsNullOrWhiteSpace(folder) ? null : folder;
     }
 
     /// <summary>Local (S-1-5-21) and Entra ID (S-1-12-1) user accounts; service and system accounts are skipped.</summary>

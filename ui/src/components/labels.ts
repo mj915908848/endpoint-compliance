@@ -1,4 +1,4 @@
-import type { ModuleResult, Verdict } from "../types";
+import type { ModuleResult, UserAccount, Verdict } from "../types";
 
 const lookup = (table: Record<string, string>) => (key: string) => table[key] ?? key;
 
@@ -81,8 +81,11 @@ export const controlStateLabel = lookup({
   Error: "读取失败",
 });
 
-export const scopeLabel = (scope: string | null | undefined) =>
-  !scope || scope === "machine" ? "整机" : `用户 ${scope}`;
+/** "整机", or "用户 kaiyu" when the snapshot names the account, else "用户 <SID>". */
+export const scopeLabel = (scope: string | null | undefined, users?: UserAccount[]) =>
+  !scope || scope === "machine"
+    ? "整机"
+    : `用户 ${users?.find((u) => u.sid === scope)?.name ?? scope}`;
 
 /** Turns raw collector exceptions into an explanation an administrator can act on. */
 export function moduleErrorLabel(result: ModuleResult) {

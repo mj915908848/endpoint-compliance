@@ -151,6 +151,12 @@ body {
   line-height: 1.9;
 }
 
+.scope-name {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
 .registration-code {
   font-size: 22px;
   letter-spacing: 0.04em;

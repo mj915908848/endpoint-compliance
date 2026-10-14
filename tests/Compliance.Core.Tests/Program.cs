@@ -525,5 +525,26 @@ Test(
         Throws(() => PolicyCrypto.Validate(p with { ApprovedNetworkAdapters = null! }));
     }
 );
+Test(
+    "reports name user accounts instead of SIDs",
+    () =>
+    {
+        const string sid = "S-1-5-21-1-2-3-1001";
+        var r = ReportEngine.Evaluate(
+            p,
+            clean with
+            {
+                Evidence = [violation with { UserSid = sid }],
+                Modules = [.. clean.Modules, new("proxy", sid, "Unknown", now, "hive")],
+                Users = [new(sid, "kaiyu")],
+            },
+            now
+        );
+        Yes(r.Reasons.Any(x => x.Contains("用户 kaiyu")) && r.Reasons.All(x => !x.Contains(sid)));
+        Yes(r.CoverageGaps.Any(x => x.Contains("系统代理（用户 kaiyu）")));
+        var md = ReportRenderer.Markdown(r);
+        Yes(md.Contains("用户账户：kaiyu（" + sid + "）") && md.Contains("| 用户 kaiyu |"));
+    }
+);
 Console.WriteLine($"Core tests: {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

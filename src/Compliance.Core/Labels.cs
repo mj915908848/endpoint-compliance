@@ -30,7 +30,13 @@ public static class Labels
             _ => status,
         };
 
-    public static string Scope(string? scope) => scope is null or "machine" ? "整机" : "用户 " + scope;
+    public static string Scope(string? scope, IReadOnlyDictionary<string, string>? names = null) =>
+        scope is null or "machine" ? "整机"
+        : names is not null && names.TryGetValue(scope, out var name) ? "用户 " + name
+        : "用户 " + scope;
+
+    public static IReadOnlyDictionary<string, string> AccountNames(ScanSnapshot snapshot) =>
+        (snapshot.Users ?? []).DistinctBy(u => u.Sid).ToDictionary(u => u.Sid, u => u.Name);
 
     public static string Evidence(EvidenceKind kind) =>
         kind switch

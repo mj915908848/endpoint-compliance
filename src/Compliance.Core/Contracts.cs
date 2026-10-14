@@ -124,7 +124,12 @@ public record ScanSnapshot
     public Evidence[] Evidence { get; init; } = [];
     public ModuleResult[] Modules { get; init; } = [];
     public ControlState[] Controls { get; init; } = [];
+
+    /// <summary>Account names for the user SIDs in this snapshot, so reports can say "kaiyu" instead of a SID.</summary>
+    public UserAccount[] Users { get; init; } = [];
 }
+
+public record UserAccount(string Sid, string Name);
 
 public record ComplianceReport(
     Verdict Verdict,

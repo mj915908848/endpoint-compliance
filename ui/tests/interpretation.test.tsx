@@ -62,3 +62,13 @@ describe("plain-language result explanation", () => {
     expect(screen.getByText(/并不表示发现了新的违规/)).toBeTruthy();
   });
 });
+
+describe("user scope labels", () => {
+  it("names accounts when the snapshot knows them and falls back to the SID", async () => {
+    const { scopeLabel } = await import("../src/components");
+    const users = [{ sid: "S-1-5-21-1-2-3-1001", name: "kaiyu" }];
+    expect(scopeLabel("S-1-5-21-1-2-3-1001", users)).toBe("用户 kaiyu");
+    expect(scopeLabel("S-1-5-21-1-2-3-1006", users)).toBe("用户 S-1-5-21-1-2-3-1006");
+    expect(scopeLabel("machine", users)).toBe("整机");
+  });
+});
