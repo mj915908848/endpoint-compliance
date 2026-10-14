@@ -546,5 +546,148 @@ Test(
         Yes(md.Contains("用户账户：kaiyu（" + sid + "）") && md.Contains("| 用户 kaiyu |"));
     }
 );
+var secretRule = new SensitiveFileRule("secret", "机密文件", ["机密", "Confidential"]);
+var sensitivePolicy = p with
+{
+    SensitiveFiles = new() { Enabled = true, Rules = [secretRule] },
+};
+var sensitiveHit = new Evidence(
+    "secret",
+    "机密文件",
+    EvidenceKind.SensitiveFile,
+    @"D:\项目\2025机密合同.xlsx",
+    "drive:D",
+    "文件名包含“机密”（规则：机密文件）"
+)
+{
+    CollectedAt = now.AddHours(-2),
+};
+var sensitiveScan = clean with
+{
+    Evidence = [sensitiveHit],
+    Modules = [.. clean.Modules, new(SensitiveFiles.Module, "drive:D", "Complete", now.AddHours(-2))],
+};
+Test(
+    "Chinese keywords match file names ignoring case and full-width letters",
+    () =>
+    {
+        var matcher = new SensitiveNameMatcher([
+            secretRule,
+            new("contract", "合同", ["合同"]) { Extensions = [".xlsx", ".DOCX"] },
+        ]);
+        Eq(2, matcher.Match("2025机密合同.xlsx", false).Count);
+        Eq("机密", matcher.Match("项目-机密-v2.docx", false)[0].Keyword);
+        Eq(1, matcher.Match("ＣＯＮＦＩＤＥＮＴＩＡＬ report.pdf", false).Count);
+        Eq(1, matcher.Match("confidential.txt", false).Count);
+        Eq("contract", matcher.Match("采购合同.docx", false).Single().Rule.Id);
+        Eq(0, matcher.Match("采购合同.pdf", false).Count);
+        Eq(0, matcher.Match("機密.txt", false).Count);
+        // A rule limited to extensions never matches folders; one already reported for a parent folder is skipped.
+        Eq("secret", matcher.Match("机密合同", true).Single().Rule.Id);
+        Eq(1, matcher.Match("机密合同.xlsx", false, new HashSet<string> { "secret" }).Count);
+    }
+);
+Test(
+    "sensitive file alerts do not change the verdict and incomplete scans are only notes",
+    () =>
+    {
+        var r = ReportEngine.Evaluate(sensitivePolicy, sensitiveScan, now);
+        Eq(Verdict.PASS, r.Verdict);
+        Eq(0, r.SensitiveFileNotes.Length);
+        var partial = ReportEngine.Evaluate(
+            sensitivePolicy,
+            sensitiveScan with
+            {
+                Modules = [.. clean.Modules, new(SensitiveFiles.Module, "drive:E", "Unknown", now, "磁盘未就绪")],
+            },
+            now
+        );
+        Eq(Verdict.PASS, partial.Verdict);
+        Yes(partial.SensitiveFileNotes.Any(x => x.Contains("敏感文件（E 盘）") && x.Contains("磁盘未就绪")));
+        var missing = ReportEngine.Evaluate(sensitivePolicy, clean, now);
+        Eq(Verdict.PASS, missing.Verdict);
+        Yes(missing.SensitiveFileNotes.Any(x => x.Contains("尚未上报")));
+        Eq(0, ReportEngine.Evaluate(p, clean, now).SensitiveFileNotes.Length);
+    }
+);
+Test(
+    "violation rules fail the device and require complete fresh scans",
+    () =>
+    {
+        var failing = sensitivePolicy with
+        {
+            SensitiveFiles = sensitivePolicy.SensitiveFiles with { Rules = [secretRule with { Action = "Violation" }] },
+        };
+        var r = ReportEngine.Evaluate(failing, sensitiveScan, now);
+        Eq(Verdict.FAIL, r.Verdict);
+        Yes(r.Reasons.Single().Contains("机密文件（整机）：敏感文件"));
+        var pending = ReportEngine.Evaluate(failing, clean, now);
+        Eq(Verdict.UNKNOWN, pending.Verdict);
+        Yes(pending.CoverageGaps.Any(x => x.Contains("尚未上报")));
+        var aged = sensitiveScan with
+        {
+            Evidence = [sensitiveHit with { CollectedAt = now.AddHours(-30) }],
+            Modules = [.. clean.Modules, new(SensitiveFiles.Module, "drive:D", "Complete", now.AddHours(-30))],
+        };
+        Eq(Verdict.UNKNOWN, ReportEngine.Evaluate(failing, aged, now).Verdict);
+        Eq(Verdict.PASS, ReportEngine.Evaluate(failing, sensitiveScan with { Evidence = [] }, now).Verdict);
+    }
+);
+Test(
+    "report lists sensitive files without adding a section",
+    () =>
+    {
+        var md = ReportRenderer.Markdown(ReportEngine.Evaluate(sensitivePolicy, sensitiveScan, now));
+        Eq(9, md.Split('\n').Count(x => x.StartsWith("## ")));
+        Yes(md.Contains("### 敏感文件") && md.Contains(@"D:\项目\2025机密合同.xlsx") && md.Contains("| D 盘 |"));
+        Yes(!ReportRenderer.Markdown(ReportEngine.Evaluate(p, clean, now)).Contains("### 敏感文件"));
+    }
+);
+Test(
+    "sensitive file rules are validated",
+    () =>
+    {
+        PolicyCrypto.Validate(sensitivePolicy);
+        PolicyCrypto.Validate(p with { SensitiveFiles = new() });
+        SensitiveFilePolicy With(SensitiveFileRule rule) => sensitivePolicy.SensitiveFiles with { Rules = [rule] };
+        Throws(() => PolicyCrypto.Validate(p with { SensitiveFiles = null! }));
+        Throws(() => PolicyCrypto.Validate(p with { SensitiveFiles = new() { Enabled = true } }));
+        Throws(() => PolicyCrypto.Validate(p with { SensitiveFiles = With(secretRule with { Keywords = ["密"] }) }));
+        Throws(() => PolicyCrypto.Validate(p with { SensitiveFiles = With(secretRule with { Keywords = [" 机密"] }) }));
+        Throws(() => PolicyCrypto.Validate(p with { SensitiveFiles = With(secretRule with { Keywords = [] }) }));
+        Throws(() => PolicyCrypto.Validate(p with { SensitiveFiles = With(secretRule with { Action = "Delete" }) }));
+        Throws(() => PolicyCrypto.Validate(p with { SensitiveFiles = With(secretRule with { Id = "机密" }) }));
+        Throws(() =>
+            PolicyCrypto.Validate(p with { SensitiveFiles = With(secretRule with { Extensions = ["xlsx"] }) })
+        );
+        Throws(() =>
+            PolicyCrypto.Validate(
+                p with
+                {
+                    SensitiveFiles = sensitivePolicy.SensitiveFiles with { Rules = [secretRule, secretRule] },
+                }
+            )
+        );
+        Throws(() =>
+            PolicyCrypto.Validate(
+                p with
+                {
+                    SensitiveFiles = sensitivePolicy.SensitiveFiles with
+                    {
+                        ScanUserProfiles = false,
+                        ScanOtherFixedDrives = false,
+                    },
+                }
+            )
+        );
+        Throws(() =>
+            PolicyCrypto.Validate(p with { SensitiveFiles = sensitivePolicy.SensitiveFiles with { RescanHours = 0 } })
+        );
+        // Policies published before this feature carry no sensitive file settings and stay valid.
+        var old = Wire.Read<PolicyDocument>(Wire.Serialize(p).Replace("\"sensitiveFiles\"", "\"unused\""));
+        Yes(!old.SensitiveFiles.Enabled);
+        PolicyCrypto.Validate(old);
+    }
+);
 Console.WriteLine($"Core tests: {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

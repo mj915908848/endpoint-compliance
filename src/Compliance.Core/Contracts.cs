@@ -32,6 +32,9 @@ public enum EvidenceKind
     Proxy,
     Clue,
     BlockedAttempt,
+
+    /// <summary>A file or folder whose name contains a configured keyword; ProductId is the rule id.</summary>
+    SensitiveFile,
 }
 
 public record ProductRule(
@@ -75,6 +78,48 @@ public record PolicyDocument
     /// of the adapter name or description. Approved adapters are not reported as clues.
     /// </summary>
     public string[] ApprovedNetworkAdapters { get; init; } = [];
+
+    /// <summary>File name keyword scanning; off unless an administrator enables it.</summary>
+    public SensitiveFilePolicy SensitiveFiles { get; init; } = new();
+}
+
+/// <summary>
+/// Scans file and folder names (never contents) in user profiles and on fixed drives other than the system drive.
+/// </summary>
+public record SensitiveFilePolicy
+{
+    public bool Enabled { get; init; }
+    public SensitiveFileRule[] Rules { get; init; } = [];
+    public bool ScanUserProfiles { get; init; } = true;
+    public bool ScanOtherFixedDrives { get; init; } = true;
+
+    /// <summary>
+    /// A bare name (e.g. "node_modules") skips every folder with that name; a path (e.g. "D:\Backup") skips that
+    /// folder and everything under it.
+    /// </summary>
+    public string[] ExcludePaths { get; init; } =
+    ["AppData", "$Recycle.Bin", "System Volume Information", "node_modules", ".git"];
+
+    /// <summary>A completed scan is repeated after this many hours; a changed rule set starts a new scan at once.</summary>
+    public int RescanHours { get; init; } = 24;
+
+    /// <summary>Hits reported per user profile or drive; further hits are counted but not listed.</summary>
+    public int MaxHitsPerScope { get; init; } = 200;
+}
+
+/// <summary>
+/// A name matches when it contains any keyword, ignoring case and full-width/half-width differences. Action "Alert"
+/// only notifies administrators; "Violation" also makes the device fail.
+/// </summary>
+public record SensitiveFileRule(string Id, string Name, string[] Keywords)
+{
+    /// <summary>File extensions such as ".xlsx"; empty matches every file. Rules with extensions never match folders.</summary>
+    public string[] Extensions { get; init; } = [];
+
+    /// <summary>A matching folder is reported once instead of each file inside it.</summary>
+    public bool MatchFolders { get; init; } = true;
+
+    public string Action { get; init; } = "Alert";
 }
 
 public record ApplicationDenyRule(string ProductId, string Name, string Sha256, string Type = "Exe");
@@ -140,7 +185,11 @@ public record ComplianceReport(
     int EvidenceCount,
     string ProtectionStatus,
     ScanSnapshot Snapshot
-);
+)
+{
+    /// <summary>Incomplete sensitive file scans when every rule only alerts; they do not affect the verdict.</summary>
+    public string[] SensitiveFileNotes { get; init; } = [];
+}
 
 public record AgentEvent(
     string EventId,

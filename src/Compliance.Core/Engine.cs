@@ -30,7 +30,7 @@ public static class ReportEngine
             && snapshot.CollectedAt >= now.AddMinutes(-policy.LightweightFreshMinutes);
         if (!current)
             gaps.Add("检查结果已过期或采集时间异常");
-        foreach (var module in policy.RequiredModules)
+        foreach (var module in policy.RequiredModules.Where(m => m != SensitiveFiles.Module))
         {
             var entries = snapshot.Modules.Where(m => m.Module == module).ToArray();
             if (entries.Length == 0)
@@ -49,8 +49,33 @@ public static class ReportEngine
                     gaps.Add($"{Labels.Module(module)}（{Labels.Scope(entry.Scope, names)}）：数据已过期或时间异常");
             }
         }
-        foreach (var m in snapshot.Modules.Where(m => m.Status != "Complete"))
+        foreach (var m in snapshot.Modules.Where(m => m.Status != "Complete" && m.Module != SensitiveFiles.Module))
             gaps.Add(ModuleGap(m, names));
+        // Sensitive file scans only limit the verdict when a rule can make the device fail; otherwise their
+        // problems are notes for the administrator.
+        var sensitive = policy.SensitiveFiles;
+        var sensitiveRules = sensitive.Enabled
+            ? sensitive.Rules.ToDictionary(r => r.Id, StringComparer.Ordinal)
+            : new Dictionary<string, SensitiveFileRule>();
+        var sensitiveIssues = new List<string>();
+        if (sensitive.Enabled)
+        {
+            var entries = snapshot.Modules.Where(m => m.Module == SensitiveFiles.Module).ToArray();
+            if (entries.Length == 0)
+                sensitiveIssues.Add("敏感文件：终端尚未上报扫描结果，首次扫描可能仍在进行");
+            foreach (var entry in entries)
+            {
+                if (entry.Status != "Complete")
+                    sensitiveIssues.Add(ModuleGap(entry, names));
+                if (
+                    entry.CollectedAt < now.AddMinutes(-SensitiveFiles.FreshMinutes(policy))
+                    || entry.CollectedAt > now.AddMinutes(2)
+                )
+                    sensitiveIssues.Add(
+                        $"{Labels.Module(entry.Module)}（{Labels.Scope(entry.Scope, names)}）：数据已过期或时间异常"
+                    );
+            }
+        }
         var controlsMissing = new List<string>();
         foreach (var id in policy.RequiredControls)
         {
@@ -81,6 +106,11 @@ public static class ReportEngine
             gaps.Add($"发现策略中未定义的产品：{e.ProductId}，请核查规则");
         bool EvidenceFresh(Evidence e)
         {
+            if (e.Kind == EvidenceKind.SensitiveFile)
+            {
+                var at = e.CollectedAt ?? snapshot.CollectedAt;
+                return at >= now.AddMinutes(-SensitiveFiles.FreshMinutes(policy)) && at <= now.AddMinutes(2);
+            }
             var module = e.Kind switch
             {
                 EvidenceKind.Installation => "installed",
@@ -99,18 +129,31 @@ public static class ReportEngine
             return time >= now.AddMinutes(-minutes) && time <= now.AddMinutes(2);
         }
         foreach (var e in snapshot.Evidence.Where(e => e.Confirmed && !EvidenceFresh(e)))
-            gaps.Add($"{e.ProductName}：证据已过期或时间异常，需要重新检查");
+            if (e.Kind != EvidenceKind.SensitiveFile)
+                gaps.Add($"{e.ProductName}：证据已过期或时间异常，需要重新检查");
+            else if (sensitive.Enabled)
+                sensitiveIssues.Add($"{e.ProductName}：证据已过期或时间异常，需要重新检查");
+        bool sensitiveRequired =
+            SensitiveFiles.HasViolationRules(policy) || policy.RequiredModules.Contains(SensitiveFiles.Module);
+        if (sensitiveRequired)
+            gaps.AddRange(sensitiveIssues);
         var confirmed = snapshot
             .Evidence.Where(e =>
                 current
-                && EvidenceFresh(e)
-                && e.Confirmed
-                && e.Kind
-                    is EvidenceKind.Installation
-                        or EvidenceKind.Process
-                        or EvidenceKind.Extension
-                        or EvidenceKind.Proxy
-                && (e.Kind == EvidenceKind.Proxy || knownIds.Contains(e.ProductId))
+                    && EvidenceFresh(e)
+                    && e.Confirmed
+                    && e.Kind
+                        is EvidenceKind.Installation
+                            or EvidenceKind.Process
+                            or EvidenceKind.Extension
+                            or EvidenceKind.Proxy
+                    && (e.Kind == EvidenceKind.Proxy || knownIds.Contains(e.ProductId))
+                || current
+                    && e.Kind == EvidenceKind.SensitiveFile
+                    && e.Confirmed
+                    && EvidenceFresh(e)
+                    && sensitiveRules.TryGetValue(e.ProductId, out var rule)
+                    && rule.Action == "Violation"
             )
             .ToArray();
         var objects = confirmed.GroupBy(e => (e.ProductId, Scope: e.UserSid ?? "machine")).ToArray();
@@ -141,6 +184,9 @@ public static class ReportEngine
             confirmed.Length,
             protection,
             EvidenceSanitizer.Sanitize(snapshot)
-        );
+        )
+        {
+            SensitiveFileNotes = sensitiveRequired ? [] : sensitiveIssues.Distinct().ToArray(),
+        };
     }
 }

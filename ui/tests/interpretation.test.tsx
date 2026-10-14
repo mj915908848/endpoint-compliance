@@ -70,5 +70,61 @@ describe("user scope labels", () => {
     expect(scopeLabel("S-1-5-21-1-2-3-1001", users)).toBe("用户 kaiyu");
     expect(scopeLabel("S-1-5-21-1-2-3-1006", users)).toBe("用户 S-1-5-21-1-2-3-1006");
     expect(scopeLabel("machine", users)).toBe("整机");
+    expect(scopeLabel("drive:D", users)).toBe("D 盘");
+  });
+});
+
+describe("sensitive file report", () => {
+  it("lists names that matched and says an incomplete scan proves nothing", async () => {
+    const { ReportView, reportSections } = await import("../src/components");
+    expect(reportSections[3]).toBe("软件与敏感文件");
+    const at = "2026-10-14T05:52:04Z";
+    const report = {
+      verdict: "PASS" as const,
+      summary: "检查通过",
+      reasons: [],
+      coverageGaps: [],
+      sensitiveFileNotes: ["敏感文件：D 盘 命中过多，仅列出部分"],
+      violationCount: 0,
+      evidenceCount: 0,
+      protectionStatus: "审计模式",
+      snapshot: {
+        schemaVersion: 1,
+        deviceId: "d",
+        hostName: "TEST-PC",
+        platform: "Windows",
+        simulated: false,
+        collectedAt: at,
+        policyVersion: 2,
+        controls: [],
+        users: [{ sid: "S-1-5-21-1-2-3-1001", name: "kaiyu" }],
+        modules: [
+          {
+            module: "sensitive-files",
+            scope: "drive:D",
+            status: "Truncated",
+            collectedAt: at,
+            error: null,
+          },
+        ],
+        evidence: [
+          {
+            productId: "rule-1",
+            productName: "机密文件",
+            kind: "SensitiveFile",
+            objectKey: "D:\\资料\\机密名单.xlsx",
+            source: "drive:D",
+            summary: "文件名包含“机密”（规则：机密文件）",
+            userSid: "S-1-5-21-1-2-3-1001",
+            confirmed: true,
+          },
+        ],
+      },
+    };
+    render(<ReportView report={report} />);
+    expect(screen.getByText("D:\\资料\\机密名单.xlsx")).toBeTruthy();
+    expect(screen.getByText("敏感文件：D 盘 命中过多，仅列出部分")).toBeTruthy();
+    expect(screen.getAllByText("D 盘").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("用户 kaiyu").length).toBeGreaterThan(0);
   });
 });

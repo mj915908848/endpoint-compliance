@@ -513,6 +513,135 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Sensitive_files_alert_per_path_and_resolve_after_complete_rescan()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var invalid = await f.Publish(
+            new PolicyDocument
+            {
+                SensitiveFiles = new() { Enabled = true },
+                RequiredControls = [],
+            }
+        );
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Contains("至少一条规则", await invalid.Content.ReadAsStringAsync());
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (
+                await f.Publish(
+                    new PolicyDocument
+                    {
+                        RequiredControls = [],
+                        SensitiveFiles = new()
+                        {
+                            Enabled = true,
+                            Rules =
+                            [
+                                new("secret", "机密文件", ["机密"]),
+                                new("salary", "薪资表", ["工资"]) { Action = "Violation" },
+                            ],
+                        },
+                    }
+                )
+            ).StatusCode
+        );
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        const string user = "S-1-5-21-1-2-3-1001";
+        var snap = new ScanSnapshot
+        {
+            DeviceId = f.Device,
+            HostName = "host",
+            PolicyVersion = 2,
+            CollectedAt = f.Clock.Now,
+            Modules = new[] { "installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli" }
+                .Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now))
+                .Append(new ModuleResult(SensitiveFiles.Module, user, "Complete", f.Clock.Now))
+                .ToArray(),
+            Evidence =
+            [
+                new(
+                    "secret",
+                    "机密文件",
+                    EvidenceKind.SensitiveFile,
+                    @"C:\Users\a\机密.docx",
+                    user,
+                    "文件名包含“机密”（规则：机密文件）",
+                    user
+                )
+                {
+                    CollectedAt = f.Clock.Now,
+                },
+                new(
+                    "salary",
+                    "薪资表",
+                    EvidenceKind.SensitiveFile,
+                    @"C:\Users\a\工资.xlsx",
+                    user,
+                    "文件名包含“工资”（规则：薪资表）",
+                    user
+                )
+                {
+                    CollectedAt = f.Clock.Now,
+                },
+            ],
+        };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("s1", 1, f.Clock.Now, "Snapshot", "scan", snap)])
+        );
+        var alerts = (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!;
+        Assert.Equal(2, alerts.Length);
+        Assert.Equal("SensitiveFile", alerts.Single(a => a.ObjectKey.EndsWith("机密.docx")).Type);
+        var violation = alerts.Single(a => a.ObjectKey.EndsWith("工资.xlsx"));
+        Assert.Equal("Violation", violation.Type);
+        Assert.Contains("工资", violation.Summary);
+        Assert.All(alerts, a => Assert.Equal("Active", a.State));
+
+        // A truncated rescan without the files proves nothing; a complete one resolves both.
+        f.Clock.Now = f.Clock.Now.AddMinutes(5);
+        snap = snap with
+        {
+            CollectedAt = f.Clock.Now,
+            Evidence = [],
+            Modules = snap
+                .Modules.Select(m =>
+                    m with
+                    {
+                        CollectedAt = f.Clock.Now,
+                        Status = m.Module == SensitiveFiles.Module ? "Truncated" : m.Status,
+                    }
+                )
+                .ToArray(),
+        };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("s2", 2, f.Clock.Now, "Snapshot", "scan", snap)])
+        );
+        Assert.All(
+            (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!,
+            a => Assert.Equal("Active", a.State)
+        );
+        f.Clock.Now = f.Clock.Now.AddMinutes(5);
+        snap = snap with
+        {
+            CollectedAt = f.Clock.Now,
+            Modules = snap.Modules.Select(m => m with { CollectedAt = f.Clock.Now, Status = "Complete" }).ToArray(),
+        };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("s3", 3, f.Clock.Now, "Snapshot", "scan", snap)])
+        );
+        Assert.All(
+            (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!,
+            a => Assert.Equal("Resolved", a.State)
+        );
+    }
+
+    [Fact]
     public async Task Signed_auth_binds_method_path_body_and_survives_restart_replay_rejection()
     {
         await using var f = new Fixture();

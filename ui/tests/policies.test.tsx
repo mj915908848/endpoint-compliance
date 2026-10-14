@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { describeChanges } from "../src/components";
+import { defaultSensitiveFiles, describeChanges } from "../src/components";
 import { Policies } from "../src/pages/Policies";
 import { Providers } from "../src/providers";
 import type { Policy } from "../src/types";
@@ -129,6 +129,44 @@ describe("policy editor", () => {
   });
 });
 
+describe("sensitive file rules", () => {
+  it("adds a Chinese keyword rule that only alerts by default", async () => {
+    const posts = stub(base, base);
+    renderPage();
+    await userEvent.click(await screen.findByRole("switch", { name: "启用敏感文件扫描" }));
+    expect(screen.getByText("启用扫描需要至少一条规则。")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /添加规则/ }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("规则名称"), "机密文件");
+    await userEvent.type(within(dialog).getByLabelText("关键词"), "机密{enter}工资表{enter}");
+    await userEvent.click(within(dialog).getByRole("button", { name: "确定" }));
+    expect(await screen.findByText("敏感文件扫描（1）")).toBeTruthy();
+    expect(screen.getByText("只告警")).toBeTruthy();
+    const bar = screen.getByRole("region", { name: "未发布的修改" });
+    await userEvent.click(within(bar).getByRole("button", { name: "发布" }));
+    expect((await screen.findAllByText("新增敏感文件规则：机密文件")).length).toBeGreaterThan(0);
+    await userEvent.click(
+      within(screen.getAllByRole("dialog").at(-1)!).getByRole("button", { name: "发布" }),
+    );
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0].sensitiveFiles).toMatchObject({
+      enabled: true,
+      scanUserProfiles: true,
+      scanOtherFixedDrives: true,
+      rules: [
+        {
+          id: "rule-1",
+          name: "机密文件",
+          keywords: ["机密", "工资表"],
+          extensions: [],
+          matchFolders: true,
+          action: "Alert",
+        },
+      ],
+    });
+  });
+});
+
 describe("change summary", () => {
   it("names added, removed and edited rules in plain language", () => {
     const after: Policy = {
@@ -147,6 +185,36 @@ describe("change summary", () => {
       "修改产品：Cursor",
       "禁止访问的域名新增：kiro.dev",
       "必需检查项新增：端口与网络接口",
+    ]);
+  });
+
+  it("names sensitive file keyword and action changes", () => {
+    const rule = {
+      id: "rule-1",
+      name: "机密文件",
+      keywords: ["机密"],
+      extensions: [],
+      matchFolders: true,
+      action: "Alert" as const,
+    };
+    const before: Policy = {
+      ...base,
+      sensitiveFiles: { ...defaultSensitiveFiles, enabled: true, rules: [rule] },
+    };
+    const after: Policy = {
+      ...base,
+      sensitiveFiles: {
+        ...defaultSensitiveFiles,
+        enabled: true,
+        rules: [{ ...rule, keywords: ["机密", "绝密"], action: "Violation" }],
+      },
+    };
+    expect(describeChanges(before, after)).toEqual([
+      "修改敏感文件规则“机密文件”：新增关键词 绝密，处理方式改为判定违规",
+    ]);
+    expect(describeChanges(base, before)).toEqual([
+      "敏感文件扫描：启用",
+      "新增敏感文件规则：机密文件",
     ]);
   });
 });

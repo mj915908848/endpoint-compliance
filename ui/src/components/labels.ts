@@ -27,9 +27,15 @@ export const moduleLabel = lookup({
   ports: "端口与网络接口",
   users: "用户账户",
   cli: "命令行工具",
+  "sensitive-files": "敏感文件",
 });
 
-export const statusLabel = lookup({ Complete: "已完成", Error: "读取失败", Unknown: "未覆盖" });
+export const statusLabel = lookup({
+  Complete: "已完成",
+  Error: "读取失败",
+  Unknown: "未覆盖",
+  Truncated: "命中过多，仅列出部分",
+});
 
 export const evidenceLabel = lookup({
   Installation: "安装记录",
@@ -38,6 +44,7 @@ export const evidenceLabel = lookup({
   Proxy: "代理设置",
   Clue: "待核查线索",
   BlockedAttempt: "拦截记录",
+  SensitiveFile: "敏感文件",
 });
 
 export const alertTypeLabel = lookup({
@@ -46,6 +53,7 @@ export const alertTypeLabel = lookup({
   Health: "设备健康",
   Offline: "设备失联",
   Clue: "待核查线索",
+  SensitiveFile: "敏感文件",
 });
 
 export const auditActionLabel = lookup({
@@ -88,11 +96,13 @@ export const controlStateLabel = lookup({
   Error: "读取失败",
 });
 
-/** "整机", or "用户 kaiyu" when the snapshot names the account, else "用户 <SID>". */
+/** "整机", "D 盘" for a data drive, or "用户 kaiyu" when the snapshot names the account, else "用户 <SID>". */
 export const scopeLabel = (scope: string | null | undefined, users?: UserAccount[]) =>
   !scope || scope === "machine"
     ? "整机"
-    : `用户 ${users?.find((u) => u.sid === scope)?.name ?? scope}`;
+    : /^drive:[A-Z]$/.test(scope)
+      ? `${scope.slice(-1)} 盘`
+      : `用户 ${users?.find((u) => u.sid === scope)?.name ?? scope}`;
 
 /** Turns raw collector exceptions into an explanation an administrator can act on. */
 export function moduleErrorLabel(result: ModuleResult) {
