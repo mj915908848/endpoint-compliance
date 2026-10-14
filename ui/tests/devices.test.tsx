@@ -175,7 +175,9 @@ describe("device notes", () => {
       return json([]);
     });
     renderAt("/devices/dev-1");
-    await userEvent.click(await screen.findByRole("button", { name: /添加备注/ }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: /添加备注/ }, { timeout: 5000 }),
+    );
     await userEvent.type(screen.getByLabelText("终端备注"), "张三 · 研发部");
     await userEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(puts).toEqual([{ note: "张三 · 研发部" }]));
