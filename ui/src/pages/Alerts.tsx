@@ -31,11 +31,7 @@ export function Alerts({
       <Panel
         title="告警记录"
         actions={
-          <select
-            aria-label="告警筛选"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          >
+          <select aria-label="告警筛选" value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="active">持续问题</option>
             <option value="all">全部</option>
             <option value="recovered">技术已恢复</option>
@@ -46,18 +42,14 @@ export function Alerts({
           {(data.data ?? []).filter(
             (a) =>
               filter === "all" ||
-              (filter === "active"
-                ? a.state !== "Resolved"
-                : a.state === "Resolved"),
+              (filter === "active" ? a.state !== "Resolved" : a.state === "Resolved"),
           ).length ? (
             <div className="alert-list">
               {(data.data ?? [])
                 .filter(
                   (a) =>
                     filter === "all" ||
-                    (filter === "active"
-                      ? a.state !== "Resolved"
-                      : a.state === "Resolved"),
+                    (filter === "active" ? a.state !== "Resolved" : a.state === "Resolved"),
                 )
                 .map((a) => (
                   <AlertCard
@@ -65,14 +57,11 @@ export function Alerts({
                     alert={a}
                     canAck={role(session, "Operator")}
                     onAck={async (id) => {
-                      await request(
-                        `/api/alerts/${encodeURIComponent(id)}/ack`,
-                        {
-                          method: "POST",
-                          body: {},
-                          csrfToken: session.csrfToken,
-                        },
-                      );
+                      await request(`/api/alerts/${encodeURIComponent(id)}/ack`, {
+                        method: "POST",
+                        body: {},
+                        csrfToken: session.csrfToken,
+                      });
                     }}
                   />
                 ))}

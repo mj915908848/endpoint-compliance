@@ -10,14 +10,7 @@ import { Registration } from "./pages/Registration";
 import { SystemPage } from "./pages/System";
 import type { Session } from "./types";
 
-type Page =
-  | "overview"
-  | "devices"
-  | "alerts"
-  | "policies"
-  | "registration"
-  | "audit"
-  | "system";
+type Page = "overview" | "devices" | "alerts" | "policies" | "registration" | "audit" | "system";
 const pages: { id: Page; label: string; glyph: string; sub: string }[] = [
   { id: "overview", label: "总览", glyph: "◫", sub: "当前态势" },
   { id: "devices", label: "终端设备", glyph: "▤", sub: "设备与报告" },
@@ -134,9 +127,7 @@ export function App() {
           </div>
           <div className="top-actions">
             <span className="account">
-              <span className="avatar">
-                {session.username.slice(0, 1).toUpperCase()}
-              </span>
+              <span className="avatar">{session.username.slice(0, 1).toUpperCase()}</span>
               <span>
                 <strong>{session.username}</strong>
                 <small>{session.roles.join(" · ")}</small>
@@ -168,9 +159,7 @@ export function App() {
               initialDevice={selectedDevice}
             />
           )}{" "}
-          {page === "alerts" && (
-            <Alerts session={session} revision={revision} refresh={refresh} />
-          )}{" "}
+          {page === "alerts" && <Alerts session={session} revision={revision} refresh={refresh} />}{" "}
           {page === "policies" && (
             <Policies session={session} revision={revision} refresh={refresh} />
           )}{" "}
@@ -185,4 +174,3 @@ export function App() {
     </div>
   );
 }
-

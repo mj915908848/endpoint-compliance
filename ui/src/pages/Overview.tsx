@@ -1,6 +1,16 @@
 import { useMemo } from "react";
 import { useResource } from "../useResource";
-import { Badge, Empty, OverviewGuide, time, Panel, Fresh, Metric, PageHeading, DeviceTable } from "../components";
+import {
+  Badge,
+  Empty,
+  OverviewGuide,
+  time,
+  Panel,
+  Fresh,
+  Metric,
+  PageHeading,
+  DeviceTable,
+} from "../components";
 import type { Alert, DeviceSummary } from "../types";
 
 export function Overview({
@@ -17,15 +27,10 @@ export function Overview({
   const stats = useMemo(() => {
     const all = devices.data ?? [];
     return {
-      pass: all.filter(
-        (d) => d.onlineState === "Online" && d.currentVerdict === "PASS",
-      ).length,
-      fail: all.filter(
-        (d) => d.onlineState === "Online" && d.currentVerdict === "FAIL",
-      ).length,
-      unknown: all.filter(
-        (d) => d.onlineState === "Online" && d.currentVerdict === "UNKNOWN",
-      ).length,
+      pass: all.filter((d) => d.onlineState === "Online" && d.currentVerdict === "PASS").length,
+      fail: all.filter((d) => d.onlineState === "Online" && d.currentVerdict === "FAIL").length,
+      unknown: all.filter((d) => d.onlineState === "Online" && d.currentVerdict === "UNKNOWN")
+        .length,
       offline: all.filter((d) => d.onlineState !== "Online").length,
     };
   }, [devices.data]);
@@ -39,18 +44,8 @@ export function Overview({
       <Fresh error={devices.error} loading={devices.loading}>
         <OverviewGuide devices={devices.data ?? []} />
         <div className="metric-grid">
-          <Metric
-            label="当前范围内通过"
-            value={stats.pass}
-            tone="good"
-            caption="仅当前在线终端"
-          />
-          <Metric
-            label="当前不通过"
-            value={stats.fail}
-            tone="danger"
-            caption="确认违规证据"
-          />
+          <Metric label="当前范围内通过" value={stats.pass} tone="good" caption="仅当前在线终端" />
+          <Metric label="当前不通过" value={stats.fail} tone="danger" caption="确认违规证据" />
           <Metric
             label="无法判断"
             value={stats.unknown}
@@ -68,10 +63,7 @@ export function Overview({
           <Panel eyebrow="DEVICE FLEET" title="需要关注的终端">
             <DeviceTable
               devices={(devices.data ?? [])
-                .filter(
-                  (d) =>
-                    d.currentVerdict !== "PASS" || d.onlineState !== "Online",
-                )
+                .filter((d) => d.currentVerdict !== "PASS" || d.onlineState !== "Online")
                 .slice(0, 8)}
               onSelect={openDevice}
             />
@@ -87,9 +79,8 @@ export function Overview({
             }
           >
             <Fresh error={alerts.error} loading={alerts.loading}>
-              {(alerts.data ?? [])
-                .filter((a) => a.state !== "Resolved")
-                .slice(0, 5).length === 0 ? (
+              {(alerts.data ?? []).filter((a) => a.state !== "Resolved").slice(0, 5).length ===
+              0 ? (
                 <Empty title="当前没有持续告警" />
               ) : (
                 <div className="compact-list">
@@ -98,9 +89,7 @@ export function Overview({
                     .slice(0, 5)
                     .map((a) => (
                       <div className="compact-alert" key={a.id}>
-                        <Badge
-                          tone={a.type === "Violation" ? "danger" : "warning"}
-                        >
+                        <Badge tone={a.type === "Violation" ? "danger" : "warning"}>
                           {a.type === "Violation"
                             ? "确认违规"
                             : a.type === "BlockedAttempt"
@@ -111,8 +100,7 @@ export function Overview({
                         </Badge>
                         <strong>{a.summary}</strong>
                         <small>
-                          {a.hostName} · {time(a.lastSeen)}{" "}
-                          {a.acknowledged ? "· 已确认" : ""}
+                          {a.hostName} · {time(a.lastSeen)} {a.acknowledged ? "· 已确认" : ""}
                         </small>
                       </div>
                     ))}

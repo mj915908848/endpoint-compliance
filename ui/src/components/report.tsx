@@ -5,9 +5,7 @@ import type { Control, Report, Snapshot } from "../types";
 
 export function ControlList({ controls }: { controls: Control[] }) {
   return controls.length === 0 ? (
-    <Empty title="暂无执行层证据">
-      未上报已验证控制路径，不能推断阻断生效。
-    </Empty>
+    <Empty title="暂无执行层证据">未上报已验证控制路径，不能推断阻断生效。</Empty>
   ) : (
     <div className="stack">
       {controls.map((c, i) => (
@@ -19,9 +17,7 @@ export function ControlList({ controls }: { controls: Control[] }) {
             </small>
           </div>
           <div className="inline">
-            <Badge tone={c.verified ? "good" : "warning"}>
-              {c.verified ? "已验证" : "未验证"}
-            </Badge>
+            <Badge tone={c.verified ? "good" : "warning"}>{c.verified ? "已验证" : "未验证"}</Badge>
             <Badge>{c.state}</Badge>
             {c.rebootRequired && <Badge tone="warning">待重启</Badge>}
           </div>
@@ -54,7 +50,8 @@ export function SnapshotView({ snapshot: s }: { snapshot: Snapshot }) {
               <div className="module-chip" key={i}>
                 <strong>{moduleLabel(m.module)}</strong>
                 <small>
-                  {m.scope === "machine" ? "本机" : `用户 ${m.scope}`} · {statusLabel(m.status)} · {time(m.collectedAt)}
+                  {m.scope === "machine" ? "本机" : `用户 ${m.scope}`} · {statusLabel(m.status)} ·{" "}
+                  {time(m.collectedAt)}
                 </small>
                 {m.error && <span className="danger-text">{moduleErrorLabel(m)}</span>}
               </div>
@@ -109,9 +106,7 @@ export function ReportView({ report: r }: { report: Report }) {
     ["Installation", "Process", "Extension"].includes(e.kind),
   );
   const proxy = s.evidence.filter((e) => e.kind === "Proxy");
-  const clue = s.evidence.filter((e) =>
-    ["Clue", "BlockedAttempt"].includes(e.kind),
-  );
+  const clue = s.evidence.filter((e) => ["Clue", "BlockedAttempt"].includes(e.kind));
   const sections: ReactNode[] = [
     <dl className="facts">
       <dt>终端</dt>
@@ -131,10 +126,11 @@ export function ReportView({ report: r }: { report: Report }) {
         <strong>{r.summary}</strong>
       </div>
       <p>
-        违规对象 {r.violationCount} · 证据 {r.evidenceCount} · 防护{" "}
-        {r.protectionStatus}
+        违规对象 {r.violationCount} · 证据 {r.evidenceCount} · 防护 {r.protectionStatus}
       </p>
-      <p className="muted">同一产品的安装、进程和扩展可能产生多条证据；上面的“违规对象”已按产品与用户合并。</p>
+      <p className="muted">
+        同一产品的安装、进程和扩展可能产生多条证据；上面的“违规对象”已按产品与用户合并。
+      </p>
     </>,
     <List values={r.reasons} empty="无已报告的不通过原因" />,
     <EvidenceList values={installation} />,

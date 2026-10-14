@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { request } from "../api";
 import { useResource } from "../useResource";
-import { Badge, Empty, ErrorNotice, time, errorText, Panel, Fresh, PageHeading } from "../components";
+import {
+  Badge,
+  Empty,
+  ErrorNotice,
+  time,
+  errorText,
+  Panel,
+  Fresh,
+  PageHeading,
+} from "../components";
 import { role } from "../session";
 import type { Draft, Policy, Session, SignedPolicy } from "../types";
 
@@ -65,8 +74,7 @@ export function Policies({
     let document: Policy;
     try {
       document = JSON.parse(editor) as Policy;
-      if (!document || typeof document !== "object" || Array.isArray(document))
-        throw Error();
+      if (!document || typeof document !== "object" || Array.isArray(document)) throw Error();
     } catch {
       setError("策略 JSON 格式无效");
       return;
@@ -105,9 +113,7 @@ export function Policies({
             {policy ? (
               <>
                 <div className="policy-meta">
-                  <Badge
-                    tone={policy.mode === "Enforce" ? "warning" : "neutral"}
-                  >
+                  <Badge tone={policy.mode === "Enforce" ? "warning" : "neutral"}>
                     {policy.mode === "Audit" ? "审计模式" : "强制模式"}
                   </Badge>
                   <strong>v{policy.version}</strong>
@@ -175,20 +181,8 @@ export function Policies({
                         <small>复核：{d.approvedBy ?? "待审批"}</small>
                       </td>
                       <td>
-                        <Badge
-                          tone={
-                            d.published
-                              ? "good"
-                              : d.approvedBy
-                                ? "neutral"
-                                : "warning"
-                          }
-                        >
-                          {d.published
-                            ? "已发布"
-                            : d.approvedBy
-                              ? "已审批"
-                              : "待审批"}
+                        <Badge tone={d.published ? "good" : d.approvedBy ? "neutral" : "warning"}>
+                          {d.published ? "已发布" : d.approvedBy ? "已审批" : "待审批"}
                         </Badge>
                       </td>
                       <td>
@@ -210,23 +204,21 @@ export function Policies({
                                 审批
                               </button>
                             )}
-                          {!d.published &&
-                            d.approvedBy &&
-                            role(session, "Publisher") && (
-                              <button
-                                className="primary compact"
-                                disabled={busy}
-                                onClick={() =>
-                                  mutate(
-                                    `/api/policies/${encodeURIComponent(d.id)}/publish`,
-                                    {},
-                                    "发布请求已完成，请核对终端实际应用状态。",
-                                  )
-                                }
-                              >
-                                发布
-                              </button>
-                            )}
+                          {!d.published && d.approvedBy && role(session, "Publisher") && (
+                            <button
+                              className="primary compact"
+                              disabled={busy}
+                              onClick={() =>
+                                mutate(
+                                  `/api/policies/${encodeURIComponent(d.id)}/publish`,
+                                  {},
+                                  "发布请求已完成，请核对终端实际应用状态。",
+                                )
+                              }
+                            >
+                              发布
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -266,11 +258,7 @@ export function Policies({
             已审阅目标设备、业务影响、例外和执行能力
           </label>
           <div className="form-actions">
-            <button
-              className="primary"
-              disabled={busy || !reviewed || !editor}
-              onClick={save}
-            >
+            <button className="primary" disabled={busy || !reviewed || !editor} onClick={save}>
               {busy ? "正在提交…" : "保存草稿"}
             </button>
           </div>

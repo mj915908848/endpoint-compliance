@@ -9,9 +9,7 @@ export function DeviceTable({
   onSelect: (id: string) => void;
 }) {
   return devices.length === 0 ? (
-    <Empty title="暂无终端">
-      使用一次性登记码为终端登记，终端首次上报后会显示在这里。
-    </Empty>
+    <Empty title="暂无终端">使用一次性登记码为终端登记，终端首次上报后会显示在这里。</Empty>
   ) : (
     <div className="table-wrap">
       <table>
@@ -36,8 +34,7 @@ export function DeviceTable({
               </td>
               <td>
                 <strong>
-                  目标 v{d.targetPolicyVersion} · 已应用 v
-                  {d.appliedPolicyVersion}
+                  目标 v{d.targetPolicyVersion} · 已应用 v{d.appliedPolicyVersion}
                 </strong>
                 <small>{d.protectionStatus || "状态未知"}</small>
               </td>

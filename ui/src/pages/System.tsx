@@ -20,9 +20,7 @@ export function SystemPage({ revision }: { revision: number }) {
             <dl className="facts">
               <dt>运行模式</dt>
               <dd>
-                <Badge
-                  tone={status.data.mode === "Production" ? "good" : "warning"}
-                >
+                <Badge tone={status.data.mode === "Production" ? "good" : "warning"}>
                   {status.data.mode}
                 </Badge>
               </dd>

@@ -6,9 +6,7 @@ import type { Session } from "../types";
 
 export function Registration({ session }: { session: Session }) {
   const [minutes, setMinutes] = useState(15),
-    [result, setResult] = useState<{ code: string; expiresAt: string } | null>(
-      null,
-    ),
+    [result, setResult] = useState<{ code: string; expiresAt: string } | null>(null),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
   async function create() {
@@ -69,9 +67,7 @@ export function Registration({ session }: { session: Session }) {
             )}
           </>
         ) : (
-          <div className="callout">
-            当前账号无登记权限。需要 Operator 角色。
-          </div>
+          <div className="callout">当前账号无登记权限。需要 Operator 角色。</div>
         )}
       </Panel>
     </>

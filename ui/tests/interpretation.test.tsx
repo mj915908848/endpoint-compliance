@@ -35,9 +35,27 @@ describe("plain-language result explanation", () => {
 
   it("explains coverage gaps without treating them as new violations", () => {
     const modules: ModuleResult[] = [
-      { module: "installed", scope: "machine", status: "Complete", collectedAt: "2026-10-14T05:52:04Z", error: null },
-      { module: "extensions", scope: "user-1", status: "Error", collectedAt: "2026-10-14T05:52:04Z", error: "JsonReaderException; inspection incomplete" },
-      { module: "proxy", scope: "user-2", status: "Unknown", collectedAt: "2026-10-14T05:52:04Z", error: "User hive not loaded" },
+      {
+        module: "installed",
+        scope: "machine",
+        status: "Complete",
+        collectedAt: "2026-10-14T05:52:04Z",
+        error: null,
+      },
+      {
+        module: "extensions",
+        scope: "user-1",
+        status: "Error",
+        collectedAt: "2026-10-14T05:52:04Z",
+        error: "JsonReaderException; inspection incomplete",
+      },
+      {
+        module: "proxy",
+        scope: "user-2",
+        status: "Unknown",
+        collectedAt: "2026-10-14T05:52:04Z",
+        error: "User hive not loaded",
+      },
     ];
     render(<CoverageGuide modules={modules} />);
     expect(screen.getByText(/1 项读取失败，1 项未能覆盖/)).toBeTruthy();

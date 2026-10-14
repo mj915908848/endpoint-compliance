@@ -1,7 +1,22 @@
 import { useState } from "react";
 import { downloadJson, downloadReport, request } from "../api";
 import { useResource } from "../useResource";
-import { DeviceGuide, DeviceState, Empty, ErrorNotice, time, verdictLabels, errorText, Panel, Fresh, Metric, PageHeading, ControlList, SnapshotView, ReportView } from "../components";
+import {
+  DeviceGuide,
+  DeviceState,
+  Empty,
+  ErrorNotice,
+  time,
+  verdictLabels,
+  errorText,
+  Panel,
+  Fresh,
+  Metric,
+  PageHeading,
+  ControlList,
+  SnapshotView,
+  ReportView,
+} from "../components";
 import { role } from "../session";
 import type { DeviceDetail, Report, Session } from "../types";
 
@@ -65,11 +80,7 @@ export function DeviceDetailPage({
         action={
           <div className="inline">
             {role(session, "Operator") && (
-              <button
-                className="secondary"
-                disabled={busy || !d}
-                onClick={scan}
-              >
+              <button className="secondary" disabled={busy || !d} onClick={scan}>
                 {busy ? "正在提交…" : "请求重新检查"}
               </button>
             )}
@@ -87,11 +98,7 @@ export function DeviceDetailPage({
             <div className="metric-grid">
               <Metric
                 label="当前检查结论"
-                value={
-                  d.onlineState === "Online"
-                    ? verdictLabels[d.currentVerdict]
-                    : "无法判断"
-                }
+                value={d.onlineState === "Online" ? verdictLabels[d.currentVerdict] : "无法判断"}
                 tone={
                   d.onlineState === "Online" && d.currentVerdict === "PASS"
                     ? "good"
@@ -124,8 +131,7 @@ export function DeviceDetailPage({
             {d.simulated && (
               <div className="callout warning">
                 <strong>模拟终端</strong>
-                此设备的采集与执行证据来自模拟环境，不能作为 Windows
-                实机防护验收。
+                此设备的采集与执行证据来自模拟环境，不能作为 Windows 实机防护验收。
               </div>
             )}
             <div className="detail-grid">
@@ -174,22 +180,14 @@ export function DeviceDetailPage({
                   >
                     下载 JSON
                   </button>
-                  <button
-                    className="secondary compact"
-                    disabled={!report.data}
-                    onClick={markdown}
-                  >
+                  <button className="secondary compact" disabled={!report.data} onClick={markdown}>
                     下载 Markdown
                   </button>
                 </div>
               }
             >
               <Fresh error={report.error} loading={report.loading}>
-                {report.data ? (
-                  <ReportView report={report.data} />
-                ) : (
-                  <Empty title="尚无报告" />
-                )}
+                {report.data ? <ReportView report={report.data} /> : <Empty title="尚无报告" />}
               </Fresh>
             </Panel>
           </>

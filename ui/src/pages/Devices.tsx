@@ -22,9 +22,7 @@ export function Devices({
   const visible = (data.data ?? []).filter(
     (d) =>
       (filter === "all" ||
-        (filter === "offline"
-          ? d.onlineState !== "Online"
-          : d.currentVerdict === filter)) &&
+        (filter === "offline" ? d.onlineState !== "Online" : d.currentVerdict === filter)) &&
       `${d.hostName} ${d.id}`.toLowerCase().includes(query.toLowerCase()),
   );
   if (id)

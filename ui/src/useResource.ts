@@ -28,8 +28,7 @@ export function useResource<T>(
       const deadline = window.setTimeout(() => controller.abort(), 12_000);
       request<T>(path!, { signal: controller.signal })
         .then((data) => {
-          if (active && version === generation)
-            setState({ data, error: null, loading: false });
+          if (active && version === generation) setState({ data, error: null, loading: false });
         })
         .catch((error) => {
           if (active && version === generation)
@@ -45,7 +44,9 @@ export function useResource<T>(
         })
         .finally(() => window.clearTimeout(deadline));
     }
-    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
     const onFocus = () => load();
     load();
     const poll = window.setInterval(load, 30_000);

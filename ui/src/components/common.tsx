@@ -6,27 +6,15 @@ export const verdictLabels: Record<Verdict, string> = {
   UNKNOWN: "无法判断",
 };
 export const time = (value: string | null | undefined) =>
-  value
-    ? new Date(value).toLocaleString("zh-CN", { hour12: false })
-    : "尚无记录";
+  value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "尚无记录";
 export const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请重试";
-export function Badge({
-  children,
-  tone = "neutral",
-}: {
-  children: ReactNode;
-  tone?: string;
-}) {
+export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: string }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
 export function VerdictBadge({ verdict }: { verdict: Verdict }) {
   return (
-    <Badge
-      tone={
-        verdict === "PASS" ? "good" : verdict === "FAIL" ? "danger" : "warning"
-      }
-    >
+    <Badge tone={verdict === "PASS" ? "good" : verdict === "FAIL" ? "danger" : "warning"}>
       {verdictLabels[verdict] ?? "无法判断"}
     </Badge>
   );
@@ -39,13 +27,7 @@ export function ErrorNotice({ error }: { error: string | null }) {
     </div>
   ) : null;
 }
-export function Empty({
-  title = "尚无记录",
-  children,
-}: {
-  title?: string;
-  children?: ReactNode;
-}) {
+export function Empty({ title = "尚无记录", children }: { title?: string; children?: ReactNode }) {
   return (
     <div className="empty">
       <span className="empty-symbol">◇</span>
@@ -81,8 +63,7 @@ export function DeviceState({ device }: { device: DeviceSummary }) {
       </div>
       {offline && device.lastVerdict && (
         <small>
-          上次结论：{verdictLabels[device.lastVerdict]} ·{" "}
-          {time(device.lastScan)}（历史记录）
+          上次结论：{verdictLabels[device.lastVerdict]} · {time(device.lastScan)}（历史记录）
         </small>
       )}
     </div>
@@ -112,7 +93,8 @@ export function OverviewGuide({ devices }: { devices: DeviceSummary[] }) {
           {offline.length > 0 && (
             <p>
               另有 {offline.length} 台终端失联或疑似失联，当前无法判断。
-              {lastFailed.length > 0 && `其中 ${lastFailed.length} 台上次检查不通过，违规记录仍在。`}
+              {lastFailed.length > 0 &&
+                `其中 ${lastFailed.length} 台上次检查不通过，违规记录仍在。`}
               若使用一次性试用包，请在待检电脑重新运行“本机采集试用.bat”，再刷新页面。
             </p>
           )}
@@ -128,7 +110,9 @@ export function DeviceGuide({ device }: { device: DeviceSummary }) {
         <strong>当前不能判定</strong>
         <p>
           这台电脑没有新心跳。
-          {device.lastVerdict === "FAIL" ? "上次检查不通过，已发现的违规记录仍需处理。" : "上次检查结果仅供参考。"}
+          {device.lastVerdict === "FAIL"
+            ? "上次检查不通过，已发现的违规记录仍需处理。"
+            : "上次检查结果仅供参考。"}
           若使用一次性试用包，请在这台电脑重新运行“本机采集试用.bat”，再刷新页面。
         </p>
       </div>
@@ -137,13 +121,22 @@ export function DeviceGuide({ device }: { device: DeviceSummary }) {
     return (
       <div className="result-guide danger" aria-label="设备结果说明">
         <strong>本次检查不通过：发现 {device.violationCount} 个违规对象</strong>
-        <p>客户规则是“安装也不允许”。请查看下方证据，移除禁用软件、扩展或代理配置后重新采集。其他项目读取失败不会抵消已确认的违规。</p>
+        <p>
+          客户规则是“安装也不允许”。请查看下方证据，移除禁用软件、扩展或代理配置后重新采集。其他项目读取失败不会抵消已确认的违规。
+        </p>
       </div>
     );
   return (
-    <div className={`result-guide ${device.currentVerdict === "UNKNOWN" ? "warning" : "good"}`} aria-label="设备结果说明">
+    <div
+      className={`result-guide ${device.currentVerdict === "UNKNOWN" ? "warning" : "good"}`}
+      aria-label="设备结果说明"
+    >
       <strong>{device.currentVerdict === "UNKNOWN" ? "当前无法判断" : "当前范围内通过"}</strong>
-      <p>{device.currentVerdict === "UNKNOWN" ? "没有足够完整的新鲜检查证据。请查看下方未覆盖项目，处理后重新采集。" : "本次已声明的检查范围内未发现禁用项；仍请查看覆盖范围和防护状态。"}</p>
+      <p>
+        {device.currentVerdict === "UNKNOWN"
+          ? "没有足够完整的新鲜检查证据。请查看下方未覆盖项目，处理后重新采集。"
+          : "本次已声明的检查范围内未发现禁用项；仍请查看覆盖范围和防护状态。"}
+      </p>
     </div>
   );
 }
@@ -152,9 +145,16 @@ export function CoverageGuide({ modules }: { modules: ModuleResult[] }) {
   const unknown = modules.filter((m) => m.status !== "Complete" && m.status !== "Error").length;
   const complete = modules.length - errors - unknown;
   return (
-    <div className={`result-guide ${errors || unknown ? "warning" : "good"}`} aria-label="检查覆盖说明">
-      <strong>检查覆盖：{complete} 项完成，{errors} 项读取失败，{unknown} 项未能覆盖</strong>
-      <p>读取失败或账户配置未加载属于检查缺口，不代表新发现违规；已确认的违规仍需处理。处理完违规后若缺口仍在，结果可能继续显示“无法判断”。</p>
+    <div
+      className={`result-guide ${errors || unknown ? "warning" : "good"}`}
+      aria-label="检查覆盖说明"
+    >
+      <strong>
+        检查覆盖：{complete} 项完成，{errors} 项读取失败，{unknown} 项未能覆盖
+      </strong>
+      <p>
+        读取失败或账户配置未加载属于检查缺口，不代表新发现违规；已确认的违规仍需处理。处理完违规后若缺口仍在，结果可能继续显示“无法判断”。
+      </p>
     </div>
   );
 }
@@ -200,15 +200,7 @@ export function AlertCard({
       </div>
       <div className="alert-main">
         <div className="inline">
-          <Badge
-            tone={
-              recovered
-                ? "neutral"
-                : alert.type === "Violation"
-                  ? "danger"
-                  : "warning"
-            }
-          >
+          <Badge tone={recovered ? "neutral" : alert.type === "Violation" ? "danger" : "warning"}>
             {type[alert.type] || alert.type}
           </Badge>
           <Badge tone={recovered ? "neutral" : "warning"}>
@@ -223,12 +215,9 @@ export function AlertCard({
           {alert.objectKey}
         </p>
         <small>
-          首次 {time(alert.firstSeen)} · 最近 {time(alert.lastSeen)} · 事件序号{" "}
-          {alert.lastSequence}
+          首次 {time(alert.firstSeen)} · 最近 {time(alert.lastSeen)} · 事件序号 {alert.lastSequence}
         </small>
-        <p className="muted small">
-          确认不会改变设备检查结论；技术恢复需要终端的新采集证据。
-        </p>
+        <p className="muted small">确认不会改变设备检查结论；技术恢复需要终端的新采集证据。</p>
         <ErrorNotice error={error} />
       </div>
       {canAck && !acked && (
@@ -277,9 +266,7 @@ export function Login({
           <br />
           采集、策略、通知与审计，集中呈现。
         </p>
-        <div className="login-note">
-          仅连接部署的内网管理端 · 无公网资源依赖
-        </div>
+        <div className="login-note">仅连接部署的内网管理端 · 无公网资源依赖</div>
       </section>
       <section className="login-form">
         <div>

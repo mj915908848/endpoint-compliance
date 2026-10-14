@@ -35,13 +35,7 @@ export function Fresh({
   loading: boolean;
   children: ReactNode;
 }) {
-  return error ? (
-    <ErrorNotice error={error} />
-  ) : loading ? (
-    <Loading />
-  ) : (
-    <>{children}</>
-  );
+  return error ? <ErrorNotice error={error} /> : loading ? <Loading /> : <>{children}</>;
 }
 
 export function Metric({
