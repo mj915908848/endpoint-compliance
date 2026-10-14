@@ -1,9 +1,16 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([string]$PackageRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)), [int]$Port = 5080)
+param([string]$PackageRoot, [int]$Port = 5080)
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'This launch script requires Windows. For cross-platform development follow README.' }
 if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Port must be 1024..65535' }
+if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
+    $scriptFile = $MyInvocation.MyCommand.Path
+    if ([string]::IsNullOrWhiteSpace($scriptFile)) { throw 'Cannot determine demo script location; provide -PackageRoot.' }
+    $scriptDirectory = Split-Path -Parent $scriptFile
+    $PackageRoot = Split-Path -Parent (Split-Path -Parent $scriptDirectory)
+}
+$PackageRoot = (Resolve-Path -LiteralPath $PackageRoot -ErrorAction Stop).ProviderPath
 $exe = Join-Path $PackageRoot 'server-windows-x64\Compliance.Server.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Self-contained server executable not found; use the Windows trial package.' }
 $state = Join-Path $env:LOCALAPPDATA 'CustomerComplianceDemo'
@@ -40,8 +47,27 @@ try {
     Write-Host "Local demo URL: $env:ASPNETCORE_URLS"
     Write-Host "Generated login details: $(Join-Path $state 'demo-login.txt')"
     Write-Host 'Audit trial only. No automatic application or website blocking. Ctrl+C to stop.'
-    Push-Location (Split-Path -Parent $exe)
-    try { & $exe } finally { Pop-Location }
-    if ($LASTEXITCODE -ne 0) { throw "Server exited with code $LASTEXITCODE" }
+    $server = Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -NoNewWindow -PassThru
+    try {
+        $ready = $false
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while ([DateTime]::UtcNow -lt $deadline) {
+            if ($server.HasExited) { throw "Demo server exited with code $($server.ExitCode)" }
+            try {
+                $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/api/status" -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200) { $ready = $true; break }
+            } catch { }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $ready) { throw 'Demo server did not become ready within 30 seconds.' }
+        try { Start-Process "http://127.0.0.1:$Port/" }
+        catch { Write-Warning "Browser did not open automatically. Visit http://127.0.0.1:$Port/ manually." }
+        $server.WaitForExit()
+        if ($server.ExitCode -ne 0) { throw "Demo server exited with code $($server.ExitCode)" }
+    }
+    finally {
+        if (-not $server.HasExited) { $server.Kill(); $server.WaitForExit() }
+        $server.Dispose()
+    }
 }
 finally { foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name,$prior[$name],'Process') } }

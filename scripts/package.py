@@ -67,10 +67,14 @@ def main() -> None:
             add_file(ROOT / "deploy" / "windows" / name, stage / "deploy" / "windows" / name)
         for name in ("Start-Demo.ps1", "README.md"):
             add_file(ROOT / "deploy" / "server" / name, stage / "deploy" / "server" / name)
+        launcher = (ROOT / "deploy" / "server" / "启动演示.bat").read_bytes().replace(b"\r\n", b"\n")
+        (stage / "启动演示.bat").write_bytes(launcher.replace(b"\n", b"\r\n"))
         for name in ("README.md", "docs/capabilities.md", "docs/server-api.md"):
             add_file(ROOT / name, stage / name)
         add_file(OUTPUT / "客户终端合规管控-0.1.0-试用说明.md", stage / "试用说明.md")
-        make_zip(stage, OUTPUT / f"客户终端合规管控-{VERSION}-Windows试用包.zip")
+        original = OUTPUT / f"客户终端合规管控-{VERSION}-Windows试用包.zip"
+        make_zip(stage, original)
+        shutil.copy2(original, OUTPUT / f"客户终端合规管控-{VERSION}-Windows一键试用包.zip")
 
         stage = Path(temporary) / "linux"
         add_tree(PUBLISHED / "server-linux-x64", stage / "server-linux-x64")
