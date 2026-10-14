@@ -144,17 +144,21 @@ public sealed partial class WindowsCollector
                 modules.Add(new(collector.Module, scope.Scope, "Unknown", DateTimeOffset.UtcNow, scope.Unavailable));
                 continue;
             }
-            // Each scope collects into its own list so a timed-out run cannot add evidence later.
+            // Each scope collects into its own list so a timed-out run, which keeps going in the
+            // background, cannot add evidence later. A run that failed has stopped, so whatever it
+            // found before the failure is kept: an unreadable file must not hide a confirmed finding.
             var found = new List<Evidence>();
+            var run = Task.Run(() => collector.CollectAsync(context, scope, found, ct), ct);
             try
             {
-                await Task.Run(() => collector.CollectAsync(context, scope, found, ct), ct)
-                    .WaitAsync(collector.Timeout, ct);
+                await run.WaitAsync(collector.Timeout, ct);
                 evidence.AddRange(found);
                 modules.Add(new(collector.Module, scope.Scope, "Complete", DateTimeOffset.UtcNow));
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
+                if (run.IsCompleted)
+                    evidence.AddRange(found);
                 modules.Add(new(collector.Module, scope.Scope, "Error", DateTimeOffset.UtcNow, Incomplete(ex)));
             }
         }
@@ -173,8 +177,15 @@ public sealed partial class WindowsCollector
         };
     }
 
-    private static string Incomplete(Exception ex) =>
-        ex is TimeoutException ? "检查超时，本项检查不完整" : ex.GetType().Name + "，本项检查不完整";
+    private static string Incomplete(Exception ex)
+    {
+        if (ex is TimeoutException)
+            return "检查超时，本项检查不完整";
+        var detail = EvidenceSanitizer.Clean(ex.Message);
+        if (detail.Length > 160)
+            detail = detail[..160] + "…";
+        return $"{ex.GetType().Name}：{detail}；本项检查不完整";
+    }
 
     private static Profile[] Profiles()
     {

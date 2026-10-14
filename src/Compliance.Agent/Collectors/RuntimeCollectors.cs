@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Runtime.Versioning;
-using System.Text.RegularExpressions;
 using Compliance.Core;
 
 namespace Compliance.Agent;
@@ -62,7 +61,7 @@ internal sealed class ProcessesCollector : ICollector
 
 /// <summary>Common local proxy ports and tunnel adapters. These are clues only and never confirm a violation.</summary>
 [SupportedOSPlatform("windows")]
-internal sealed partial class PortsCollector : ICollector
+internal sealed class PortsCollector : ICollector
 {
     private static readonly int[] ProxyPorts = [1080, 7890, 7897, 8080];
 
@@ -94,7 +93,13 @@ internal sealed partial class PortsCollector : ICollector
         foreach (
             var nic in NetworkInterface
                 .GetAllNetworkInterfaces()
-                .Where(n => n.NetworkInterfaceType == NetworkInterfaceType.Tunnel || TunnelName().IsMatch(n.Name))
+                .Where(n =>
+                    WindowsCollector.IsTunnelClue(
+                        n.Name,
+                        n.Description,
+                        n.NetworkInterfaceType == NetworkInterfaceType.Tunnel
+                    )
+                )
         )
             evidence.Add(
                 new(
@@ -103,14 +108,11 @@ internal sealed partial class PortsCollector : ICollector
                     EvidenceKind.Clue,
                     "nic:" + nic.Id,
                     "网络接口",
-                    "发现隧道类网卡，归属和用途未核实",
+                    $"发现隧道类网卡“{nic.Name}”（{nic.Description}），归属和用途未核实",
                     null,
                     false
                 )
             );
         return Task.CompletedTask;
     }
-
-    [GeneratedRegex("(?i)(tun|tap|wintun)")]
-    private static partial Regex TunnelName();
 }

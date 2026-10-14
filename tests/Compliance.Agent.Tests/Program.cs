@@ -373,19 +373,50 @@ await Check(
     }
 );
 await Check(
-    "Store package evidence remains scoped to the owning user",
+    "Store package evidence remains scoped to the owning user and ignores replaced versions",
     async () =>
     {
         var policy = PolicySeed.Create();
+        string[] listed =
+        [
+            "Microsoft.Copilot_1.0.0.0_x64__8wekyb3d8bbwe",
+            "Microsoft.Copilot_1.1.0.0_x64__8wekyb3d8bbwe",
+            "Microsoft.Copilot_1.2.0.0_x64__8wekyb3d8bbwe",
+            "Microsoft.WindowsCalculator_11.0_x64__8wekyb3d8bbwe",
+        ];
         var evidence = WindowsCollector.ParseAppxPackages(
-            ["Microsoft.Copilot_1.0.0.0_x64__8wekyb3d8bbwe", "Microsoft.WindowsCalculator_11.0_x64__8wekyb3d8bbwe"],
+            listed,
             "S-1-5-21-1-2-3-1001",
-            policy
+            policy,
+            full => !full.Contains("_1.0.0.0_")
         );
         Assert(
             evidence.Length == 1 && evidence[0].UserSid == "S-1-5-21-1-2-3-1001",
-            "Appx violation was broadcast as machine scope"
+            "Appx versions were not merged or scope was lost"
         );
+        Assert(
+            evidence[0].Summary.Contains("1.1.0.0") && !evidence[0].Summary.Contains("1.0.0.0"),
+            "a replaced package version was reported as installed"
+        );
+        var removed = WindowsCollector.ParseAppxPackages(listed, "S-1-5-21-1-2-3-1001", policy, _ => false);
+        Assert(removed.Length == 0, "leftover registry entries for a removed app produced a violation");
+        await Task.CompletedTask;
+    }
+);
+await Check(
+    "Windows built-in tunnels are not reported as proxy clues",
+    async () =>
+    {
+        Assert(!WindowsCollector.IsTunnelClue("Teredo Tunneling Pseudo-Interface", "Teredo", true), "Teredo reported");
+        Assert(!WindowsCollector.IsTunnelClue("6to4 Adapter", "Microsoft 6to4 Adapter", true), "6to4 reported");
+        Assert(
+            !WindowsCollector.IsTunnelClue("iphttpsinterface", "IP-HTTPS Platform Interface", true),
+            "IP-HTTPS reported"
+        );
+        Assert(WindowsCollector.IsTunnelClue("Mihomo", "Meta Tunnel", false), "Mihomo TUN missed");
+        Assert(WindowsCollector.IsTunnelClue("wg0", "WireGuard Tunnel", false), "WireGuard missed");
+        Assert(WindowsCollector.IsTunnelClue("Meta", "Meta Tunnel", false), "Clash Meta TUN missed");
+        Assert(!WindowsCollector.IsTunnelClue("以太网", "Intel(R) Ethernet Connection", false), "Ethernet reported");
         await Task.CompletedTask;
     }
 );

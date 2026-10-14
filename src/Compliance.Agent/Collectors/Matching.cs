@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Compliance.Core;
 
 namespace Compliance.Agent;
@@ -278,35 +279,46 @@ public sealed partial class WindowsCollector
 
     /// <summary>
     /// Matches per-user Store packages. <paramref name="packageFullNames"/> come from
-    /// HKLM\...\Appx\AppxAllUserStore\&lt;SID&gt;; a full name is "Name_Version_Arch_Resource_Publisher".
+    /// HKLM\...\Appx\AppxAllUserStore\&lt;SID&gt;, where a full name is "Name_Version_Arch_Resource_Publisher".
+    /// That list keeps entries for versions an update has replaced, so only names for which
+    /// <paramref name="isInstalled"/> holds count, and all versions of one app become a single record.
     /// </summary>
     public static Evidence[] ParseAppxPackages(
         IEnumerable<string> packageFullNames,
         string userSid,
-        PolicyDocument policy
+        PolicyDocument policy,
+        Func<string, bool> isInstalled
     )
     {
         if (string.IsNullOrWhiteSpace(userSid))
             throw new ArgumentException("Store package must have an owning user SID");
         var found = new List<Evidence>();
-        foreach (var full in packageFullNames)
+        foreach (
+            var app in packageFullNames
+                .Select(full => (Full: full, Parts: full.Split('_')))
+                .Where(p => p.Parts.Length >= 2 && p.Parts[0].Length > 0)
+                .GroupBy(p => p.Parts[0], StringComparer.OrdinalIgnoreCase)
+        )
         {
-            var name = full.Split('_', 2)[0];
-            if (name.Length == 0)
-                continue;
-            foreach (
-                var rule in policy.Products.Where(r =>
-                    r.PackageIds.Any(id => string.Equals(id, name, StringComparison.OrdinalIgnoreCase))
+            var rules = policy
+                .Products.Where(r =>
+                    r.PackageIds.Any(id => string.Equals(id, app.Key, StringComparison.OrdinalIgnoreCase))
                 )
-            )
+                .ToArray();
+            if (rules.Length == 0)
+                continue;
+            var versions = app.Where(p => isInstalled(p.Full)).Select(p => p.Parts[1]).Distinct().ToArray();
+            if (versions.Length == 0)
+                continue;
+            foreach (var rule in rules)
                 found.Add(
                     new(
                         rule.Id,
                         rule.Name,
                         EvidenceKind.Installation,
-                        "appx:" + userSid + ":" + name,
+                        "appx:" + userSid + ":" + app.Key,
                         "应用商店应用（按用户）",
-                        $"应用包 {name}（{full}）",
+                        $"应用包 {app.Key}，版本 {string.Join("、", versions)}",
                         userSid
                     )
                 );
@@ -347,5 +359,17 @@ public sealed partial class WindowsCollector
             (flags & AutoConfigFlag) != 0 && pac.Length > 0,
             (flags & AutoDetectFlag) != 0
         );
+    }
+
+    /// <summary>
+    /// Tunnel adapters worth a clue: TUN/TAP-style virtual adapters used by VPN and proxy tools. Windows'
+    /// own IPv6 transition and HTTPS tunnels (Teredo, 6to4, ISATAP, IP-HTTPS) are always present and skipped.
+    /// </summary>
+    public static bool IsTunnelClue(string name, string description, bool tunnelType)
+    {
+        var text = name + " " + description;
+        if (Regex.IsMatch(text, @"(?i)teredo|6to4|isatap|ip-https|kernel debug|loopback"))
+            return false;
+        return tunnelType || Regex.IsMatch(text, @"(?i)tun|tap|wireguard|mihomo|clash");
     }
 }

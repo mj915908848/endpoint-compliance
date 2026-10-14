@@ -140,6 +140,9 @@ internal sealed class ExtensionsCollector : ICollector
         var extensions = WindowsCollector.ScanKnownExtensionRoots(p.Path, p.Sid, context.Policy);
         evidence.AddRange(extensions.Evidence);
         var jetBrains = Path.Combine(p.Path, "AppData", "Roaming", "JetBrains");
+        // One unreadable plugin must not stop the rest from being checked; failures are counted and
+        // reported once at the end so the module still shows as incomplete.
+        var failed = new List<string>();
         if (WindowsCollector.DirectoryPresent(jetBrains))
         {
             var options = new EnumerationOptions
@@ -151,24 +154,45 @@ internal sealed class ExtensionsCollector : ICollector
             foreach (var manifest in Directory.EnumerateFiles(jetBrains, "plugin.xml", options))
             {
                 ct.ThrowIfCancellationRequested();
-                using var stream = File.OpenRead(manifest);
-                AddJetBrainsPlugin(stream, p.Sid, context.Policy, evidence);
+                try
+                {
+                    using var stream = File.OpenRead(manifest);
+                    AddJetBrainsPlugin(stream, p.Sid, context.Policy, evidence);
+                }
+                catch (Exception ex)
+                    when (ex is IOException or InvalidDataException or UnauthorizedAccessException or XmlException)
+                {
+                    failed.Add(Path.GetFileName(Path.GetDirectoryName(manifest)) ?? "plugin.xml");
+                }
             }
             foreach (var jar in Directory.EnumerateFiles(jetBrains, "*.jar", options))
             {
                 ct.ThrowIfCancellationRequested();
-                using var archive = ZipFile.OpenRead(jar);
-                var entry = archive.GetEntry("META-INF/plugin.xml");
-                if (entry is null)
-                    continue;
-                if (entry.Length > 1024 * 1024)
-                    throw new InvalidDataException("JetBrains plugin manifest too large");
-                using var stream = entry.Open();
-                AddJetBrainsPlugin(stream, p.Sid, context.Policy, evidence);
+                try
+                {
+                    using var archive = ZipFile.OpenRead(jar);
+                    var entry = archive.GetEntry("META-INF/plugin.xml");
+                    if (entry is null)
+                        continue;
+                    if (entry.Length > 1024 * 1024)
+                        throw new InvalidDataException("JetBrains plugin manifest too large");
+                    using var stream = entry.Open();
+                    AddJetBrainsPlugin(stream, p.Sid, context.Policy, evidence);
+                }
+                catch (Exception ex)
+                    when (ex is IOException or InvalidDataException or UnauthorizedAccessException or XmlException)
+                {
+                    failed.Add(Path.GetFileName(jar));
+                }
             }
         }
-        if (extensions.Errors > 0)
-            throw new InvalidDataException($"{extensions.Errors} IDE extension manifest(s) unreadable");
+        var total = extensions.Errors + failed.Count;
+        if (total > 0)
+            throw new InvalidDataException(
+                $"{total} 个扩展清单无法读取"
+                    + (extensions.Errors > 0 ? $"（VS Code 类编辑器 {extensions.Errors} 个）" : "")
+                    + (failed.Count > 0 ? "，JetBrains 插件：" + string.Join("、", failed.Take(3)) : "")
+            );
         return Task.CompletedTask;
     }
 
@@ -306,6 +330,8 @@ internal sealed class CliCollector : ICollector
 internal sealed class AppxCollector : ICollector
 {
     private const string Store = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore";
+    private const string Repository =
+        @"SOFTWARE\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\PackageRepository\Packages";
 
     public string Module => "appx";
     public bool Inventory => true;
@@ -323,7 +349,20 @@ internal sealed class AppxCollector : ICollector
         // A user without any per-user package has no subkey; that is an empty result, not an error.
         using var user = store.OpenSubKey(scope.Scope);
         var packages = user?.GetSubKeyNames() ?? [];
-        evidence.AddRange(WindowsCollector.ParseAppxPackages(packages, scope.Scope, context.Policy));
+        using var repository = Registry.LocalMachine.OpenSubKey(Repository);
+        var windowsApps = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "WindowsApps"
+        );
+        if (packages.Length > 0 && repository is null && !WindowsCollector.DirectoryPresent(windowsApps))
+            throw new IOException("无法确认应用包是否仍已安装：包仓库和 WindowsApps 目录均不可读");
+        // A package still on the machine has a repository entry; its folder is the fallback check.
+        bool Installed(string full)
+        {
+            using var entry = repository?.OpenSubKey(full);
+            return entry is not null || WindowsCollector.DirectoryPresent(Path.Combine(windowsApps, full));
+        }
+        evidence.AddRange(WindowsCollector.ParseAppxPackages(packages, scope.Scope, context.Policy, Installed));
         return Task.CompletedTask;
     }
 }

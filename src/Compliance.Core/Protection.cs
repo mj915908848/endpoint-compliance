@@ -278,7 +278,12 @@ public static class ReportRenderer
             .Replace(">", "&gt;")
             .Replace("`", "'");
 
-    private static string Time(DateTimeOffset t) => $"{t:yyyy-MM-dd HH:mm:ss}（UTC{t:zzz}）";
+    // Shown in the management server's time zone, with the offset so the moment stays unambiguous.
+    private static string Time(DateTimeOffset t)
+    {
+        var local = t.ToLocalTime();
+        return $"{local:yyyy-MM-dd HH:mm:ss}（UTC{local:zzz}）";
+    }
 
     // Section titles and the advice/limit texts mirror ui/src/components/report.tsx.
     public static string Markdown(ComplianceReport report)
