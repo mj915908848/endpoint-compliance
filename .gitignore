@@ -13,3 +13,4 @@ artifacts/
 .env
 /src/Compliance.Server/wwwroot/
 .DS_Store
+*.tsbuildinfo
