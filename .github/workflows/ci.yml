@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  format:
+    name: 格式检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: dotnet tool restore
+      - name: CSharpier
+        run: dotnet csharpier check src tests
+      - name: Prettier
+        working-directory: ui
+        run: |
+          npm ci
+          npm run format:check
+
+  ui:
+    name: 前端构建与测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - working-directory: ui
+        run: |
+          npm ci
+          npm run build
+          npm test
+
+  server:
+    name: 服务端与 Core 测试（SQLite + PostgreSQL）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build
+        run: |
+          dotnet build src/Compliance.Server -c Release
+          dotnet build src/Compliance.Agent -c Release
+      - name: Core tests
+        run: dotnet run --project tests/Compliance.Core.Tests
+      - name: Server tests (SQLite)
+        run: dotnet test tests/Compliance.Server.Tests
+      - name: Server tests (PostgreSQL)
+        run: dotnet test tests/Compliance.Server.Tests
+        env:
+          COMPLIANCE_TEST_POSTGRES: Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres
+
+  e2e:
+    name: 端到端测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build management UI, server and agent
+        run: |
+          (cd ui && npm ci && npm run build)
+          dotnet build src/Compliance.Server -c Release
+          dotnet build src/Compliance.Agent -c Release
+      - name: End-to-end
+        run: python integration/e2e.py --data artifacts/e2e
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-evidence
+          path: artifacts/e2e
+          if-no-files-found: ignore
+
+  windows:
+    name: Windows 实机采集
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        # Git Bash stops at the first failing command; PowerShell would only check the last one.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Agent tests (including native socket table)
+        run: dotnet run --project tests/Compliance.Agent.Tests
+      - name: Build management UI, server, agent and tray
+        run: |
+          cd ui
+          npm ci
+          npm run build
+          cd ..
+          dotnet build src/Compliance.Server -c Release
+          dotnet build src/Compliance.Agent -c Release
+          dotnet build src/Compliance.Tray -c Release
+      - name: Native scan against a loopback server
+        run: python integration/windows_smoke.py --data artifacts/windows-smoke
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-scan
+          path: artifacts/windows-smoke
+          if-no-files-found: ignore

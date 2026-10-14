@@ -866,6 +866,35 @@ await Check(
         await Task.CompletedTask;
     }
 );
+
+// Native checks run on Windows only (CI runs them on windows-latest); elsewhere they are skipped.
+if (OperatingSystem.IsWindows())
+{
+    await Check(
+        "native TCP table lists our own listener with this process as owner",
+        () =>
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            listener.Start();
+            try
+            {
+                var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+                var found = TcpListeners.Read().FirstOrDefault(l => l.Port == port);
+                Assert(found is not null, $"listener on {port} not found");
+                Assert(found!.Pid == Environment.ProcessId, $"owner pid {found.Pid}, expected {Environment.ProcessId}");
+                Assert(found.ProcessName is not null, "owner process name missing");
+            }
+            finally
+            {
+                listener.Stop();
+            }
+            return Task.CompletedTask;
+        }
+    );
+}
+else
+    Console.WriteLine("SKIP native Windows checks (not running on Windows)");
+
 foreach (var error in failures)
     Console.Error.WriteLine(error);
 return failures.Count == 0 ? 0 : 1;
