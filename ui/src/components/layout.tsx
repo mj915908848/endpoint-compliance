@@ -6,13 +6,15 @@ export function Panel({
   title,
   actions,
   children,
+  id,
 }: {
   title: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
+  id?: string;
 }) {
   return (
-    <Card title={title} extra={actions} className="panel">
+    <Card title={title} extra={actions} className="panel" id={id}>
       {children}
     </Card>
   );

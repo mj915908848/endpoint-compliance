@@ -25,6 +25,17 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Policy_template_offers_the_built_in_rules_of_this_server_version()
+    {
+        await using var f = new Fixture();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await f.Client.GetAsync("/api/policies/template")).StatusCode);
+        await f.Login("reader");
+        var template = (await f.Client.GetFromJsonAsync<PolicyDocument>("/api/policies/template", Wire.Json))!;
+        Assert.Contains("aTrust", template.ApprovedNetworkAdapters);
+        Assert.Contains(template.Products, p => p.Id == "clash" && p.ExecutableNames.Contains("verge-mihomo.exe"));
+    }
+
+    [Fact]
     public async Task Content_security_policy_allows_inline_styles_but_only_same_origin_scripts()
     {
         await using var f = new Fixture();

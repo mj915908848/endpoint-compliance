@@ -32,9 +32,9 @@ export const moduleLabel = lookup({
 export const statusLabel = lookup({ Complete: "已完成", Error: "读取失败", Unknown: "未覆盖" });
 
 export const evidenceLabel = lookup({
-  Installation: "已安装",
-  Process: "正在运行",
-  Extension: "扩展已安装",
+  Installation: "安装记录",
+  Process: "运行进程",
+  Extension: "编辑器扩展",
   Proxy: "代理设置",
   Clue: "待核查线索",
   BlockedAttempt: "拦截记录",

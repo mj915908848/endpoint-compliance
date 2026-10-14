@@ -35,9 +35,9 @@ public static class Labels
     public static string Evidence(EvidenceKind kind) =>
         kind switch
         {
-            EvidenceKind.Installation => "已安装",
-            EvidenceKind.Process => "正在运行",
-            EvidenceKind.Extension => "扩展已安装",
+            EvidenceKind.Installation => "安装记录",
+            EvidenceKind.Process => "运行进程",
+            EvidenceKind.Extension => "编辑器扩展",
             EvidenceKind.Proxy => "代理设置",
             EvidenceKind.Clue => "待核查线索",
             EvidenceKind.BlockedAttempt => "拦截记录",

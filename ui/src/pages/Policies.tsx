@@ -48,21 +48,40 @@ export function Policies({ session }: { session: Session }) {
     [reviewed, setReviewed] = useState(false),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
+  // Next version of a document: keeps the deployment's mode and targets, renews the validity window.
+  const nextVersion = (base: Policy) =>
+    JSON.stringify(
+      {
+        ...base,
+        mode: policy?.mode ?? base.mode,
+        targetDeviceIds: policy?.targetDeviceIds ?? base.targetDeviceIds,
+        version: (policy?.version ?? 0) + 1,
+        issuedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
+      },
+      null,
+      2,
+    );
   useEffect(() => {
-    if (policy && !editor)
-      setEditor(
-        JSON.stringify(
-          {
-            ...policy,
-            version: policy.version + 1,
-            issuedAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
-          },
-          null,
-          2,
-        ),
-      );
+    if (policy && !editor) setEditor(nextVersion(policy));
   }, [policy, editor]);
+  // Rule content shipped with this server version; differs from the published policy after an upgrade.
+  const template = useResource<Policy>("/api/policies/template");
+  const rules = (p: Policy) =>
+    JSON.stringify([
+      p.products,
+      p.blockDomains,
+      p.approvedNetworkAdapters ?? [],
+      p.requiredModules,
+    ]);
+  const outdated = !!policy && !!template.data && rules(policy) !== rules(template.data);
+  function loadTemplate() {
+    if (!template.data) return;
+    setEditor(nextVersion(template.data));
+    setReviewed(false);
+    document.getElementById("policy-editor")?.scrollIntoView({ behavior: "smooth" });
+    message.info("已载入内置最新规则，请核对后保存为草稿。");
+  }
 
   async function mutate(path: string, body: unknown, done: string) {
     setBusy(true);
@@ -111,6 +130,15 @@ export function Policies({ session }: { session: Session }) {
       />
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <ErrorNotice error={error} />
+        {outdated && role(session, "Publisher") && (
+          <Alert
+            type="info"
+            showIcon
+            title="当前生效策略与本版本管理端的内置规则不同"
+            description="管理端升级后会带来新的检测规则（如新增产品、网卡白名单）。载入后按正常流程保存草稿、由审核人审核并发布，终端在下次联系管理端时生效。"
+            action={<Button onClick={loadTemplate}>载入内置最新规则</Button>}
+          />
+        )}
         <Row gutter={[16, 16]}>
           <Col xs={24} xl={14}>
             <Panel title="当前生效策略">
@@ -278,7 +306,7 @@ export function Policies({ session }: { session: Session }) {
           </Fresh>
         </Panel>
         {role(session, "Publisher") && (
-          <Panel title="新建策略草稿">
+          <Panel title="新建策略草稿" id="policy-editor">
             <Typography.Paragraph type="secondary">
               已根据当前策略生成下一版本的初稿。可在 JSON
               中编辑禁用产品、域名、适用终端和防护要求，提交后由管理端校验格式和约束。

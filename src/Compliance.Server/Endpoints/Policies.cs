@@ -17,6 +17,17 @@ static partial class Endpoints
             }
         );
 
+        // The rule set shipped with this server version, so an upgraded server can adopt new built-in rules
+        // through the normal draft, review and publish flow instead of re-seeding its data.
+        group.MapGet(
+            "/template",
+            (HttpContext c) =>
+            {
+                Require(c, "Reader");
+                return PolicySeed.Create();
+            }
+        );
+
         group.MapGet(
             "/drafts",
             async (HttpContext c) =>

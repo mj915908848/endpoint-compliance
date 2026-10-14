@@ -49,6 +49,8 @@ public sealed partial class WindowsCollector
                 return ([], 1, [".obsolete"]);
             }
         }
+        var read = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var broken = new List<(string Folder, string Reason)>();
         foreach (var dir in Directory.EnumerateDirectories(root))
         {
             if (
@@ -71,6 +73,7 @@ public sealed partial class WindowsCollector
                 if (publisher is null || name is null)
                     continue;
                 var id = publisher + "." + name;
+                read.Add(id);
                 foreach (
                     var rule in policy.Products.Where(r =>
                         r.ExtensionIds.Any(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase))
@@ -91,10 +94,36 @@ public sealed partial class WindowsCollector
             catch (Exception ex)
                 when (ex is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException)
             {
-                failed.Add(Path.GetFileName(dir));
+                broken.Add((Path.GetFileName(dir), ManifestFailure(ex, manifest)));
             }
         }
+        // VS Code leaves the folders of replaced versions behind until it cleans up. A broken leftover of an
+        // extension whose current version was read is not a coverage gap.
+        foreach (var (folder, reason) in broken)
+            if (!read.Contains(ExtensionIdFromFolder(folder)))
+                failed.Add($"{folder}（{reason}）");
         return (found.ToArray(), failed.Count, failed.ToArray());
+    }
+
+    /// <summary>"ms-vscode-remote.remote-ssh-0.115.1" -> "ms-vscode-remote.remote-ssh".</summary>
+    public static string ExtensionIdFromFolder(string folder) =>
+        Regex.Replace(folder, @"-\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]*)?$", "");
+
+    private static string ManifestFailure(Exception ex, string manifest)
+    {
+        try
+        {
+            if (ex is JsonException && new FileInfo(manifest).Length == 0)
+                return "文件为空";
+        }
+        catch (IOException) { }
+        return ex switch
+        {
+            JsonException => "JSON 格式错误",
+            UnauthorizedAccessException => "没有读取权限",
+            IOException => "文件被占用或无法读取",
+            _ => "字段格式不符",
+        };
     }
 
     public static (Evidence[] Evidence, int Errors, string[] Failed) ScanKnownExtensionRoots(

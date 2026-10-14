@@ -632,6 +632,44 @@ await Check(
     }
 );
 await Check(
+    "broken leftovers of an updated extension are not a coverage gap",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-extensions-" + Guid.NewGuid());
+        try
+        {
+            foreach (var version in new[] { "0.115.1", "0.117.1" })
+            {
+                var stale = Path.Combine(root, "ms-vscode-remote.remote-ssh-" + version);
+                Directory.CreateDirectory(stale);
+                await File.WriteAllTextAsync(Path.Combine(stale, "package.json"), "");
+            }
+            var current = Path.Combine(root, "ms-vscode-remote.remote-ssh-0.120.0");
+            Directory.CreateDirectory(current);
+            await File.WriteAllTextAsync(
+                Path.Combine(current, "package.json"),
+                "{\"publisher\":\"ms-vscode-remote\",\"name\":\"remote-ssh\"}"
+            );
+            var result = WindowsCollector.ScanVsCodeExtensions(root, "S-1-5-21-1-2-3-1001", PolicySeed.Create());
+            Assert(result.Errors == 0, "superseded versions reported: " + string.Join(",", result.Failed));
+            Directory.Delete(current, true);
+            result = WindowsCollector.ScanVsCodeExtensions(root, "S-1-5-21-1-2-3-1001", PolicySeed.Create());
+            Assert(
+                result.Errors == 2 && result.Failed.All(f => f.EndsWith("（文件为空）")),
+                "a broken extension without a readable version was hidden"
+            );
+            Assert(
+                WindowsCollector.ExtensionIdFromFolder("github.copilot-chat-0.32.2025101401") == "github.copilot-chat",
+                "folder name parsing"
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+await Check(
     "one malformed VS Code extension does not hide a later forbidden extension",
     async () =>
     {
@@ -653,7 +691,7 @@ await Check(
                 "valid forbidden extension was hidden after malformed manifest"
             );
             Assert(
-                result.Errors == 1 && result.Failed.SequenceEqual(["a-broken"]),
+                result.Errors == 1 && result.Failed.Single() == "a-broken（JSON 格式错误）",
                 "malformed manifest did not mark coverage incomplete or name the folder"
             );
         }
