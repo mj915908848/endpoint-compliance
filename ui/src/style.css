@@ -157,6 +157,22 @@ body {
   cursor: help;
 }
 
+.policy-bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  margin-top: 16px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid #b7dbe3;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(18, 49, 61, 0.12);
+}
+
 .registration-code {
   font-size: 22px;
   letter-spacing: 0.04em;

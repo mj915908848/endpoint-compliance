@@ -53,12 +53,12 @@ public record ProductRule(
 public record PolicyDocument
 {
     public int SchemaVersion { get; init; } = 1;
-    public string PolicyId { get; init; } = "customer-no-foreign-ai";
+    public string PolicyId { get; init; } = "endpoint-compliance";
     public long Version { get; init; } = 1;
     public string Mode { get; init; } = "Audit";
     public string[] TargetDeviceIds { get; init; } = [];
     public DateTimeOffset IssuedAt { get; init; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset ExpiresAt { get; init; } = DateTimeOffset.UtcNow.AddDays(30);
+    public DateTimeOffset ExpiresAt { get; init; } = DateTimeOffset.UtcNow.AddDays(365);
     public bool DenyInstalled { get; init; } = true;
     public bool DenyProxy { get; init; } = true;
     public string[] RequiredModules { get; init; } =

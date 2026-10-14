@@ -16,7 +16,7 @@
 | Kestrel:Certificates:Default:Path | 客户信任证书的PFX文件路径 |
 | Kestrel:Certificates:Default:Password | 通过受保护配置/环境注入；勿写进脚本仓库 |
 
-角色 Reader/Operator/Publisher/Reviewer。发布人与审核人必须不同；默认没有公共账号密码。本版在初始化时创建指定账号，密码轮换/禁用账户管理接口尚未提供，生产前应增加企业身份集成或经过维护流程的数据迁移，不能用默认密码长期运行。
+角色 Reader/Operator/Publisher：Publisher 在策略页面编辑后直接发布（Reviewer 角色仍可配置，但已不再使用）。默认没有公共账号密码。本版在初始化时创建指定账号，密码轮换/禁用账户管理接口尚未提供，生产前应增加企业身份集成或经过维护流程的数据迁移，不能用默认密码长期运行。
 
 服务进程使用独立无特权账号。安装目录只读，密钥、状态和日志目录只允许维护员和服务账号。反代时HTTPS终止只能来自TrustedProxies；直接Kestrel HTTPS也是支持的。客户端不得跳过证书验证。
 

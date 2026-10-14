@@ -70,7 +70,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                     Mode = "Audit",
                     Version = 1,
                     IssuedAt = Now,
-                    ExpiresAt = Now.AddDays(30),
+                    ExpiresAt = Now + PolicyValidity,
                 };
                 await tx.InsertRelease(1, PolicyCrypto.Sign(doc, signer, KeyId), Now);
                 await tx.Audit("bootstrap", "SeedAuditPolicy", "1", Now);
@@ -394,25 +394,56 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         }
     }
 
-    public async Task ValidatePublish(Transaction tx, DraftRecord draft)
+    /// <summary>Policies stay valid this long after publishing; agents treat an expired policy as unknown.</summary>
+    public static readonly TimeSpan PolicyValidity = TimeSpan.FromDays(365);
+
+    public async Task<SignedPolicy> Publish(Transaction tx, PolicyDocument? submitted)
     {
-        var doc = draft.Document;
+        if (submitted == null)
+            throw new ApiError(400, "策略内容为空");
         var current = await Current(tx);
+        var doc = submitted with
+        {
+            SchemaVersion = 1,
+            Version = current.Version + 1,
+            IssuedAt = Now,
+            ExpiresAt = Now + PolicyValidity,
+            DenyInstalled = true,
+            DenyProxy = true,
+        };
         if (
-            draft.Published
-            || draft.ApprovedBy == null
-            || draft.ApprovedBy == draft.CreatedBy
-            || !draft.ImpactReviewed
-            || doc.Version <= current.Version
-            || doc.ExpiresAt <= Now
-            || doc.IssuedAt > Now.AddMinutes(2)
+            doc.RequiredModules == null
+            || doc.RequiredModules.Length == 0
+            || doc.Products == null
+            || doc.Products.Length > 5000
+            || doc.BlockDomains == null
+            || doc.BlockDomains.Length > 1000
+            || doc.ApplicationRules == null
+            || doc.ApplicationRules.Length > 1000
         )
-            throw new ApiError(409, "Independent review, impact review and increasing valid version required");
+            throw new ApiError(400, "策略不完整：至少需要一个必需检查项");
+        try
+        {
+            PolicyCrypto.Validate(doc);
+        }
+        catch (ArgumentException e)
+        {
+            throw new ApiError(400, "策略内容无效：" + e.Message);
+        }
+        await ValidateEnforcement(tx, doc, current);
+        var signed = Sign(doc);
+        await tx.InsertRelease(doc.Version, signed, Now);
+        await tx.AssignPolicy(doc.Version, doc.TargetDeviceIds);
+        return signed;
+    }
+
+    async Task ValidateEnforcement(Transaction tx, PolicyDocument doc, PolicyDocument current)
+    {
         if (doc.Mode != "Enforce")
             return;
 
         if (doc.TargetDeviceIds.Length == 0 || doc.RequiredControls.Length == 0)
-            throw new ApiError(409, "Enforcement requires explicit pilot targets and declared controls");
+            throw new ApiError(409, "强制模式需要指定试点终端，并选择至少一项防护措施");
         foreach (var id in doc.TargetDeviceIds)
         {
             var d = await Device(tx, id);
@@ -422,7 +453,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 || d.Snapshot.Simulated
                 || d.Snapshot.CollectedAt < Now.AddMinutes(-10)
             )
-                throw new ApiError(409, "Pilot capabilities are stale or unverified");
+                throw new ApiError(409, "试点终端需要在线，且 10 分钟内有真实（非模拟）的检查结果");
             foreach (var control in doc.RequiredControls)
             {
                 var c = d.Controls?.FirstOrDefault(x => x.Id == control);
@@ -433,13 +464,13 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                     || c.Version != current.Version
                     || c.State is not ("Applied" or "Verified")
                 )
-                    throw new ApiError(409, "Required control capability not verified");
+                    throw new ApiError(409, "试点终端尚未验证所需的防护措施，请先在审计模式下确认防护措施已生效");
             }
         }
         if (doc.RequiredControls.Contains("network"))
-            throw new ApiError(409, "Generic network enforcement adapter is not implemented");
+            throw new ApiError(409, "暂不支持强制启用“网络访问拦截”");
         if (doc.ApplicationRules.Length == 0 || doc.BlockDomains.Length > 1000)
-            throw new ApiError(409, "No exact application rules or browser capacity exceeded");
+            throw new ApiError(409, "强制模式需要至少一条应用程序拦截规则，禁止访问的域名不能超过 1000 项");
     }
 
     public SignedPolicy Sign(PolicyDocument doc) => PolicyCrypto.Sign(doc, signer, KeyId);

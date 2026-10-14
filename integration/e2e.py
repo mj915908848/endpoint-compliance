@@ -10,7 +10,7 @@ else:
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
 base=f'http://127.0.0.1:{port}'
 password=secrets.token_urlsafe(24)
-env=os.environ.copy();env.update({'ASPNETCORE_URLS':base,'Compliance__DemoMode':'true','Compliance__Storage':'Sqlite','Compliance__Database':str(data/'server.sqlite'),'Compliance__SigningKeyPath':str(data/'signing.pem'),'Compliance__BootstrapUsers':json.dumps([{'username':'trial-admin','password':password,'roles':['Reader','Operator','Publisher']},{'username':'trial-reviewer','password':secrets.token_urlsafe(24),'roles':['Reader','Reviewer']}])})
+env=os.environ.copy();env.update({'ASPNETCORE_URLS':base,'Compliance__DemoMode':'true','Compliance__Storage':'Sqlite','Compliance__Database':str(data/'server.sqlite'),'Compliance__SigningKeyPath':str(data/'signing.pem'),'Compliance__BootstrapUsers':json.dumps([{'username':'trial-admin','password':password,'roles':['Reader','Operator','Publisher']}])})
 client=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()));csrf=''
 def request(path,body=None,raw=False):
     encoded=json.dumps(body).encode() if body is not None else None

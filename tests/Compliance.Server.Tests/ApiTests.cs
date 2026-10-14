@@ -277,40 +277,39 @@ public class ApiTests
     }
 
     [Fact]
-    public async Task Publisher_cannot_self_approve_or_publish_unreviewed_policy()
+    public async Task Publisher_publishes_directly_and_server_assigns_version_and_validity()
     {
         await using var f = new Fixture();
+        await f.Login("reader");
+        Assert.Equal(HttpStatusCode.Forbidden, (await f.Publish(new PolicyDocument())).StatusCode);
+
         await f.Login();
-        var doc = new PolicyDocument { Version = 2, RequiredControls = [] };
-        var create = await f.Client.PostAsJsonAsync(
-            "/api/policies/drafts",
-            new { document = doc, impactReviewed = true },
-            Wire.Json
+        var r = await f.Publish(
+            new PolicyDocument
+            {
+                PolicyId = "office-pcs",
+                Version = 99,
+                IssuedAt = f.Clock.Now.AddYears(-3),
+                ExpiresAt = f.Clock.Now.AddYears(-2),
+                RequiredControls = [],
+            }
         );
-        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
-        var id = (await create.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
-        Assert.Equal(
-            HttpStatusCode.Conflict,
-            (await f.Client.PostAsJsonAsync($"/api/policies/{id}/approve", new { })).StatusCode
-        );
-        Assert.Equal(
-            HttpStatusCode.Conflict,
-            (await f.Client.PostAsJsonAsync($"/api/policies/{id}/publish", new { })).StatusCode
-        );
-        await f.Login("reviewer");
-        Assert.Equal(
-            HttpStatusCode.OK,
-            (await f.Client.PostAsJsonAsync($"/api/policies/{id}/approve", new { })).StatusCode
-        );
-        await f.Login();
-        Assert.Equal(
-            HttpStatusCode.OK,
-            (await f.Client.PostAsJsonAsync($"/api/policies/{id}/publish", new { })).StatusCode
-        );
-        Assert.Equal(
-            HttpStatusCode.Conflict,
-            (await f.Client.PostAsJsonAsync($"/api/policies/{id}/publish", new { })).StatusCode
-        );
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var current = await f.Client.GetFromJsonAsync<SignedPolicy>("/api/policies/current", Wire.Json);
+        var doc = Wire.Read<PolicyDocument>(current!.Payload);
+        Assert.Equal(("office-pcs", 2L), (doc.PolicyId, doc.Version));
+        Assert.Equal(f.Clock.Now, doc.IssuedAt);
+        Assert.Equal(f.Clock.Now + ComplianceService.PolicyValidity, doc.ExpiresAt);
+        Assert.Contains("PublishPolicy", await f.Client.GetStringAsync("/api/audit"));
+
+        r = await f.Publish(new PolicyDocument { PolicyId = " ", RequiredControls = [] });
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+        Assert.Contains("策略名称不能为空", await r.Content.ReadAsStringAsync());
+        r = await f.Publish(new PolicyDocument { BlockDomains = ["https://x.com/a"], RequiredControls = [] });
+        Assert.Contains("只能填写域名", await r.Content.ReadAsStringAsync());
+        r = await f.Publish(new PolicyDocument { Mode = "Enforce" });
+        Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
+        Assert.Contains("试点终端", await r.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -363,19 +362,7 @@ public class ApiTests
         f.Key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var second = (await f.Enroll(await f.Code())).DeviceId;
         f.Device = second;
-        var create = await f.Client.PostAsJsonAsync(
-            "/api/policies/drafts",
-            new { document = new PolicyDocument { Version = 2, TargetDeviceIds = [first] }, impactReviewed = true },
-            Wire.Json
-        );
-        var id = (await create.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
-        await f.Login("reviewer");
-        await f.Client.PostAsJsonAsync($"/api/policies/{id}/approve", new { });
-        await f.Login();
-        Assert.Equal(
-            HttpStatusCode.OK,
-            (await f.Client.PostAsJsonAsync($"/api/policies/{id}/publish", new { })).StatusCode
-        );
+        Assert.Equal(HttpStatusCode.OK, (await f.Publish(new PolicyDocument { TargetDeviceIds = [first] })).StatusCode);
         var signed = await (await f.Agent("GET", "/api/agent/policy")).Content.ReadFromJsonAsync<SignedPolicy>(
             Wire.Json
         );
@@ -643,16 +630,7 @@ public class ApiTests
             "/api/agent/events",
             new EventBatch([new("old-pass", 1, f.Clock.Now, "Snapshot", "scan", snapshot)])
         );
-        var r = await f.Client.PostAsJsonAsync(
-            "/api/policies/drafts",
-            new { document = new PolicyDocument { Version = 2 }, impactReviewed = true },
-            Wire.Json
-        );
-        var id = (await r.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
-        await f.Login("reviewer");
-        await f.Client.PostAsJsonAsync($"/api/policies/{id}/approve", new { });
-        await f.Login();
-        await f.Client.PostAsJsonAsync($"/api/policies/{id}/publish", new { });
+        Assert.Equal(HttpStatusCode.OK, (await f.Publish(new PolicyDocument())).StatusCode);
         var devices = (await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!;
         Assert.Equal(Verdict.UNKNOWN, devices[0].CurrentVerdict);
         Assert.Equal(Verdict.PASS, devices[0].LastVerdict);
@@ -777,6 +755,9 @@ public sealed class Fixture : WebApplicationFactory<Program>
             (await r.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("csrfToken").GetString()
         );
     }
+
+    public Task<HttpResponseMessage> Publish(PolicyDocument doc) =>
+        Client.PostAsJsonAsync("/api/policies", doc, Wire.Json);
 
     public async Task<string> Code()
     {

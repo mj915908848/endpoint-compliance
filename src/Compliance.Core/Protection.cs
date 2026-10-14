@@ -63,11 +63,12 @@ public static class PolicyCrypto
             doc.SchemaVersion != 1
             || doc.Version < 1
             || string.IsNullOrWhiteSpace(doc.PolicyId)
+            || doc.PolicyId.Length > 64
             || !doc.DenyInstalled
             || !doc.DenyProxy
             || doc.Mode is not ("Audit" or "Enforce")
         )
-            throw new ArgumentException("Invalid policy");
+            throw new ArgumentException("策略基本信息无效：策略名称不能为空，模式只能是审计或强制");
         if (
             doc.RequiredModules is null
             || doc.RequiredModules.Length == 0
@@ -77,9 +78,9 @@ public static class PolicyCrypto
             || doc.ApplicationRules is null
             || doc.TargetDeviceIds is null
         )
-            throw new ArgumentException("Incomplete policy");
+            throw new ArgumentException("策略不完整：至少需要一个必需检查项");
         if (doc.InventoryFreshMinutes is < 1 or > 10080 || doc.LightweightFreshMinutes is < 1 or > 1440)
-            throw new ArgumentException("Invalid freshness");
+            throw new ArgumentException("检查时效超出范围：完整检查 1–10080 分钟，快速检查 1–1440 分钟");
         if (
             doc.Products.Length > 1000
             || doc.Products.Any(r =>
@@ -94,13 +95,13 @@ public static class PolicyCrypto
             )
             || doc.Products.Select(r => r.Id).Distinct().Count() != doc.Products.Length
         )
-            throw new ArgumentException("Invalid product identities");
+            throw new ArgumentException("产品规则无效：每个产品需要不重复的标识，网卡名称不能为空且不超过 64 个字符");
         if (
             doc.ApprovedNetworkAdapters is null
             || doc.ApprovedNetworkAdapters.Length > 100
             || doc.ApprovedNetworkAdapters.Any(n => string.IsNullOrWhiteSpace(n) || n.Length < 3 || n.Length > 64)
         )
-            throw new ArgumentException("Invalid approved network adapters");
+            throw new ArgumentException("已批准网卡无效：最多 100 项，每项 3–64 个字符");
         DomainRules.CompileEdge(doc.BlockDomains);
         foreach (var rule in doc.ApplicationRules)
             if (
@@ -108,7 +109,7 @@ public static class PolicyCrypto
                 || !Regex.IsMatch(rule.Sha256, "^[a-fA-F0-9]{64}$")
                 || !doc.Products.Any(p => p.Id == rule.ProductId)
             )
-                throw new ArgumentException("Invalid application deny identity");
+                throw new ArgumentException("应用程序拦截规则无效：需要 64 位 SHA-256，并对应已有产品");
     }
 }
 
@@ -174,7 +175,7 @@ public static class DomainRules
     public static string Normalize(string domain)
     {
         if (string.IsNullOrWhiteSpace(domain) || domain.Length > 253 || domain != domain.Trim())
-            throw new ArgumentException("Invalid domain");
+            throw new ArgumentException($"域名无效：{domain}");
         domain = domain.TrimEnd('.');
         try
         {
@@ -182,7 +183,7 @@ public static class DomainRules
         }
         catch (ArgumentException)
         {
-            throw new ArgumentException("Invalid domain");
+            throw new ArgumentException($"域名无效：{domain}");
         }
         if (
             !domain.Contains('.')
@@ -191,7 +192,7 @@ public static class DomainRules
                 .Split('.')
                 .Any(s => s.Length is < 1 or > 63 || !Regex.IsMatch(s, "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"))
         )
-            throw new ArgumentException("Hostnames only, no paths, wildcards or IP addresses");
+            throw new ArgumentException($"只能填写域名，不能包含路径、通配符或 IP 地址：{domain}");
         return domain;
     }
 

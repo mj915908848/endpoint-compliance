@@ -67,6 +67,12 @@ export const auditActionLabel = lookup({
   SnapshotRecovered: "检查结果恢复",
 });
 
+export const categoryLabel = lookup({
+  proxy: "代理工具",
+  ai: "AI 应用",
+  ide_ai: "编程助手",
+});
+
 export const controlLabel = lookup({
   application: "应用程序拦截",
   edge: "Edge 浏览器策略",

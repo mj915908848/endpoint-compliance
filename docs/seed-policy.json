@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "policy_id": "customer-no-foreign-ai-20261013",
+  "policy_id": "endpoint-compliance",
   "policy_version": "1",
   "deny_installed": true,
   "deny_proxy_configuration": true,

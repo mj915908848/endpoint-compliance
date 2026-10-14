@@ -97,6 +97,8 @@ export interface Product {
   executableNames: string[];
   extensionIds: string[];
   domains: string[];
+  displayNames?: string[];
+  adapterNames?: string[];
 }
 export interface Policy {
   schemaVersion: number;
@@ -121,13 +123,6 @@ export interface Policy {
     sha256: string;
     type: string;
   }[];
-}
-export interface Draft {
-  id: string;
-  document: Policy;
-  createdBy: string;
-  approvedBy: string | null;
-  published: boolean;
 }
 export interface SignedPolicy {
   payload: string;

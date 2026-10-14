@@ -358,22 +358,6 @@ public sealed class Transaction
 
     const string DraftColumns = "id, document, created_by, approved_by, published, impact_reviewed";
 
-    static DraftRecord ReadDraft(DbDataReader r) =>
-        new(
-            r.GetString(0),
-            Wire.Read<PolicyDocument>(r.GetString(1)),
-            r.GetString(2),
-            Text(r, 3),
-            Long(r, 4) != 0,
-            Long(r, 5) != 0
-        );
-
-    public Task<DraftRecord?> GetDraft(string id) =>
-        Single($"SELECT {DraftColumns} FROM policy_drafts WHERE id = @id", ReadDraft, ("id", id));
-
-    public Task<List<DraftRecord>> Drafts() =>
-        Query($"SELECT {DraftColumns} FROM policy_drafts ORDER BY created_at, id", ReadDraft);
-
     public Task InsertDraft(DraftRecord d, DateTimeOffset createdAt) =>
         Execute(
             $"INSERT INTO policy_drafts({DraftColumns}, created_at) VALUES(@id, @document, @by, @approved, @published, @impact, @at)",
@@ -384,14 +368,6 @@ public sealed class Transaction
             ("published", d.Published),
             ("impact", d.ImpactReviewed),
             ("at", createdAt)
-        );
-
-    public Task UpdateDraftReview(string id, string? approvedBy, bool published) =>
-        Execute(
-            "UPDATE policy_drafts SET approved_by = @approved, published = @published WHERE id = @id",
-            ("approved", approvedBy),
-            ("published", published),
-            ("id", id)
         );
 
     // ---- device commands -----------------------------------------------------------------
@@ -526,8 +502,6 @@ public sealed class Transaction
     }
 
     static long Long(DbDataReader r, int i) => Convert.ToInt64(r.GetValue(i), CultureInfo.InvariantCulture);
-
-    static string? Text(DbDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
 
     static DateTimeOffset Time(DbDataReader r, int i) => new(Long(r, i), TimeSpan.Zero);
 

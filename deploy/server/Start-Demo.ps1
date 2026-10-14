@@ -34,12 +34,12 @@ function New-RandomPassword {
 }
 if (-not (Test-Path -LiteralPath $configPath)) {
     $accounts = @(
-        @{ username='admin'; password=(New-RandomPassword); roles=@('Reader','Operator','Publisher') },
-        @{ username='reviewer'; password=(New-RandomPassword); roles=@('Reader','Reviewer') }
+        @{ username='admin'; password=(New-RandomPassword); roles=@('Reader','Operator','Publisher') }
     )
-    $accounts | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding UTF8
+    # -InputObject keeps a one-element array as a JSON array; piping would unwrap it into an object.
+    ConvertTo-Json -InputObject $accounts -Depth 5 | Set-Content -LiteralPath $configPath -Encoding UTF8
     $credentialPath = Join-Path $state 'demo-login.txt'
-    "Local demo credentials only. Do not share this file.`r`nadmin: $($accounts[0].password)`r`nreviewer: $($accounts[1].password)" | Set-Content -LiteralPath $credentialPath -Encoding UTF8
+    "Local demo credentials only. Do not share this file.`r`nadmin: $($accounts[0].password)" | Set-Content -LiteralPath $credentialPath -Encoding UTF8
 }
 $names = @('Compliance__DemoMode','Compliance__DemoHttpLan','Compliance__Storage','Compliance__Database','Compliance__SigningKeyPath','Compliance__BootstrapUsers','ASPNETCORE_URLS')
 $prior = @{}

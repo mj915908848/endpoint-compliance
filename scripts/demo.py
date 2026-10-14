@@ -52,10 +52,8 @@ env.update({
     "Compliance__Storage": "Sqlite",
     "Compliance__Database": str(data / "server.sqlite"),
     "Compliance__SigningKeyPath": str(data / "signing.pem"),
-    # Publisher and Reviewer are separate accounts so the two-person policy flow can be tried.
     "Compliance__BootstrapUsers": json.dumps([
         {"username": "demo-admin", "password": password, "roles": ["Reader", "Operator", "Publisher"]},
-        {"username": "demo-reviewer", "password": password, "roles": ["Reader", "Reviewer"]},
     ]),
 })
 log = (data / "server.log").open("a")
@@ -125,8 +123,7 @@ try:
     print(f"""
 Demo running at {base}
   Admin (operate/publish):  demo-admin
-  Reviewer (approve):       demo-reviewer
-  Password for both:        see {login_file}
+  Password:                 see {login_file}
 Two simulated endpoints are enrolled. Press Ctrl+C to stop; data stays in {data}
 (run with --reset to start over).""", flush=True)
     server.wait()
