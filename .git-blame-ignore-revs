@@ -1,3 +1,5 @@
 # Bulk formatting with CSharpier; skip in blame via
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
-cb803c4f318585c2cc7b7a7bef0c69ae2cb692e7
+ef5d0002b35b1b4f751ba40a55728e51e9d92bea
+# Bulk formatting of ui/ with Prettier
+e184811bd1b3c8c17e4129b89b093cb18c86f80e

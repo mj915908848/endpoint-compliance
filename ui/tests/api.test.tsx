@@ -37,13 +37,11 @@ describe("management request boundary", () => {
     const deferred = new Map<string, (r: Response) => void>();
     vi.stubGlobal(
       "fetch",
-      (url: string) =>
-        new Promise<Response>((resolve) => deferred.set(url, resolve)),
+      (url: string) => new Promise<Response>((resolve) => deferred.set(url, resolve)),
     );
-    const { result, rerender } = renderHook(
-      ({ path }) => useResource<{ id: string }>(path),
-      { initialProps: { path: "/api/devices/old" } },
-    );
+    const { result, rerender } = renderHook(({ path }) => useResource<{ id: string }>(path), {
+      initialProps: { path: "/api/devices/old" },
+    });
     rerender({ path: "/api/devices/new" });
     await act(async () => {
       deferred.get("/api/devices/new")?.(new Response('{"id":"new"}'));
@@ -66,13 +64,10 @@ describe("management request boundary", () => {
           });
     });
     const { result, rerender } = renderHook(
-      ({ revision }) =>
-        useResource<{ currentVerdict: string }>("/api/devices", revision),
+      ({ revision }) => useResource<{ currentVerdict: string }>("/api/devices", revision),
       { initialProps: { revision: 0 } },
     );
-    await waitFor(() =>
-      expect(result.current.data?.currentVerdict).toBe("PASS"),
-    );
+    await waitFor(() => expect(result.current.data?.currentVerdict).toBe("PASS"));
     rerender({ revision: 1 });
     await waitFor(() => expect(result.current.error).toBe("管理端不可用"));
     expect(result.current.data).toBeNull();
@@ -88,11 +83,17 @@ describe("management request boundary", () => {
     });
     try {
       const { result } = renderHook(() => useResource<{ currentVerdict: string }>("/api/devices"));
-      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
       expect(result.current.data?.currentVerdict).toBe("PASS");
-      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
       expect(calls).toBeGreaterThan(1);
       expect(result.current.data).toBeNull();
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

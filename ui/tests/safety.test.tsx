@@ -40,9 +40,7 @@ describe("safety boundaries", () => {
     expect(screen.queryByText("当前范围内通过")).toBeNull();
   });
   it("never presents an offline PASS as a current pass even if the payload is inconsistent", () => {
-    render(
-      <DeviceState device={{ ...deviceFixture, currentVerdict: "PASS" }} />,
-    );
+    render(<DeviceState device={{ ...deviceFixture, currentVerdict: "PASS" }} />);
     expect(screen.getByText("无法判断")).toBeTruthy();
     expect(screen.getByText(/上次结论：范围内通过/)).toBeTruthy();
   });
@@ -56,13 +54,17 @@ describe("safety boundaries", () => {
     expect(screen.getByText(/确认不会改变设备检查结论/)).toBeTruthy();
   });
   it("reader cannot acknowledge", () => {
-    render(
-      <AlertCard alert={alertFixture} canAck={false} onAck={async () => {}} />,
-    );
+    render(<AlertCard alert={alertFixture} canAck={false} onAck={async () => {}} />);
     expect(screen.queryByRole("button", { name: "确认已阅" })).toBeNull();
   });
   it("server Resolved state is shown as technical recovery, separate from acknowledgment", () => {
-    render(<AlertCard alert={{ ...alertFixture, state: "Resolved", acknowledged: false }} canAck={false} onAck={async () => {}} />);
+    render(
+      <AlertCard
+        alert={{ ...alertFixture, state: "Resolved", acknowledged: false }}
+        canAck={false}
+        onAck={async () => {}}
+      />,
+    );
     expect(screen.getByText("技术已恢复")).toBeTruthy();
     expect(screen.getByText("待确认")).toBeTruthy();
     expect(screen.queryByText("问题持续")).toBeNull();

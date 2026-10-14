@@ -18,8 +18,7 @@ export async function request<T>(
 ): Promise<T> {
   if (!path.startsWith("/api/")) throw new Error("只允许管理端 API 路径");
   const headers = new Headers();
-  if (options.body !== undefined)
-    headers.set("Content-Type", "application/json");
+  if (options.body !== undefined) headers.set("Content-Type", "application/json");
   if (options.csrfToken) headers.set("X-CSRF-Token", options.csrfToken);
   let response: Response;
   try {
@@ -27,8 +26,7 @@ export async function request<T>(
       method: options.method ?? "GET",
       credentials: "same-origin",
       headers,
-      body:
-        options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: options.signal,
     });
   } catch (error) {
@@ -40,9 +38,7 @@ export async function request<T>(
   try {
     payload = raw ? JSON.parse(raw) : null;
   } catch {
-    if (
-      (response.headers.get("Content-Type") ?? "").includes("application/json")
-    )
+    if ((response.headers.get("Content-Type") ?? "").includes("application/json"))
       throw new Error("管理端返回无效 JSON");
   }
   if (!response.ok) {
@@ -50,24 +46,18 @@ export async function request<T>(
       payload && typeof payload === "object" && "error" in payload
         ? (payload as { error?: unknown }).error
         : null;
-    const message =
-      typeof error === "string" ? error : `请求失败（HTTP ${response.status}）`;
+    const message = typeof error === "string" ? error : `请求失败（HTTP ${response.status}）`;
     throw new HttpError(message, response.status);
   }
   return payload as T;
 }
 export async function downloadReport(deviceId: string): Promise<void> {
-  const response = await fetch(
-    `/api/devices/${encodeURIComponent(deviceId)}/report.md`,
-    { credentials: "same-origin" },
-  ).catch(() => {
+  const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/report.md`, {
+    credentials: "same-origin",
+  }).catch(() => {
     throw new Error("无法连接管理端，请检查内网服务状态");
   });
-  if (!response.ok)
-    throw new HttpError(
-      `报告下载失败（HTTP ${response.status}）`,
-      response.status,
-    );
+  if (!response.ok) throw new HttpError(`报告下载失败（HTTP ${response.status}）`, response.status);
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

@@ -44,6 +44,8 @@ dotnet tool restore
 dotnet csharpier format src tests
 ```
 
+前端用 Prettier（版本固定在 `ui/package.json`）：在 `ui` 目录运行 `npm run format`，只检查用 `npm run format:check`。
+
 `dotnet csharpier check src tests` 只检查不修改。批量格式化的提交记录在 `.git-blame-ignore-revs`，本地执行一次 `git config blame.ignoreRevsFile .git-blame-ignore-revs`，`git blame` 就会跳过它。
 
 ## 先在本机看平台
