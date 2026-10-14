@@ -448,6 +448,7 @@ await Check(
         Assert(WindowsCollector.IsTunnelClue("wg0", "WireGuard Tunnel", false), "WireGuard missed");
         Assert(WindowsCollector.IsTunnelClue("Meta", "Meta Tunnel", false), "Clash Meta TUN missed");
         Assert(!WindowsCollector.IsTunnelClue("以太网", "Intel(R) Ethernet Connection", false), "Ethernet reported");
+        Assert(!WindowsCollector.IsTunnelClue("本地连接* 3", "WAN Miniport (SSTP)", true), "WAN Miniport reported");
         await Task.CompletedTask;
     }
 );
@@ -492,6 +493,28 @@ await Check(
     }
 );
 await Check(
+    "extension manifests with comments or trailing commas are read like VS Code does",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-extensions-" + Guid.NewGuid());
+        try
+        {
+            var dir = Path.Combine(root, "openai.chatgpt-1.0");
+            Directory.CreateDirectory(dir);
+            await File.WriteAllTextAsync(
+                Path.Combine(dir, "package.json"),
+                "{\n  // bundled\n  \"publisher\": \"openai\",\n  \"name\": \"chatgpt\",\n}"
+            );
+            var result = WindowsCollector.ScanVsCodeExtensions(root, "S-1-5-21-1-2-3-1001", PolicySeed.Create());
+            Assert(result.Errors == 0 && result.Evidence.Any(e => e.ProductId == "codex"), "lenient manifest rejected");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+await Check(
     "one malformed VS Code extension does not hide a later forbidden extension",
     async () =>
     {
@@ -512,7 +535,10 @@ await Check(
                 result.Evidence.Any(e => e.ProductId == "gemini-code-assist" && e.UserSid == "S-1-5-21-1-2-3-1001"),
                 "valid forbidden extension was hidden after malformed manifest"
             );
-            Assert(result.Errors == 1, "malformed manifest did not mark coverage incomplete");
+            Assert(
+                result.Errors == 1 && result.Failed.SequenceEqual(["a-broken"]),
+                "malformed manifest did not mark coverage incomplete or name the folder"
+            );
         }
         finally
         {

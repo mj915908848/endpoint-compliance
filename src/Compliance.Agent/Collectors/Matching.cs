@@ -8,12 +8,24 @@ namespace Compliance.Agent;
 // Pure matching and parsing helpers; kept free of registry and process access so they are unit-testable.
 public sealed partial class WindowsCollector
 {
-    public static (Evidence[] Evidence, int Errors) ScanVsCodeExtensions(string root, string sid, PolicyDocument policy)
+    // VS Code reads extension manifests leniently; strict parsing would turn harmless comments or trailing
+    // commas into coverage gaps.
+    private static readonly JsonDocumentOptions ManifestOptions = new()
+    {
+        CommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    public static (Evidence[] Evidence, int Errors, string[] Failed) ScanVsCodeExtensions(
+        string root,
+        string sid,
+        PolicyDocument policy
+    )
     {
         if (!DirectoryPresent(root))
-            return ([], 0);
+            return ([], 0, []);
         var found = new List<Evidence>();
-        var errors = 0;
+        var failed = new List<string>();
         var host = Path.GetFileName(Path.GetDirectoryName(root));
         var obsolete = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var obsoleteFile = Path.Combine(root, ".obsolete");
@@ -21,7 +33,7 @@ public sealed partial class WindowsCollector
         {
             try
             {
-                using var state = JsonDocument.Parse(File.ReadAllText(obsoleteFile));
+                using var state = JsonDocument.Parse(File.ReadAllText(obsoleteFile), ManifestOptions);
                 if (state.RootElement.ValueKind != JsonValueKind.Object)
                     throw new JsonException("Invalid extension removal state");
                 foreach (var item in state.RootElement.EnumerateObject())
@@ -34,7 +46,7 @@ public sealed partial class WindowsCollector
             }
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
             {
-                return ([], 1);
+                return ([], 1, [".obsolete"]);
             }
         }
         foreach (var dir in Directory.EnumerateDirectories(root))
@@ -49,7 +61,7 @@ public sealed partial class WindowsCollector
             {
                 if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0 || !FilePresent(manifest))
                     continue;
-                using var doc = JsonDocument.Parse(File.ReadAllText(manifest));
+                using var doc = JsonDocument.Parse(File.ReadAllText(manifest), ManifestOptions);
                 var publisher = doc.RootElement.TryGetProperty("publisher", out var publisherProperty)
                     ? publisherProperty.GetString()
                     : null;
@@ -76,43 +88,32 @@ public sealed partial class WindowsCollector
                         )
                     );
             }
-            catch (JsonException)
+            catch (Exception ex)
+                when (ex is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException)
             {
-                errors++;
-            }
-            catch (InvalidOperationException)
-            {
-                errors++;
-            }
-            catch (IOException)
-            {
-                errors++;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                errors++;
+                failed.Add(Path.GetFileName(dir));
             }
         }
-        return (found.ToArray(), errors);
+        return (found.ToArray(), failed.Count, failed.ToArray());
     }
 
-    public static (Evidence[] Evidence, int Errors) ScanKnownExtensionRoots(
+    public static (Evidence[] Evidence, int Errors, string[] Failed) ScanKnownExtensionRoots(
         string profilePath,
         string sid,
         PolicyDocument policy
     )
     {
         var found = new List<Evidence>();
-        var errors = 0;
+        var failed = new List<string>();
         foreach (
             var host in new[] { ".vscode", ".vscode-insiders", ".vscode-oss", ".cursor", ".windsurf", ".windsurf-next" }
         )
         {
             var result = ScanVsCodeExtensions(Path.Combine(profilePath, host, "extensions"), sid, policy);
             found.AddRange(result.Evidence);
-            errors += result.Errors;
+            failed.AddRange(result.Failed.Select(f => host + "/" + f));
         }
-        return (found.ToArray(), errors);
+        return (found.ToArray(), failed.Count, failed.ToArray());
     }
 
     public static Evidence? MatchServiceRegistration(string serviceName, string? displayName, PolicyDocument policy)
@@ -363,12 +364,12 @@ public sealed partial class WindowsCollector
 
     /// <summary>
     /// Tunnel adapters worth a clue: TUN/TAP-style virtual adapters used by VPN and proxy tools. Windows'
-    /// own IPv6 transition and HTTPS tunnels (Teredo, 6to4, ISATAP, IP-HTTPS) are always present and skipped.
+    /// own tunnels (Teredo, 6to4, ISATAP, IP-HTTPS, WAN Miniport dial-up VPN) are always present and skipped.
     /// </summary>
     public static bool IsTunnelClue(string name, string description, bool tunnelType)
     {
         var text = name + " " + description;
-        if (Regex.IsMatch(text, @"(?i)teredo|6to4|isatap|ip-https|kernel debug|loopback"))
+        if (Regex.IsMatch(text, @"(?i)teredo|6to4|isatap|ip-https|wan miniport|kernel debug|loopback"))
             return false;
         return tunnelType || Regex.IsMatch(text, @"(?i)tun|tap|wireguard|mihomo|clash");
     }

@@ -18,9 +18,23 @@ $installDir = Join-Path $env:ProgramFiles 'ComplianceAgent'
 $dataDir = Join-Path $env:ProgramData 'ComplianceAgent'
 $uninstall = Join-Path $PSScriptRoot 'Uninstall-TrialService.ps1'
 
+$tray = Join-Path $installDir 'Compliance.Tray.exe'
 if (Get-Service ComplianceAgent -ErrorAction SilentlyContinue) {
-    $answer = Read-Host '本机已安装常驻客户端。是否卸载后重新安装？原有登记身份会被清除 (Y/N)'
-    if ($answer -notmatch '^[Yy]') { Write-Host '已取消。'; exit 0 }
+    Write-Host '本机已安装常驻客户端：'
+    Write-Host '  1  仅更新程序，保留登记身份和本地数据（推荐）'
+    Write-Host '  2  卸载后重新安装，需要新的登记码'
+    $choice = Read-Host '请选择 (1/2，其他键取消)'
+    if ($choice -eq '1') {
+        Get-Process 'Compliance.Tray' -ErrorAction SilentlyContinue | Stop-Process -Force
+        Stop-Service ComplianceAgent
+        (Get-Service ComplianceAgent).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+        Copy-Item (Join-Path $package '*') $installDir -Recurse -Force
+        Start-Service ComplianceAgent
+        Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $tray + '"')
+        Write-Host '更新完成，服务已重新启动。约 1 分钟后在管理端刷新即可看到新的检查结果。' -ForegroundColor Green
+        exit 0
+    }
+    if ($choice -ne '2') { Write-Host '已取消。'; exit 0 }
     & $uninstall -Quiet
 }
 
@@ -50,7 +64,7 @@ if ($LASTEXITCODE -ne 0) {
 Start-Service ComplianceAgent
 (Get-Service ComplianceAgent).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
 # Start the tray for the signed-in user without elevation; later sign-ins start it from the Run key.
-Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + (Join-Path $installDir 'Compliance.Tray.exe') + '"')
+Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $tray + '"')
 
 Write-Host ''
 Write-Host '安装完成。客户端已作为 Windows 服务在后台运行，开机自动启动。' -ForegroundColor Green

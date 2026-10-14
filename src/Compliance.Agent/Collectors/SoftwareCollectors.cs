@@ -190,7 +190,7 @@ internal sealed class ExtensionsCollector : ICollector
         if (total > 0)
             throw new InvalidDataException(
                 $"{total} 个扩展清单无法读取"
-                    + (extensions.Errors > 0 ? $"（VS Code 类编辑器 {extensions.Errors} 个）" : "")
+                    + (extensions.Errors > 0 ? "，编辑器扩展：" + string.Join("、", extensions.Failed.Take(3)) : "")
                     + (failed.Count > 0 ? "，JetBrains 插件：" + string.Join("、", failed.Take(3)) : "")
             );
         return Task.CompletedTask;
