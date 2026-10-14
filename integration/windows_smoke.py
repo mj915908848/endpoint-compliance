@@ -8,6 +8,9 @@ Runs on Windows only (CI uses windows-latest); it changes the current user's pro
 import argparse, http.cookiejar, json, os, pathlib, secrets, socket, subprocess, sys, time, urllib.request
 import winreg
 
+# The runner console is cp1252; agent and server logs are UTF-8 Chinese.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 root = pathlib.Path(__file__).resolve().parents[1]
 ap = argparse.ArgumentParser()
 ap.add_argument("--dotnet", default="dotnet")
@@ -111,7 +114,7 @@ try:
            "--server", base, "--enroll", "--code", code]
     with (data / "agent.log").open("w") as log:
         result = subprocess.run(cmd, cwd=root, stdout=log, stderr=subprocess.STDOUT, timeout=600)
-    print((data / "agent.log").read_text(errors="replace"))
+    print((data / "agent.log").read_text(encoding="utf-8", errors="replace"))
     assert result.returncode == 0, f"Agent exited with {result.returncode}"
 
     devices = request("/api/devices")
@@ -171,4 +174,4 @@ finally:
         server.wait(timeout=10)
     server_log.close()
     if sys.exc_info()[0] is not None and (data / "server.log").exists():
-        print((data / "server.log").read_text(errors="replace")[-4000:])
+        print((data / "server.log").read_text(encoding="utf-8", errors="replace")[-4000:])
