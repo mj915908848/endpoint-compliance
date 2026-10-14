@@ -1,0 +1,31 @@
+using Compliance.Core;
+
+namespace Compliance.Server;
+
+/// <summary>HTTP endpoints, one file per area under <c>Endpoints/</c>.</summary>
+static partial class Endpoints
+{
+    public static void Map(WebApplication app, ComplianceService s, Settings settings)
+    {
+        MapAuth(app, s, settings);
+        MapAudit(app, s);
+        MapDevices(app, s);
+        MapAlerts(app, s);
+        MapEnrollment(app, s);
+        MapPolicies(app, s);
+        MapAgent(app, s);
+    }
+
+    static UserRecord Require(HttpContext c, string role)
+    {
+        var u = c.Items["user"] as UserRecord ?? throw new ApiError(401, "Login required");
+        if (!u.Roles.Contains(role))
+            throw new ApiError(403, "Role required: " + role);
+        return u;
+    }
+
+    static string Agent(HttpContext c) => (string)c.Items["device"]!;
+
+    static async Task<T> Body<T>(HttpContext c) =>
+        await c.Request.ReadFromJsonAsync<T>(Wire.Json) ?? throw new ApiError(400, "Body required");
+}
