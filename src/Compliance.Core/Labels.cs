@@ -18,6 +18,7 @@ public static class Labels
             "ports" => "端口与网络接口",
             "users" => "用户账户",
             "cli" => "命令行工具",
+            SensitiveFiles.Module => "敏感文件",
             _ => module,
         };
 
@@ -27,11 +28,13 @@ public static class Labels
             "Complete" => "已完成",
             "Error" => "读取失败",
             "Unknown" => "未覆盖",
+            "Truncated" => "命中过多，仅列出部分",
             _ => status,
         };
 
     public static string Scope(string? scope, IReadOnlyDictionary<string, string>? names = null) =>
         scope is null or "machine" ? "整机"
+        : SensitiveFiles.IsDriveScope(scope) ? scope[^1] + " 盘"
         : names is not null && names.TryGetValue(scope, out var name) ? "用户 " + name
         : "用户 " + scope;
 
@@ -47,6 +50,7 @@ public static class Labels
             EvidenceKind.Proxy => "代理设置",
             EvidenceKind.Clue => "待核查线索",
             EvidenceKind.BlockedAttempt => "拦截记录",
+            EvidenceKind.SensitiveFile => "敏感文件",
             _ => kind.ToString(),
         };
 

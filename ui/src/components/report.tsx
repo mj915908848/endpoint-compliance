@@ -25,6 +25,7 @@ export const reportLimits = [
   "浏览器策略只覆盖浏览器访问，不能证明其他程序的网络访问已被阻断。",
   "在完成 Windows 实机、安装包签名和网关验收前，不能据此认定生产环境防护已经生效。",
   "检查不读取聊天内容、密码或浏览记录，也不会自动卸载软件。",
+  "敏感文件扫描只比对文件和文件夹名称，不读取、不上传文件内容。",
 ];
 
 /** Scope cell: account name, with the SID on hover for exact matching. */
@@ -86,6 +87,58 @@ export function EvidenceTable({
           key: "scope",
           width: 140,
           render: (_, e) => <Scope scope={e.userSid} users={users} />,
+        },
+      ]}
+    />
+  );
+}
+
+/** Files and folders whose names contain a configured keyword; only names are compared. */
+export function SensitiveFileTable({
+  values,
+  users,
+  complete,
+}: {
+  values: Evidence[];
+  users?: UserAccount[];
+  complete: boolean;
+}) {
+  return (
+    <Table<Evidence>
+      rowKey={(e, i) => `${e.source}-${e.objectKey}-${i}`}
+      dataSource={values}
+      size="small"
+      pagination={values.length > 20 ? { pageSize: 20 } : false}
+      scroll={{ x: 640 }}
+      locale={{
+        emptyText: (
+          <Empty
+            title={
+              complete
+                ? "未发现文件名包含关键词的文件或文件夹"
+                : "暂无命中记录；扫描尚未完整完成，不能据此认定没有敏感文件"
+            }
+          />
+        ),
+      }}
+      columns={[
+        {
+          title: "路径",
+          key: "path",
+          render: (_, e) => <span className="mono">{e.objectKey}</span>,
+        },
+        { title: "说明", dataIndex: "summary" },
+        {
+          title: "所有者",
+          key: "owner",
+          width: 140,
+          render: (_, e) => (e.userSid ? <Scope scope={e.userSid} users={users} /> : "未知"),
+        },
+        {
+          title: "扫描范围",
+          key: "scope",
+          width: 140,
+          render: (_, e) => <Scope scope={e.source} users={users} />,
         },
       ]}
     />
@@ -249,6 +302,9 @@ export function ReportFindings({ report: r }: { report: Report }) {
     ["Installation", "Process", "Extension"].includes(e.kind),
   );
   const proxy = s.evidence.filter((e) => e.kind === "Proxy");
+  const sensitive = s.evidence.filter((e) => e.kind === "SensitiveFile");
+  const sensitiveScopes = s.modules.filter((m) => m.module === "sensitive-files");
+  const sensitiveNotes = r.sensitiveFileNotes ?? [];
   const clue = s.evidence.filter((e) => ["Clue", "BlockedAttempt"].includes(e.kind));
   return (
     <div className="report">
@@ -287,6 +343,18 @@ export function ReportFindings({ report: r }: { report: Report }) {
         empty="未发现相关软件的安装或运行记录。"
         users={s.users}
       />
+      {(sensitive.length > 0 || sensitiveNotes.length > 0 || sensitiveScopes.length > 0) && (
+        <Section title={`敏感文件（${sensitive.length}）`}>
+          {sensitiveNotes.length > 0 && <Bullets items={sensitiveNotes} />}
+          <SensitiveFileTable
+            values={sensitive}
+            users={s.users}
+            complete={
+              sensitiveScopes.length > 0 && sensitiveScopes.every((m) => m.status === "Complete")
+            }
+          />
+        </Section>
+      )}
       <EvidenceGroup title="代理设置" values={proxy} empty="未发现代理设置。" users={s.users} />
       <EvidenceGroup
         title="网络线索与拦截记录"

@@ -189,7 +189,7 @@ public sealed partial class WindowsCollector
         return $"{ex.GetType().Name}：{detail}；本项检查不完整";
     }
 
-    private static Profile[] Profiles()
+    internal static Profile[] Profiles()
     {
         using var root =
             Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList")

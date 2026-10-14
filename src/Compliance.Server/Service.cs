@@ -304,11 +304,14 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         var snapshot = device.Snapshot!;
         var policy = Wire.Read<PolicyDocument>((await AssignedPolicy(tx, device)).Payload);
         var report = ReportEngine.Evaluate(policy, snapshot, Now);
+        await SensitiveFileAlerts(tx, device, policy, sequence);
+        // Sensitive files get one alert per file from SensitiveFileAlerts, also when their rule makes the device fail.
         var confirmed =
             report.Verdict == Verdict.FAIL
                 ? snapshot
                     .Evidence.Where(e =>
-                        ReportEngine.Evaluate(policy, snapshot with { Evidence = [e] }, Now).Verdict == Verdict.FAIL
+                        e.Kind != EvidenceKind.SensitiveFile
+                        && ReportEngine.Evaluate(policy, snapshot with { Evidence = [e] }, Now).Verdict == Verdict.FAIL
                     )
                     .ToArray()
                 : [];
@@ -358,7 +361,11 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         // Recovery needs full, fresh coverage of the incident's original scope; acknowledgment never resolves.
         if (report.CoverageGaps.Length != 0)
             return;
-        foreach (var metadata in (await tx.SnapshotIncidents(device.Id)).Where(x => !present.Contains(x.Id)))
+        foreach (
+            var metadata in (await tx.SnapshotIncidents(device.Id)).Where(x =>
+                !present.Contains(x.Id) && !x.Modules.Contains(SensitiveFiles.Module)
+            )
+        )
         {
             var previous = await tx.GetAlert(metadata.Id);
             if (previous == null || previous.LastSequence >= sequence)
@@ -391,6 +398,78 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 );
                 if (previous.State == "Active")
                     await tx.Audit(device.Id, "SnapshotRecovered", metadata.Id, Now);
+            }
+        }
+    }
+
+    /// <summary>
+    /// One alert per reported file or folder, for administrators only. "Alert" rules raise a SensitiveFile alert and
+    /// "Violation" rules a Violation alert. An alert resolves when a complete, fresh scan of its scope no longer
+    /// lists the path, or when scanning is turned off; a scan that listed only part of its hits proves nothing.
+    /// </summary>
+    async Task SensitiveFileAlerts(Transaction tx, DeviceRecord device, PolicyDocument policy, long sequence)
+    {
+        var snapshot = device.Snapshot!;
+        var sensitive = policy.SensitiveFiles;
+        var rules = sensitive.Enabled
+            ? sensitive.Rules.ToDictionary(r => r.Id, StringComparer.Ordinal)
+            : new Dictionary<string, SensitiveFileRule>();
+        var fresh = Now.AddMinutes(-SensitiveFiles.FreshMinutes(policy));
+        var present = new HashSet<string>();
+        foreach (
+            var e in snapshot.Evidence.Where(e =>
+                e.Kind == EvidenceKind.SensitiveFile
+                && rules.ContainsKey(e.ProductId)
+                && (e.CollectedAt ?? snapshot.CollectedAt) >= fresh
+            )
+        )
+        {
+            var id = "sensitive:" + device.Id + ":" + Secrets.Hash(e.Source + "|" + e.ObjectKey);
+            if (!present.Add(id))
+                continue;
+            var previous = await tx.GetAlert(id);
+            if (previous != null && previous.LastSequence >= sequence)
+                continue;
+            await tx.PutSnapshotIncident(new SnapshotIncident(id, device.Id, e.Source, [SensitiveFiles.Module]));
+            var seen = e.CollectedAt ?? snapshot.CollectedAt;
+            await tx.UpsertAlert(
+                new AlertSummary(
+                    id,
+                    device.Id,
+                    device.HostName,
+                    rules[e.ProductId].Action == "Violation" ? "Violation" : "SensitiveFile",
+                    e.ObjectKey,
+                    e.Summary + "：" + e.ObjectKey,
+                    "Active",
+                    sequence,
+                    previous?.State == "Active" ? previous.FirstSeen : seen,
+                    seen,
+                    previous?.State == "Active" && previous.Acknowledged
+                )
+            );
+        }
+
+        foreach (
+            var metadata in (await tx.SnapshotIncidents(device.Id)).Where(x =>
+                !present.Contains(x.Id) && x.Modules.Contains(SensitiveFiles.Module)
+            )
+        )
+        {
+            var previous = await tx.GetAlert(metadata.Id);
+            if (previous == null || previous.State != "Active" || previous.LastSequence >= sequence)
+                continue;
+            var rescanned = snapshot.Modules.Any(m =>
+                m.Module == SensitiveFiles.Module
+                && m.Scope == metadata.Scope
+                && m.Status == "Complete"
+                && m.CollectedAt >= fresh
+                && m.CollectedAt > previous.LastSeen
+                && m.CollectedAt <= Now.AddMinutes(2)
+            );
+            if (!sensitive.Enabled || rescanned)
+            {
+                await tx.UpsertAlert(previous with { State = "Resolved", LastSeen = Now, LastSequence = sequence });
+                await tx.Audit(device.Id, "SnapshotRecovered", metadata.Id, Now);
             }
         }
     }

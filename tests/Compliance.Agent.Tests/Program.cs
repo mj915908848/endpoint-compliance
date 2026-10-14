@@ -873,6 +873,210 @@ await Check(
         await Task.CompletedTask;
     }
 );
+await Check(
+    "sensitive file walk matches Chinese names and honors exclusions",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-sensitive-" + Guid.NewGuid());
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "项目机密资料", "子目录"));
+            Directory.CreateDirectory(Path.Combine(root, "AppData"));
+            Directory.CreateDirectory(Path.Combine(root, "skipme"));
+            Directory.CreateDirectory(Path.Combine(root, "普通"));
+            File.WriteAllText(Path.Combine(root, "项目机密资料", "子目录", "机密名单.docx"), "");
+            File.WriteAllText(Path.Combine(root, "AppData", "机密.txt"), "");
+            File.WriteAllText(Path.Combine(root, "skipme", "机密.txt"), "");
+            File.WriteAllText(Path.Combine(root, "普通", "ＳＡＬＡＲＹ表.XLSX"), "");
+            File.WriteAllText(Path.Combine(root, "普通", "salary-notes.txt"), "");
+            File.WriteAllText(Path.Combine(root, "普通", "说明.txt"), "");
+            var policy = new SensitiveFilePolicy
+            {
+                Enabled = true,
+                Rules =
+                [
+                    new("secret", "机密文件", ["机密"]),
+                    new("salary", "薪资表", ["salary"]) { Extensions = [".xlsx"], Action = "Violation" },
+                ],
+                ExcludePaths = ["AppData", Path.Combine(root, "skipme")],
+            };
+            var result = SensitiveFileWalker.Scan(
+                new("user-1", root, "S-1-5-21-1-2-3-1001", false, []),
+                policy,
+                null,
+                CancellationToken.None
+            );
+            Assert(result.Status == "Complete" && result.Error is null, "walk did not complete: " + result.Error);
+            Assert(
+                result.Evidence.Length == 2,
+                "unexpected hits: " + string.Join(",", result.Evidence.Select(e => e.ObjectKey))
+            );
+            var folder = result.Evidence.Single(e => e.ProductId == "secret");
+            Assert(
+                folder.ObjectKey.EndsWith("项目机密资料") && folder.Summary.StartsWith("文件夹名包含“机密”"),
+                "folder hit missing or file inside a reported folder was repeated"
+            );
+            var salary = result.Evidence.Single(e => e.ProductId == "salary");
+            Assert(
+                salary.Kind == EvidenceKind.SensitiveFile
+                    && salary.Source == "user-1"
+                    && salary.UserSid == "S-1-5-21-1-2-3-1001"
+                    && salary.ObjectKey.EndsWith("ＳＡＬＡＲＹ表.XLSX"),
+                "full-width name or extension filter was not applied"
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+        await Task.CompletedTask;
+    }
+);
+await Check(
+    "sensitive file walk caps hits, skips drive system folders and linked folders",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-sensitive-" + Guid.NewGuid());
+        var outside = Path.Combine(Path.GetTempPath(), "compliance-sensitive-out-" + Guid.NewGuid());
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "Program Files"));
+            Directory.CreateDirectory(Path.Combine(root, "data"));
+            Directory.CreateDirectory(outside);
+            File.WriteAllText(Path.Combine(root, "Program Files", "confidential.txt"), "");
+            File.WriteAllText(Path.Combine(outside, "confidential-linked.txt"), "");
+            for (var i = 0; i < 5; i++)
+                File.WriteAllText(Path.Combine(root, "data", $"confidential-{i}.txt"), "");
+            Directory.CreateSymbolicLink(Path.Combine(root, "data", "link"), outside);
+            var policy = new SensitiveFilePolicy
+            {
+                Enabled = true,
+                Rules = [new("conf", "机密", ["CONFIDENTIAL"]) { MatchFolders = false }],
+                MaxHitsPerScope = 3,
+            };
+            var result = SensitiveFileWalker.Scan(
+                new("drive:D", root, null, true, []),
+                policy,
+                path => "S-1-5-21-9-9-9-1002",
+                CancellationToken.None
+            );
+            Assert(
+                result.Status == "Truncated" && result.Evidence.Length == 3,
+                "cap was not applied: " + result.Status
+            );
+            Assert(result.Error!.Contains("共命中 5 项"), "truncation note missing: " + result.Error);
+            Assert(
+                result.Evidence.All(e => e.ObjectKey.Contains("data") && !e.ObjectKey.Contains("linked"))
+                    && result.Evidence.All(e => e.UserSid == "S-1-5-21-9-9-9-1002"),
+                "system folder or linked folder was scanned, or owner missing"
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+            Directory.Delete(outside, true);
+        }
+        await Task.CompletedTask;
+    }
+);
+await Check(
+    "sensitive file scanner persists results and rescans when rules change",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-sensitive-" + Guid.NewGuid());
+        var state = Path.Combine(root, "state", "sensitive-files.json");
+        var docs = Path.Combine(root, "docs");
+        try
+        {
+            Directory.CreateDirectory(docs);
+            File.WriteAllText(Path.Combine(docs, "机密合同.pdf"), "");
+            var gone = true;
+            IReadOnlyList<SensitiveScanTarget> Targets(SensitiveFilePolicy p) =>
+                gone
+                    ? [new("user-1", docs, "S-1-5-21-1", false, []), new("drive:E", root, null, true, [], "磁盘未就绪")]
+                    : [new("user-1", docs, "S-1-5-21-1", false, [])];
+            var policy = new SensitiveFilePolicy { Enabled = true, Rules = [new("secret", "机密文件", ["机密"])] };
+            var now = DateTimeOffset.UtcNow;
+            using (var scanner = new SensitiveFileScanner(state, Targets))
+            {
+                var (_, pending) = scanner.Results(policy, now);
+                Assert(
+                    pending is [{ Scope: "machine", Status: "Unknown" }],
+                    "missing results were not reported as unknown"
+                );
+                scanner.Update(policy, false, now);
+                await scanner.Completion;
+                var (evidence, modules) = scanner.Results(policy, now);
+                Assert(evidence is [{ ProductId: "secret" }], "hit missing");
+                Assert(
+                    modules.Single(m => m.Scope == "user-1").Status == "Complete"
+                        && modules.Single(m => m.Scope == "drive:E") is { Status: "Unknown", Error: "磁盘未就绪" },
+                    "scope status wrong"
+                );
+                var before = scanner.Completion;
+                scanner.Update(policy, false, now.AddHours(1));
+                Assert(ReferenceEquals(before, scanner.Completion), "rescanned before the interval");
+            }
+            gone = false;
+            using (var scanner = new SensitiveFileScanner(state, Targets))
+            {
+                Assert(scanner.Results(policy, now).Evidence.Length == 1, "results were not kept across restart");
+                var changed = policy with { Rules = [new("secret", "机密文件", ["合同"])] };
+                var (_, stale) = scanner.Results(changed, now);
+                Assert(stale is [{ Scope: "machine", Status: "Unknown" }], "old rule results reused");
+                scanner.Update(changed, false, now);
+                await scanner.Completion;
+                var (evidence, modules) = scanner.Results(changed, now);
+                Assert(
+                    evidence is [{ Summary: var summary }] && summary.Contains("合同"),
+                    "rescan with new rules missing"
+                );
+                Assert(modules.All(m => m.Scope != "drive:E"), "removed drive was kept");
+                scanner.Update(changed with { Enabled = false }, false, now);
+                Assert(
+                    scanner.Results(changed with { Enabled = false }, now).Modules.Length == 0,
+                    "disabled scan still reported"
+                );
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+await Check(
+    "sensitive file scanner retries when targets cannot be listed",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-sensitive-" + Guid.NewGuid());
+        try
+        {
+            var calls = 0;
+            IReadOnlyList<SensitiveScanTarget> Targets(SensitiveFilePolicy p) =>
+                ++calls == 1 ? throw new IOException("registry busy") : [];
+            var policy = new SensitiveFilePolicy { Enabled = true, Rules = [new("secret", "机密文件", ["机密"])] };
+            using var scanner = new SensitiveFileScanner(Path.Combine(root, "s.json"), Targets);
+            var now = DateTimeOffset.UtcNow;
+            scanner.Update(policy, false, now);
+            await scanner.Completion;
+            var (_, modules) = scanner.Results(policy, now);
+            Assert(modules is [{ Scope: "machine", Status: "Error" }], "listing failure was not reported");
+            scanner.Update(policy, false, now);
+            await scanner.Completion;
+            Assert(calls == 2, "listing failure was not retried");
+            Assert(
+                scanner.Results(policy, now).Modules is [{ Scope: "machine", Status: "Complete" }],
+                "machine without scan scopes was left unknown"
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
+    }
+);
 
 // Native checks run on Windows only (CI runs them on windows-latest); elsewhere they are skipped.
 if (OperatingSystem.IsWindows())

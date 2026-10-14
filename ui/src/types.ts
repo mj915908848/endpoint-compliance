@@ -66,6 +66,7 @@ export interface Report {
   summary: string;
   reasons: string[];
   coverageGaps: string[];
+  sensitiveFileNotes?: string[];
   violationCount: number;
   evidenceCount: number;
   protectionStatus: string;
@@ -118,12 +119,31 @@ export interface Policy {
   products: Product[];
   blockDomains: string[];
   approvedNetworkAdapters?: string[];
+  sensitiveFiles?: SensitiveFilePolicy;
   applicationRules: {
     productId: string;
     name: string;
     sha256: string;
     type: string;
   }[];
+}
+export interface SensitiveFileRule {
+  id: string;
+  name: string;
+  keywords: string[];
+  extensions: string[];
+  matchFolders: boolean;
+  /** "Alert" notifies administrators only; "Violation" also makes the device fail. */
+  action: "Alert" | "Violation";
+}
+export interface SensitiveFilePolicy {
+  enabled: boolean;
+  rules: SensitiveFileRule[];
+  scanUserProfiles: boolean;
+  scanOtherFixedDrives: boolean;
+  excludePaths: string[];
+  rescanHours: number;
+  maxHitsPerScope: number;
 }
 export interface SignedPolicy {
   payload: string;

@@ -13,12 +13,19 @@ import {
   Row,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
-import type { DeviceSummary, Policy, Product } from "../types";
+import type {
+  DeviceSummary,
+  Policy,
+  Product,
+  SensitiveFilePolicy,
+  SensitiveFileRule,
+} from "../types";
 import { categoryLabel, controlLabel, moduleLabel } from "./labels";
 import { deviceName, Empty } from "./common";
 import { Panel } from "./layout";
@@ -38,6 +45,20 @@ export const modules = [
   "cli",
 ];
 const controls = ["application", "edge", "network"];
+
+/** Matches the server default; policies published before sensitive file scanning omit the section. */
+export const defaultSensitiveFiles: SensitiveFilePolicy = {
+  enabled: false,
+  rules: [],
+  scanUserProfiles: true,
+  scanOtherFixedDrives: true,
+  excludePaths: ["AppData", "$Recycle.Bin", "System Volume Information", "node_modules", ".git"],
+  rescanHours: 24,
+  maxHitsPerScope: 200,
+};
+const sensitiveOf = (p: Policy) => p.sensitiveFiles ?? defaultSensitiveFiles;
+export const sensitiveActionLabel = (action: string) =>
+  action === "Violation" ? "判定违规" : "只告警";
 const categories = ["proxy", "ai", "ide_ai"];
 
 /** The part of a policy an administrator edits; the server assigns version and validity on publish. */
@@ -95,6 +116,39 @@ export function describeChanges(before: Policy, after: Policy): string[] {
     );
   if (JSON.stringify(before.applicationRules) !== JSON.stringify(after.applicationRules))
     changes.push(`应用程序拦截规则：${after.applicationRules.length} 条`);
+  const sb = sensitiveOf(before),
+    sa = sensitiveOf(after);
+  if (sb.enabled !== sa.enabled) changes.push(`敏感文件扫描：${sa.enabled ? "启用" : "停用"}`);
+  const ruleName = (rules: SensitiveFileRule[]) => (id: string) =>
+    rules.find((r) => r.id === id)?.name ?? id;
+  const ruleIds = (x: SensitiveFilePolicy) => x.rules.map((r) => r.id);
+  const newRules = added(ruleIds(sb), ruleIds(sa)),
+    removedRules = added(ruleIds(sa), ruleIds(sb));
+  if (newRules.length) changes.push(`新增敏感文件规则：${list(newRules.map(ruleName(sa.rules)))}`);
+  if (removedRules.length)
+    changes.push(`删除敏感文件规则：${list(removedRules.map(ruleName(sb.rules)))}`);
+  for (const rule of sa.rules) {
+    const old = sb.rules.find((r) => r.id === rule.id);
+    if (!old || JSON.stringify(old) === JSON.stringify(rule)) continue;
+    const plus = added(old.keywords, rule.keywords),
+      minus = added(rule.keywords, old.keywords);
+    const parts = [
+      plus.length ? `新增关键词 ${list(plus)}` : "",
+      minus.length ? `移除关键词 ${list(minus)}` : "",
+      old.action !== rule.action ? `处理方式改为${sensitiveActionLabel(rule.action)}` : "",
+    ].filter(Boolean);
+    changes.push(`修改敏感文件规则“${rule.name}”${parts.length ? `：${parts.join("，")}` : ""}`);
+  }
+  diff("敏感文件排除目录", sb.excludePaths, sa.excludePaths, same);
+  if (
+    sb.scanUserProfiles !== sa.scanUserProfiles ||
+    sb.scanOtherFixedDrives !== sa.scanOtherFixedDrives ||
+    sb.rescanHours !== sa.rescanHours ||
+    sb.maxHitsPerScope !== sa.maxHitsPerScope
+  )
+    changes.push(
+      `敏感文件扫描范围：${[sa.scanUserProfiles && "用户目录", sa.scanOtherFixedDrives && "其他本地磁盘"].filter(Boolean).join("、") || "未选择"}，每 ${sa.rescanHours} 小时扫描一次，每个范围最多上报 ${sa.maxHitsPerScope} 项`,
+    );
   return changes;
 }
 
@@ -314,6 +368,12 @@ export function PolicyEditor({
         </Row>
       </Panel>
 
+      <SensitiveFilesPanel
+        value={sensitiveOf(value)}
+        readOnly={readOnly}
+        onChange={(sensitiveFiles) => set({ sensitiveFiles })}
+      />
+
       <Panel title="检查要求">
         <Row gutter={[24, 16]}>
           <Col xs={24} lg={14}>
@@ -341,6 +401,375 @@ export function PolicyEditor({
         </Row>
       </Panel>
     </Space>
+  );
+}
+
+function SensitiveFilesPanel({
+  value,
+  onChange,
+  readOnly,
+}: {
+  value: SensitiveFilePolicy;
+  onChange: (v: SensitiveFilePolicy) => void;
+  readOnly: boolean;
+}) {
+  const set = (patch: Partial<SensitiveFilePolicy>) => onChange({ ...value, ...patch });
+  const [editing, setEditing] = useState<{ index: number; rule: SensitiveFileRule } | null>(null);
+  const nextId = () => {
+    let n = value.rules.length + 1;
+    while (value.rules.some((r) => r.id === `rule-${n}`)) n++;
+    return `rule-${n}`;
+  };
+  const noScope = !value.scanUserProfiles && !value.scanOtherFixedDrives;
+  // Until scanning is switched on there is nothing else to configure.
+  const collapsed = !value.enabled && value.rules.length === 0;
+  return (
+    <Panel
+      title={`敏感文件扫描（${value.rules.length}）`}
+      actions={
+        !readOnly &&
+        !collapsed && (
+          <Button
+            icon={<PlusOutlined />}
+            onClick={() =>
+              setEditing({
+                index: -1,
+                rule: {
+                  id: nextId(),
+                  name: "",
+                  keywords: [],
+                  extensions: [],
+                  matchFolders: true,
+                  action: "Alert",
+                },
+              })
+            }
+          >
+            添加规则
+          </Button>
+        )
+      }
+    >
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Field label="启用扫描">
+          <Switch
+            aria-label="启用敏感文件扫描"
+            checked={value.enabled}
+            disabled={readOnly}
+            onChange={(enabled) => set({ enabled })}
+          />
+          <Hint>
+            终端在后台低优先级比对文件和文件夹名称，不读取、不上传文件内容；命中后只通知管理员，不提醒员工。
+          </Hint>
+          {value.enabled && value.rules.length === 0 && (
+            <Alert type="warning" showIcon title="启用扫描需要至少一条规则。" />
+          )}
+        </Field>
+        {!collapsed && (
+          <SensitiveFilesSettings
+            value={value}
+            set={set}
+            readOnly={readOnly}
+            noScope={noScope}
+            onEdit={(index, rule) => setEditing({ index, rule })}
+          />
+        )}
+      </Space>
+      {editing && (
+        <SensitiveRuleModal
+          initial={editing.rule}
+          creating={editing.index < 0}
+          readOnly={readOnly}
+          onCancel={() => setEditing(null)}
+          onSave={(rule) => {
+            set({
+              rules:
+                editing.index < 0
+                  ? [...value.rules, rule]
+                  : value.rules.map((r, i) => (i === editing.index ? rule : r)),
+            });
+            setEditing(null);
+          }}
+        />
+      )}
+    </Panel>
+  );
+}
+
+function SensitiveFilesSettings({
+  value,
+  set,
+  readOnly,
+  noScope,
+  onEdit,
+}: {
+  value: SensitiveFilePolicy;
+  set: (patch: Partial<SensitiveFilePolicy>) => void;
+  readOnly: boolean;
+  noScope: boolean;
+  onEdit: (index: number, rule: SensitiveFileRule) => void;
+}) {
+  return (
+    <>
+      <Row gutter={[24, 16]}>
+        <Col xs={24} lg={12}>
+          <Field label="扫描范围">
+            <Space orientation="vertical" size={4}>
+              <Checkbox
+                checked={value.scanUserProfiles}
+                disabled={readOnly}
+                onChange={(e) => set({ scanUserProfiles: e.target.checked })}
+              >
+                用户目录（C:\Users 下每个用户）
+              </Checkbox>
+              <Checkbox
+                checked={value.scanOtherFixedDrives}
+                disabled={readOnly}
+                onChange={(e) => set({ scanOtherFixedDrives: e.target.checked })}
+              >
+                系统盘以外的本地磁盘（如 D 盘、E 盘）
+              </Checkbox>
+            </Space>
+            {noScope && value.enabled && (
+              <Alert type="warning" showIcon title="请至少选择一个扫描范围。" />
+            )}
+            <Hint>不扫描 U 盘和网络盘；链接到其他位置的文件夹不会进入。</Hint>
+          </Field>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Field label="扫描频率与上报数量">
+            <Space wrap>
+              <span>每</span>
+              <InputNumber
+                aria-label="敏感文件扫描间隔"
+                min={1}
+                max={168}
+                value={value.rescanHours}
+                disabled={readOnly}
+                onChange={(v) => v && set({ rescanHours: v })}
+                suffix="小时"
+                style={{ width: 120 }}
+              />
+              <span>扫描一次，每个范围最多上报</span>
+              <InputNumber
+                aria-label="每个范围最多上报"
+                min={1}
+                max={1000}
+                value={value.maxHitsPerScope}
+                disabled={readOnly}
+                onChange={(v) => v && set({ maxHitsPerScope: v })}
+                suffix="项"
+                style={{ width: 110 }}
+              />
+            </Space>
+            <Hint>修改规则后终端会立即重新扫描。</Hint>
+          </Field>
+        </Col>
+        <Col xs={24}>
+          <Field label="排除目录">
+            <TagInput
+              label="排除目录"
+              value={value.excludePaths}
+              disabled={readOnly}
+              placeholder="文件夹名称，或完整路径，例如 D:\软件安装包"
+              onChange={(excludePaths) => set({ excludePaths })}
+            />
+            <Hint>
+              只写名称时，任何位置的同名文件夹都会跳过；写完整路径时只跳过该目录。Windows、Program
+              Files 等系统目录始终跳过。
+            </Hint>
+          </Field>
+        </Col>
+      </Row>
+      <Table
+        rowKey={(r) => r.id}
+        dataSource={value.rules}
+        size="middle"
+        scroll={{ x: 640 }}
+        pagination={{ pageSize: 10, hideOnSinglePage: true }}
+        locale={{ emptyText: <Empty title="还没有规则" /> }}
+        columns={[
+          {
+            title: "规则",
+            key: "name",
+            render: (_, r) => <Typography.Text strong>{r.name}</Typography.Text>,
+          },
+          {
+            title: "关键词",
+            key: "keywords",
+            render: (_, r) => (
+              <Space size={[4, 4]} wrap>
+                {r.keywords.map((k) => (
+                  <Tag key={k}>{k}</Tag>
+                ))}
+              </Space>
+            ),
+          },
+          {
+            title: "匹配",
+            key: "match",
+            width: 170,
+            render: (_, r) =>
+              [
+                r.extensions.length ? `仅 ${r.extensions.join(" ")}` : "所有文件",
+                r.matchFolders && !r.extensions.length ? "含文件夹" : "",
+              ]
+                .filter(Boolean)
+                .join("，"),
+          },
+          {
+            title: "处理方式",
+            key: "action",
+            width: 110,
+            render: (_, r) => (
+              <Tag color={r.action === "Violation" ? "error" : "warning"}>
+                {sensitiveActionLabel(r.action)}
+              </Tag>
+            ),
+          },
+          {
+            title: "操作",
+            key: "actions",
+            width: 140,
+            render: (_, r, index) => (
+              <Space>
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() => onEdit(index, r)}
+                  aria-label={`${readOnly ? "查看" : "编辑"} ${r.name}`}
+                >
+                  {readOnly ? "查看" : "编辑"}
+                </Button>
+                {!readOnly && (
+                  <Popconfirm
+                    title={`删除 ${r.name}？`}
+                    description="发布后终端不再按这条规则扫描，相关告警会在下次扫描后解除。"
+                    okText="删除"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => set({ rules: value.rules.filter((_, i) => i !== index) })}
+                  >
+                    <Button size="small" type="link" danger aria-label={`删除 ${r.name}`}>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                )}
+              </Space>
+            ),
+          },
+        ]}
+      />
+    </>
+  );
+}
+
+function SensitiveRuleModal({
+  initial,
+  creating,
+  readOnly,
+  onSave,
+  onCancel,
+}: {
+  initial: SensitiveFileRule;
+  creating: boolean;
+  readOnly: boolean;
+  onSave: (r: SensitiveFileRule) => void;
+  onCancel: () => void;
+}) {
+  const [form] = Form.useForm<SensitiveFileRule>();
+  const extensions = Form.useWatch("extensions", form) as string[] | undefined;
+  return (
+    <Modal
+      open
+      title={creating ? "添加敏感文件规则" : readOnly ? initial.name : `编辑 ${initial.name}`}
+      okText="确定"
+      cancelText="取消"
+      width={640}
+      onCancel={onCancel}
+      okButtonProps={{ hidden: readOnly }}
+      onOk={() =>
+        form.validateFields().then((v) =>
+          onSave({
+            ...initial,
+            ...v,
+            name: v.name.trim(),
+            extensions: [
+              ...new Set(
+                (v.extensions ?? []).map((e) => (e.startsWith(".") ? e : `.${e}`).toLowerCase()),
+              ),
+            ],
+          }),
+        )
+      }
+      destroyOnHidden
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        disabled={readOnly}
+        initialValues={initial}
+        requiredMark={false}
+      >
+        <Form.Item
+          name="name"
+          label="规则名称"
+          rules={[
+            { required: true, whitespace: true, message: "请填写规则名称" },
+            { max: 64, message: "不超过 64 个字符" },
+          ]}
+        >
+          <Input placeholder="例如 机密文件" />
+        </Form.Item>
+        <Form.Item
+          name="keywords"
+          label="关键词"
+          extra="文件或文件夹名称包含任一关键词即命中。支持中文，不区分大小写和全角半角。每个 2–64 个字符。"
+          rules={[
+            {
+              validator: (_, v: string[] | undefined) =>
+                !v?.length
+                  ? Promise.reject(new Error("至少填写一个关键词"))
+                  : v.length > 100
+                    ? Promise.reject(new Error("最多 100 个关键词"))
+                    : v.some((k) => k.length < 2 || k.length > 64)
+                      ? Promise.reject(new Error("每个关键词 2–64 个字符"))
+                      : Promise.resolve(),
+            },
+          ]}
+        >
+          <TagInput label="关键词" placeholder="输入后按回车，例如 机密、工资表、身份证" />
+        </Form.Item>
+        <Form.Item
+          name="extensions"
+          label="只匹配这些扩展名"
+          extra="留空则匹配所有文件。填写后只检查这些类型的文件，不再匹配文件夹。"
+          rules={[
+            {
+              validator: (_, v: string[] | undefined) =>
+                (v ?? []).every((e) => /^\.?[A-Za-z0-9_-]{1,16}$/.test(e))
+                  ? Promise.resolve()
+                  : Promise.reject(new Error("扩展名格式如 .xlsx")),
+            },
+          ]}
+        >
+          <TagInput label="扩展名" placeholder="例如 .xlsx、.docx、.pdf" />
+        </Form.Item>
+        <Form.Item name="matchFolders" valuePropName="checked">
+          <Checkbox disabled={readOnly || !!extensions?.length}>
+            同时匹配文件夹名称（命中的文件夹内不再逐个列出同一规则的文件）
+          </Checkbox>
+        </Form.Item>
+        <Form.Item name="action" label="处理方式">
+          <Radio.Group
+            options={[
+              { value: "Alert", label: "只告警：通知管理员，不影响终端结论" },
+              { value: "Violation", label: "判定违规：通知管理员，终端结论为“不通过”" },
+            ]}
+          />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }
 

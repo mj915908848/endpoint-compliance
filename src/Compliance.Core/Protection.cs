@@ -102,6 +102,7 @@ public static class PolicyCrypto
             || doc.ApprovedNetworkAdapters.Any(n => string.IsNullOrWhiteSpace(n) || n.Length < 3 || n.Length > 64)
         )
             throw new ArgumentException("已批准网卡无效：最多 100 项，每项 3–64 个字符");
+        SensitiveFiles.Validate(doc.SensitiveFiles);
         DomainRules.CompileEdge(doc.BlockDomains);
         foreach (var rule in doc.ApplicationRules)
             if (
@@ -328,7 +329,7 @@ public static class ReportRenderer
             b.AppendLine("- " + Cell(reason));
         if (report.Reasons.Length == 0)
             b.AppendLine("未发现确认违规。结论的完整性以“检查覆盖”一节为准。");
-        b.AppendLine("\n## 4. 软件安装与运行\n");
+        b.AppendLine("\n## 4. 软件与敏感文件\n");
         Table(
             b,
             s.Evidence.Where(e =>
@@ -337,6 +338,7 @@ public static class ReportRenderer
             "未发现相关软件的安装或运行记录。",
             names
         );
+        SensitiveTable(b, report, names);
         b.AppendLine("\n## 5. 代理设置\n");
         Table(b, s.Evidence.Where(e => e.Kind == EvidenceKind.Proxy), "未发现代理设置。", names);
         b.AppendLine("\n## 6. 网络线索与防护措施\n");
@@ -384,8 +386,47 @@ public static class ReportRenderer
                 + "- 浏览器策略只覆盖浏览器访问，不能证明其他程序的网络访问已被阻断。\n"
                 + "- 在完成 Windows 实机、安装包签名和网关验收前，不能据此认定生产环境防护已经生效。\n"
                 + "- 检查不读取聊天内容、密码或浏览记录，也不会自动卸载软件。\n"
+                + "- 敏感文件扫描只比对文件和文件夹名称，不读取、不上传文件内容。\n"
         );
         return b.ToString();
+    }
+
+    private static void SensitiveTable(
+        StringBuilder b,
+        ComplianceReport report,
+        IReadOnlyDictionary<string, string> names
+    )
+    {
+        var s = report.Snapshot;
+        var rows = s.Evidence.Where(e => e.Kind == EvidenceKind.SensitiveFile).ToArray();
+        if (
+            rows.Length == 0
+            && report.SensitiveFileNotes.Length == 0
+            && !s.Modules.Any(m => m.Module == SensitiveFiles.Module)
+        )
+            return;
+        b.AppendLine("\n### 敏感文件\n");
+        foreach (var note in report.SensitiveFileNotes)
+            b.AppendLine("- " + Cell(note));
+        if (report.SensitiveFileNotes.Length > 0)
+            b.AppendLine();
+        if (rows.Length == 0)
+        {
+            var complete =
+                s.Modules.Where(m => m.Module == SensitiveFiles.Module).ToArray() is { Length: > 0 } scopes
+                && scopes.All(m => m.Status == "Complete");
+            b.AppendLine(
+                complete
+                    ? "未发现文件名包含关键词的文件或文件夹。"
+                    : "暂无命中记录；扫描尚未完整完成，不能据此认定没有敏感文件。"
+            );
+            return;
+        }
+        b.AppendLine("| 路径 | 说明 | 所有者 | 扫描范围 |\n| --- | --- | --- | --- |");
+        foreach (var e in rows)
+            b.AppendLine(
+                $"| {Cell(e.ObjectKey)} | {Cell(e.Summary)} | {Cell(e.UserSid is null ? "未知" : Labels.Scope(e.UserSid, names))} | {Cell(Labels.Scope(e.Source, names))} |"
+            );
     }
 
     private static void Table(

@@ -156,6 +156,12 @@ public sealed class AgentRuntime(
     private DateTimeOffset lastLight = DateTimeOffset.MinValue;
     private ScanSnapshot? latest;
 
+    // Native agents only; a fixture snapshot already carries whatever sensitive file results it simulates.
+    private SensitiveFileScanner? sensitiveFiles;
+
+    // A one-time check waits for the file name scan so its results are part of the single upload.
+    private bool waitForSensitiveFiles;
+
     // A fixture stands in for another machine, so report its host name rather than this one's.
     private string HostName =>
         simulated
@@ -290,8 +296,18 @@ public sealed class AgentRuntime(
         var pipeTask =
             OperatingSystem.IsWindows() && !once ? new NotificationPipe(notices).RunAsync(ct) : Task.CompletedTask;
         await LoadCachedPolicy();
+        using var scanner =
+            OperatingSystem.IsWindows() && !simulated
+                ? new SensitiveFileScanner(
+                    Path.Combine(config.DataDirectory, "sensitive-files.json"),
+                    SensitiveFileScanner.WindowsTargets,
+                    SensitiveFileScanner.WindowsOwner
+                )
+                : null;
+        sensitiveFiles = scanner;
         if (once)
         {
+            waitForSensitiveFiles = true;
             await Cycle(api, queue, notices, true, ct);
             if (localDemo && await queue.UnsentCountAsync(ct) > 0)
                 throw new InvalidOperationException(
@@ -459,9 +475,24 @@ public sealed class AgentRuntime(
         bool light = full || lastLight < DateTimeOffset.UtcNow.AddMinutes(-5);
         if (light)
         {
+            if (sensitiveFiles is not null)
+            {
+                sensitiveFiles.Update(policy.SensitiveFiles, scanCommands.Length > 0, DateTimeOffset.UtcNow);
+                // Waited for before the other checks so their results are not aged by a long walk.
+                if (waitForSensitiveFiles && policy.SensitiveFiles.Enabled)
+                {
+                    Console.WriteLine("正在扫描敏感文件名，磁盘文件较多时可能需要几分钟……");
+                    await sensitiveFiles.Completion.WaitAsync(ct);
+                }
+            }
             ScanSnapshot scan = simulated
                 ? await FixtureCollector.LoadAsync(fixturePath!, ct)
                 : await CollectNativeAsync(config.DeviceId!, policy, full ? null : latest, ct);
+            if (sensitiveFiles is not null)
+            {
+                var (found, results) = sensitiveFiles.Results(policy.SensitiveFiles, DateTimeOffset.UtcNow);
+                scan = scan with { Evidence = [.. scan.Evidence, .. found], Modules = [.. scan.Modules, .. results] };
+            }
             var controls = WindowsControls.Inspect(policy);
             // Lightweight cadence uses fresh module results only for modules actually collected.
             var moduleResults = policyIssue is null
