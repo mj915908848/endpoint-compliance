@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Native Windows smoke test: a loopback server plus the real agent collectors on this machine.
 
-It plants a known listener and a user proxy setting, runs one real scan, and checks that the registry,
-PackageManager, socket-table and account lookups produced complete modules and the expected evidence.
-Runs on Windows only (CI uses windows-latest); it changes the current user's proxy setting and restores it.
+It plants a known listener, a user proxy setting and files whose names contain a sensitive keyword, runs one
+real scan, and checks that the registry, PackageManager, socket-table, account lookups and file name scan
+produced complete modules and the expected evidence. Runs on Windows only (CI uses windows-latest); it
+changes the current user's proxy setting and restores it, and removes the planted files.
 """
 import argparse, http.cookiejar, json, os, pathlib, secrets, socket, subprocess, sys, time, urllib.request
 import winreg
@@ -76,6 +77,14 @@ def write_proxy(values):
                 winreg.SetValueEx(key, name, 0, value[1], value[0])
 
 
+# A keyword no real file contains, and content that must never leave the machine.
+KEYWORD = "冒烟机密" + secrets.token_hex(3)
+SECRET_CONTENT = "content-must-not-upload-" + secrets.token_hex(8)
+# One hit in the user's profile and one folder hit on the drive holding the checkout (D: on CI runners).
+profile_hit = pathlib.Path.home() / f"{KEYWORD}-名单.txt"
+drive_hit = data.resolve() / f"{KEYWORD}-资料"
+planted = []
+
 server_log = (data / "server.log").open("w")
 server = None
 saved_proxy = read_proxy()
@@ -98,7 +107,28 @@ try:
                 raise AssertionError("Server startup timeout")
             time.sleep(0.2)
     csrf = request("/api/auth/login", {"username": "ci-admin", "password": password})["csrfToken"]
+
+    # Publish the sensitive file rule before enrolling so the device is assigned it.
+    policy = json.loads(request("/api/policies/current")["payload"])
+    policy["sensitiveFiles"] = {
+        **policy.get("sensitiveFiles", {}),
+        "enabled": True,
+        "scanUserProfiles": True,
+        "scanOtherFixedDrives": True,
+        # Package caches on the runner hold many files and no documents.
+        "excludePaths": ["AppData", "$Recycle.Bin", "System Volume Information", "node_modules", ".git",
+                         ".nuget", ".dotnet", ".cargo", ".rustup", "hostedtoolcache"],
+        "rules": [{"id": "smoke", "name": "冒烟测试机密", "keywords": [KEYWORD], "extensions": [],
+                   "matchFolders": True, "action": "Alert"}],
+    }
+    request("/api/policies", policy)
     code = request("/api/enrollment-codes", {"expiresMinutes": 15})["code"]
+
+    profile_hit.write_text(SECRET_CONTENT, encoding="utf-8")
+    planted.append(profile_hit)
+    drive_hit.mkdir()
+    planted.append(drive_hit)
+    (drive_hit / f"{KEYWORD}-内部.txt").write_text(SECRET_CONTENT, encoding="utf-8")
 
     # Known state for the collectors to find: this process listens on a proxy port, and the user's
     # system proxy points at it.
@@ -161,6 +191,33 @@ try:
         f"Accounts not translated to names: {users}"
     print("PASS user SIDs translated to account names: " + ", ".join(u["name"] for u in users))
 
+    system_drive = os.environ.get("SystemDrive", "C:").upper()[0]
+    sensitive_modules = by_module.get("sensitive-files", [])
+    assert sensitive_modules, "Sensitive file scan reported no result"
+    for m in sensitive_modules:
+        # Folders the scan account cannot open are listed in the error and keep the scope incomplete.
+        assert m["status"] == "Complete" or (m["status"] == "Error" and "无法读取" in (m.get("error") or "")), \
+            f"Sensitive file scan of {m['scope']} failed: {m['status']} {m.get('error') or ''}"
+    hits = {e["objectKey"].lower(): e for e in evidence if e["kind"] == "SensitiveFile"}
+    profile_evidence = hits.get(str(profile_hit).lower())
+    assert profile_evidence and profile_evidence["source"].startswith("S-1-5-21-"), \
+        f"Profile file not reported under its user: {profile_evidence} (hits: {list(hits)})"
+    drive_evidence = hits.get(str(drive_hit).lower())
+    assert drive_evidence, f"Folder on the checkout drive not reported (hits: {list(hits)})"
+    if drive_hit.drive.upper()[0] != system_drive:
+        assert drive_evidence["source"] == "drive:" + drive_hit.drive.upper()[0], \
+            f"Folder on a data drive reported under {drive_evidence['source']}"
+    assert not any(k.endswith("-内部.txt") for k in hits), "File inside a reported folder was listed again"
+    assert SECRET_CONTENT not in json.dumps(snapshot, ensure_ascii=False), "File content left the machine"
+    print(f"PASS sensitive file names found in the profile and under {drive_evidence['source']}; content not uploaded")
+
+    alerts = request("/api/alerts")
+    sensitive_alerts = {a["objectKey"].lower() for a in alerts if a["type"] == "SensitiveFile"}
+    assert {str(profile_hit).lower(), str(drive_hit).lower()} <= sensitive_alerts, \
+        f"Sensitive file alerts missing: {sensitive_alerts}"
+    assert "### 敏感文件" in md and KEYWORD in md, "Markdown report lacks the sensitive file table"
+    print("PASS one administrator alert per sensitive path and the report lists them")
+
     report = request(f"/api/devices/{device}/report")
     assert report["verdict"] == "FAIL", f"An enabled proxy must fail the check, got {report['verdict']}"
     assert sum(line.startswith("## ") for line in md.splitlines()) == 9
@@ -168,6 +225,16 @@ try:
     print("Evidence: " + str(data))
 finally:
     write_proxy(saved_proxy)
+    for path in planted:
+        try:
+            if path.is_dir():
+                for child in path.iterdir():
+                    child.unlink()
+                path.rmdir()
+            else:
+                path.unlink()
+        except OSError as e:
+            print(f"Could not remove {path}: {e}")
     listener.close()
     if server and server.poll() is None:
         server.terminate()
