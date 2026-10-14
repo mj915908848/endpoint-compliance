@@ -1,0 +1,67 @@
+using System.Security.Cryptography;
+using System.Text;
+using Compliance.Core;
+
+namespace Compliance.Server;
+
+public sealed class Settings
+{
+    public bool DemoMode { get; set; }
+    public bool DemoHttpLan { get; set; }
+    public string Storage { get; set; } = "Postgres";
+    public string Database { get; set; } = "";
+    public string SigningKeyPath { get; set; } = "";
+    public string BootstrapUsers { get; set; } = "[]";
+    public string[] TrustedProxies { get; set; } = [];
+}
+
+public sealed record UserRecord(string Username, string PasswordHash, string[] Roles);
+public sealed record BootstrapUser(string Username, string Password, string[] Roles);
+public sealed record SessionRecord(string Username, string CsrfToken, DateTimeOffset ExpiresAt);
+public sealed record CodeRecord(DateTimeOffset ExpiresAt, bool Used);
+
+public sealed record DeviceRecord(
+    string Id,
+    string HostName,
+    string PublicKeyPem,
+    DateTimeOffset? LastHeartbeat = null,
+    long AppliedPolicyVersion = 0,
+    ControlState[]? Controls = null,
+    ScanSnapshot? Snapshot = null,
+    long SnapshotSequence = 0,
+    long TargetPolicyVersion = 1);
+
+public sealed record SnapshotIncident(string Id, string DeviceId, string Scope, string[] Modules);
+public sealed record StoredEvent(string Fingerprint, AgentEvent Event, DateTimeOffset ReceivedAt);
+public sealed record DraftRecord(string Id, PolicyDocument Document, string CreatedBy, string? ApprovedBy, bool Published, bool ImpactReviewed);
+public sealed record CommandRecord(string DeviceId, DeviceCommand Command, CommandReply? Reply = null);
+public sealed record AuditRecord(string Id, string Actor, string Action, string Target, DateTimeOffset At);
+
+public sealed class ApiError(int status, string message) : Exception(message)
+{
+    public int Status => status;
+}
+
+public static class Secrets
+{
+    const int Iterations = 210000;
+
+    public static string Token() => Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+
+    public static string Hash(string value) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    public static string Password(string value)
+    {
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var hash = Rfc2898DeriveBytes.Pbkdf2(value, salt, Iterations, HashAlgorithmName.SHA256, 32);
+        return Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(hash);
+    }
+
+    public static bool Check(string value, string stored)
+    {
+        var parts = stored.Split(':');
+        var expected = Convert.FromBase64String(parts[1]);
+        var actual = Rfc2898DeriveBytes.Pbkdf2(value, Convert.FromBase64String(parts[0]), Iterations, HashAlgorithmName.SHA256, 32);
+        return CryptographicOperations.FixedTimeEquals(expected, actual);
+    }
+}
