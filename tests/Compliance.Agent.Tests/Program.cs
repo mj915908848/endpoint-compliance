@@ -414,7 +414,9 @@ await Check(
             Assert(!AgentConfiguration.Read(path).HttpTrial, "a configuration without the flag enabled HTTP trial");
             File.WriteAllText(
                 path,
-                "{\"serverUrl\":\"http://192.168.1.15:5080\",\"dataDirectory\":\"C:\\\\data\",\"httpTrial\":true}"
+                "{\"serverUrl\":\"http://192.168.1.15:5080\",\"dataDirectory\":\"C:\\\\data\",\"httpTrial\":true}",
+                // install.ps1 writes with Windows PowerShell 5.1's Set-Content -Encoding UTF8, which adds a BOM.
+                new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true)
             );
             var trial = AgentConfiguration.Read(path);
             AgentConfiguration.Save(path, trial with { DeviceId = "device-1" });

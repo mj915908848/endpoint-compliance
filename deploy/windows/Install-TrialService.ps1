@@ -34,7 +34,11 @@ $code = (Read-Host '请粘贴管理端“终端登记”页面生成的新登记
 if ($code -cnotmatch '^[0-9a-f]{64}$') { throw '登记码应为 64 位小写十六进制字符。' }
 
 Write-Host '正在安装服务…'
-& (Join-Path $PSScriptRoot 'install.ps1') -ServerUrl $serverUrl -PackageDirectory $package -HttpTrial 6>$null | Out-Null
+try { & (Join-Path $PSScriptRoot 'install.ps1') -ServerUrl $serverUrl -PackageDirectory $package -HttpTrial 6>$null | Out-Null }
+catch {
+    & $uninstall -Quiet
+    throw "安装服务失败，已撤销安装：$($_.Exception.Message)"
+}
 
 Write-Host '正在登记终端…'
 & (Join-Path $installDir 'Compliance.Agent.exe') --config (Join-Path $dataDir 'agent.json') --enroll --code $code

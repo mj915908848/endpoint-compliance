@@ -28,11 +28,12 @@ if (-not (Test-Path $configPath)) {
     @{ serverUrl=$ServerUrl; dataDirectory=$DataDirectory; deviceId=$null; policyPublicKeyPem=$null; policyKeyId=$null; httpTrial=[bool]$HttpTrial } | ConvertTo-Json -Compress | Set-Content -Path $configPath -Encoding UTF8
 }
 $binary = '"' + (Join-Path $InstallDirectory 'Compliance.Agent.exe') + '" --config "' + $configPath + '"'
-& sc.exe create ComplianceAgent binPath= $binary start= auto obj= LocalSystem DisplayName= 'Compliance Agent' | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'Service creation failed' }
-& sc.exe failure ComplianceAgent reset= 86400 actions= restart/60000/restart/60000/restart/300000 | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'SCM recovery configuration failed' }
-& sc.exe failureflag ComplianceAgent 1 | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'SCM failure flag failed' }
+# New-Service passes the quoted binary path straight to the service API; Windows PowerShell 5.1 mangles
+# embedded quotes when handing them to sc.exe on the command line.
+New-Service -Name ComplianceAgent -BinaryPathName $binary -DisplayName 'Compliance Agent' -StartupType Automatic | Out-Null
+$output = & sc.exe failure ComplianceAgent reset= 86400 actions= restart/60000/restart/60000/restart/300000
+if ($LASTEXITCODE -ne 0) { throw "SCM recovery configuration failed: $output" }
+$output = & sc.exe failureflag ComplianceAgent 1
+if ($LASTEXITCODE -ne 0) { throw "SCM failure flag failed: $output" }
 New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name 'ComplianceTray' -Value ('"' + (Join-Path $InstallDirectory 'Compliance.Tray.exe') + '"') -PropertyType String -Force | Out-Null
 Write-Host 'Installed. Enroll once with: Compliance.Agent.exe --config <ProgramData\ComplianceAgent\agent.json> --enroll --code <one-time-code>. Start service after enrollment.'
