@@ -1,0 +1,47 @@
+#requires -Version 5.1
+[CmdletBinding()]
+param([string]$PackageRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)), [int]$Port = 5080)
+$ErrorActionPreference = 'Stop'
+if ($env:OS -ne 'Windows_NT') { throw 'This launch script requires Windows. For cross-platform development follow README.' }
+if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Port must be 1024..65535' }
+$exe = Join-Path $PackageRoot 'server-windows-x64\Compliance.Server.exe'
+if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Self-contained server executable not found; use the Windows trial package.' }
+$state = Join-Path $env:LOCALAPPDATA 'CustomerComplianceDemo'
+New-Item -ItemType Directory -Path $state -Force | Out-Null
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+& icacls.exe $state /inheritance:r /grant:r ("*{0}:(OI)(CI)F" -f $sid) '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Cannot secure demo state directory; not starting.' }
+$configPath = Join-Path $state 'demo-accounts.json'
+function New-RandomPassword {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    return [Convert]::ToBase64String($bytes)
+}
+if (-not (Test-Path -LiteralPath $configPath)) {
+    $accounts = @(
+        @{ username='admin'; password=(New-RandomPassword); roles=@('Reader','Operator','Publisher') },
+        @{ username='reviewer'; password=(New-RandomPassword); roles=@('Reader','Reviewer') }
+    )
+    $accounts | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding UTF8
+    $credentialPath = Join-Path $state 'demo-login.txt'
+    "Local demo credentials only. Do not share this file.`r`nadmin: $($accounts[0].password)`r`nreviewer: $($accounts[1].password)" | Set-Content -LiteralPath $credentialPath -Encoding UTF8
+}
+$names = @('Compliance__DemoMode','Compliance__Storage','Compliance__Database','Compliance__SigningKeyPath','Compliance__BootstrapUsers','ASPNETCORE_URLS')
+$prior = @{}
+foreach ($name in $names) { $prior[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
+try {
+    $env:Compliance__DemoMode = 'true'
+    $env:Compliance__Storage = 'Sqlite'
+    $env:Compliance__Database = Join-Path $state 'platform.sqlite'
+    $env:Compliance__SigningKeyPath = Join-Path $state 'policy-signing.pem'
+    $env:Compliance__BootstrapUsers = Get-Content -LiteralPath $configPath -Raw
+    $env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
+    Write-Host "Local demo URL: $env:ASPNETCORE_URLS"
+    Write-Host "Generated login details: $(Join-Path $state 'demo-login.txt')"
+    Write-Host 'Audit trial only. No automatic application or website blocking. Ctrl+C to stop.'
+    Push-Location (Split-Path -Parent $exe)
+    try { & $exe } finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw "Server exited with code $LASTEXITCODE" }
+}
+finally { foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name,$prior[$name],'Process') } }

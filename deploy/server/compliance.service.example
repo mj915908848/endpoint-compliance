@@ -1,0 +1,18 @@
+[Unit]
+Description=Customer endpoint compliance platform
+After=network.target
+[Service]
+User=compliance
+Group=compliance
+WorkingDirectory=/opt/compliance
+EnvironmentFile=/etc/compliance/server.env
+ExecStart=/opt/compliance/Compliance.Server --urls https://0.0.0.0:5443
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/compliance
+[Install]
+WantedBy=multi-user.target

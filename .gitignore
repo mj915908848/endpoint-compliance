@@ -11,3 +11,5 @@ artifacts/
 *.pem
 *.pfx
 .env
+/src/Compliance.Server/wwwroot/
+.DS_Store
