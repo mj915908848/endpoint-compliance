@@ -63,14 +63,22 @@ def main() -> None:
         add_tree(PUBLISHED / "server-windows-x64", stage / "server-windows-x64")
         add_tree(PUBLISHED / "agent-windows-x64", stage / "agent-windows-x64")
         add_tree(PUBLISHED / "tray-windows-x64", stage / "agent-windows-x64")
-        for name in ("install.ps1", "uninstall.ps1", "Scan-LocalDemo.ps1", "README.md"):
+        for name in (
+            "install.ps1",
+            "uninstall.ps1",
+            "Scan-LocalDemo.ps1",
+            "Install-TrialService.ps1",
+            "Uninstall-TrialService.ps1",
+            "README.md",
+        ):
             add_file(ROOT / "deploy" / "windows" / name, stage / "deploy" / "windows" / name)
         for name in ("Start-Demo.ps1", "README.md"):
             add_file(ROOT / "deploy" / "server" / name, stage / "deploy" / "server" / name)
         launcher = (ROOT / "deploy" / "server" / "启动演示.bat").read_bytes().replace(b"\r\n", b"\n")
         (stage / "启动演示.bat").write_bytes(launcher.replace(b"\n", b"\r\n"))
-        scanner = (ROOT / "deploy" / "windows" / "本机采集试用.bat").read_bytes().replace(b"\r\n", b"\n")
-        (stage / "本机采集试用.bat").write_bytes(scanner.replace(b"\n", b"\r\n"))
+        for name in ("本机采集试用.bat", "安装常驻客户端（试用）.bat", "卸载常驻客户端.bat"):
+            launcher = (ROOT / "deploy" / "windows" / name).read_bytes().replace(b"\r\n", b"\n")
+            (stage / name).write_bytes(launcher.replace(b"\n", b"\r\n"))
         for name in ("README.md", "docs/capabilities.md", "docs/server-api.md"):
             add_file(ROOT / name, stage / name)
         add_file(OUTPUT / "客户终端合规管控-0.1.0-试用说明.md", stage / "试用说明.md")

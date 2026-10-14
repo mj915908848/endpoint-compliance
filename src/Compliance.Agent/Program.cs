@@ -48,6 +48,8 @@ public static class Program
             // A CLI server override is intentionally not persisted over enrollment identity.
             if (Arg("--server") is { } overrideUrl && config.ServerUrl != overrideUrl)
                 throw new ArgumentException("Configured server differs from --server");
+            // A trial install persists its HTTP trial mode so the resident service keeps the same checks.
+            localDemo |= config.HttpTrial && !simulated;
             var runtime = new AgentRuntime(config, configPath, simulated, Arg("--fixture"), localDemo);
             if (Has("--enroll"))
             {

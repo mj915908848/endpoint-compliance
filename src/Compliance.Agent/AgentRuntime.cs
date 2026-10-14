@@ -12,7 +12,10 @@ public sealed record AgentConfiguration(
     string DataDirectory,
     string? DeviceId = null,
     string? PolicyPublicKeyPem = null,
-    string? PolicyKeyId = null
+    string? PolicyKeyId = null,
+    // Set by the trial installer: the resident service may use a private-network HTTP server that
+    // reports trial mode. Production configurations leave it false and require HTTPS.
+    bool HttpTrial = false
 )
 {
     public static AgentConfiguration Read(string path) => Wire.Read<AgentConfiguration>(File.ReadAllText(path));
@@ -222,10 +225,29 @@ public sealed class AgentRuntime(
         }
     }
 
-    private async Task VerifyLocalDemoAsync(HttpClient client, Uri uri, CancellationToken ct)
+    private async Task VerifyLocalDemoAsync(
+        HttpClient client,
+        Uri uri,
+        CancellationToken ct,
+        bool tolerateOffline = false
+    )
     {
         if (!localDemo)
             return;
+        if (tolerateOffline)
+        {
+            // A resident service may start before the server; uploads queue until it is reachable. A server
+            // that answers but is not in trial mode is still refused.
+            try
+            {
+                await VerifyLocalDemoAsync(client, uri, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.Error.WriteLine("Trial server not reachable yet: " + ex.Message);
+            }
+            return;
+        }
         using var response = await client.GetAsync(new Uri(uri, "/api/status"), ct);
         response.EnsureSuccessStatusCode();
         if (!IsLoopbackDemoStatus(await response.Content.ReadAsStringAsync(ct)))
@@ -261,7 +283,7 @@ public sealed class AgentRuntime(
         var uri = ValidateServer(config.ServerUrl, simulated, localDemo);
         using var key = new DeviceIdentity(config.DataDirectory, simulated).LoadOrCreate();
         using var client = CreateInternalClient();
-        await VerifyLocalDemoAsync(client, uri, ct);
+        await VerifyLocalDemoAsync(client, uri, ct, tolerateOffline: !once);
         var api = new AgentApi(client, uri, config.DeviceId, key);
         await using var queue = new EventOutbox(Path.Combine(config.DataDirectory, "outbox.sqlite"));
         await using var notices = new NotificationStore(Path.Combine(config.DataDirectory, "notices.sqlite"));

@@ -404,6 +404,35 @@ await Check(
     }
 );
 await Check(
+    "HTTP trial mode is opt-in and survives enrollment",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "agent-config-" + Guid.NewGuid() + ".json");
+        try
+        {
+            File.WriteAllText(path, "{\"serverUrl\":\"https://intranet.example\",\"dataDirectory\":\"C:\\\\data\"}");
+            Assert(!AgentConfiguration.Read(path).HttpTrial, "a configuration without the flag enabled HTTP trial");
+            File.WriteAllText(
+                path,
+                "{\"serverUrl\":\"http://192.168.1.15:5080\",\"dataDirectory\":\"C:\\\\data\",\"httpTrial\":true}"
+            );
+            var trial = AgentConfiguration.Read(path);
+            AgentConfiguration.Save(path, trial with { DeviceId = "device-1" });
+            var enrolled = AgentConfiguration.Read(path);
+            Assert(enrolled.HttpTrial && enrolled.DeviceId == "device-1", "enrollment dropped the trial flag");
+            Assert(
+                AgentRuntime.ValidateServer(enrolled.ServerUrl, false, localDemo: true).Port == 5080,
+                "private HTTP trial server rejected"
+            );
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+        await Task.CompletedTask;
+    }
+);
+await Check(
     "Windows built-in tunnels are not reported as proxy clues",
     async () =>
     {
