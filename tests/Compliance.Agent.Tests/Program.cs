@@ -15,6 +15,13 @@ async Task Check(string name, Func<Task> test)
         Console.Error.WriteLine($"FAIL {name}: {e}");
     }
 }
+
+// SQLite keeps pooled connections open after dispose; Windows cannot delete a file that is still open.
+void DeleteDatabase(string path)
+{
+    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+    File.Delete(path);
+}
 void Assert(bool value, string message)
 {
     if (!value)
@@ -58,7 +65,7 @@ await Check(
         }
         finally
         {
-            File.Delete(path);
+            DeleteDatabase(path);
         }
     }
 );
@@ -77,7 +84,7 @@ await Check(
         }
         finally
         {
-            File.Delete(path);
+            DeleteDatabase(path);
         }
     }
 );
@@ -97,7 +104,7 @@ await Check(
         }
         finally
         {
-            File.Delete(path);
+            DeleteDatabase(path);
         }
     }
 );
@@ -163,7 +170,7 @@ await Check(
         }
         finally
         {
-            File.Delete(path);
+            DeleteDatabase(path);
         }
     }
 );
@@ -288,7 +295,7 @@ await Check(
         }
         finally
         {
-            File.Delete(path);
+            DeleteDatabase(path);
         }
     }
 );
@@ -343,7 +350,7 @@ await Check(
         }
         finally
         {
-            File.Delete(path);
+            DeleteDatabase(path);
         }
     }
 );
@@ -368,7 +375,7 @@ await Check(
         }
         finally
         {
-            File.Delete(path);
+            DeleteDatabase(path);
         }
     }
 );
@@ -423,7 +430,7 @@ await Check(
         }
         finally
         {
-            File.Delete(path);
+            DeleteDatabase(path);
         }
         await Task.CompletedTask;
     }
