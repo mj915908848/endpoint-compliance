@@ -113,7 +113,7 @@ export function AlertCard({
       setBusy(false);
     }
   }
-  const recovered = alert.state === "Recovered";
+  const recovered = alert.state === "Resolved";
   const type: Record<string, string> = {
     Violation: "确认违规",
     BlockedAttempt: "已阻止尝试",

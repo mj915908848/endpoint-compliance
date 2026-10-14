@@ -61,6 +61,12 @@ describe("safety boundaries", () => {
     );
     expect(screen.queryByRole("button", { name: "确认已阅" })).toBeNull();
   });
+  it("server Resolved state is shown as technical recovery, separate from acknowledgment", () => {
+    render(<AlertCard alert={{ ...alertFixture, state: "Resolved", acknowledged: false }} canAck={false} onAck={async () => {}} />);
+    expect(screen.getByText("技术已恢复")).toBeTruthy();
+    expect(screen.getByText("待确认")).toBeTruthy();
+    expect(screen.queryByText("问题持续")).toBeNull();
+  });
   it("rejected authentication is visible and password stays masked", async () => {
     const user = userEvent.setup();
     render(

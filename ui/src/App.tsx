@@ -269,13 +269,13 @@ function Overview({
           >
             <Fresh error={alerts.error} loading={alerts.loading}>
               {(alerts.data ?? [])
-                .filter((a) => a.state !== "Recovered")
+                .filter((a) => a.state !== "Resolved")
                 .slice(0, 5).length === 0 ? (
                 <Empty title="当前没有持续告警" />
               ) : (
                 <div className="compact-list">
                   {(alerts.data ?? [])
-                    .filter((a) => a.state !== "Recovered")
+                    .filter((a) => a.state !== "Resolved")
                     .slice(0, 5)
                     .map((a) => (
                       <div className="compact-alert" key={a.id}>
@@ -810,8 +810,8 @@ function Alerts({
             (a) =>
               filter === "all" ||
               (filter === "active"
-                ? a.state !== "Recovered"
-                : a.state === "Recovered"),
+                ? a.state !== "Resolved"
+                : a.state === "Resolved"),
           ).length ? (
             <div className="alert-list">
               {(data.data ?? [])
@@ -819,8 +819,8 @@ function Alerts({
                   (a) =>
                     filter === "all" ||
                     (filter === "active"
-                      ? a.state !== "Recovered"
-                      : a.state === "Recovered"),
+                      ? a.state !== "Resolved"
+                      : a.state === "Resolved"),
                 )
                 .map((a) => (
                   <AlertCard

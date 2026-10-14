@@ -77,4 +77,22 @@ describe("management request boundary", () => {
     await waitFor(() => expect(result.current.error).toBe("管理端不可用"));
     expect(result.current.data).toBeNull();
   });
+  it("expires an open PASS view before refreshing when no new response arrives", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    vi.stubGlobal("fetch", () => {
+      calls++;
+      return calls === 1
+        ? Promise.resolve(new Response('{"currentVerdict":"PASS"}'))
+        : new Promise<Response>(() => {});
+    });
+    try {
+      const { result } = renderHook(() => useResource<{ currentVerdict: string }>("/api/devices"));
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(result.current.data?.currentVerdict).toBe("PASS");
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(calls).toBeGreaterThan(1);
+      expect(result.current.data).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
 });
