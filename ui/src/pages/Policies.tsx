@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, App, Button, Input, Modal, Space, Tag, Typography } from "antd";
+import { Alert, App, Button, Input, Modal, Space, Tag, Tooltip, Typography } from "antd";
 import { request } from "../api";
 import { useResource, useRefresh } from "../useResource";
 import {
@@ -59,7 +59,7 @@ export function Policies({ session }: { session: Session }) {
       mode: draft.mode,
       targetDeviceIds: draft.targetDeviceIds,
     });
-    message.info("已载入内置最新规则，核对后点击“发布”即可生效。");
+    message.info("已载入内置最新规则，核对后点击“保存并发布”即可生效。");
   }
 
   function publish() {
@@ -141,6 +141,13 @@ export function Policies({ session }: { session: Session }) {
               </Button>
             )}
             <Button onClick={refresh}>刷新</Button>
+            {canPublish && (
+              <Tooltip title={dirty ? undefined : "没有需要保存的修改"}>
+                <Button type="primary" disabled={!dirty} loading={busy} onClick={publish}>
+                  保存并发布
+                </Button>
+              </Tooltip>
+            )}
           </Space>
         }
       />
@@ -171,11 +178,11 @@ export function Policies({ session }: { session: Session }) {
       </Space>
       {canPublish && dirty && (
         <div className="policy-bar" role="region" aria-label="未发布的修改">
-          <Typography.Text>有未发布的修改</Typography.Text>
+          <Typography.Text>有未保存的修改，发布后终端才会按新策略检查</Typography.Text>
           <Space>
             <Button onClick={() => setDraft(policy)}>放弃修改</Button>
             <Button type="primary" loading={busy} onClick={publish}>
-              发布
+              保存并发布
             </Button>
           </Space>
         </div>

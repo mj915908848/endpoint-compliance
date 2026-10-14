@@ -32,7 +32,8 @@ public sealed record DeviceRecord(
     ControlState[]? Controls = null,
     ScanSnapshot? Snapshot = null,
     long SnapshotSequence = 0,
-    long TargetPolicyVersion = 1
+    long TargetPolicyVersion = 1,
+    string Note = ""
 );
 
 public sealed record SnapshotIncident(string Id, string DeviceId, string Scope, string[] Modules);

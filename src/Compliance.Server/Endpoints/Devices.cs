@@ -4,6 +4,8 @@ namespace Compliance.Server;
 
 static partial class Endpoints
 {
+    const int MaxNoteLength = 100;
+
     static void MapDevices(IEndpointRouteBuilder routes, ComplianceService s)
     {
         var group = routes.MapGroup("/api/devices");
@@ -76,6 +78,26 @@ static partial class Endpoints
                     await tx.DeleteDevice(id);
                     await tx.Audit(u.Username, "DeleteDevice", $"{d.HostName}（{id}）", s.Now);
                     return new { deleted = id };
+                });
+            }
+        );
+
+        // A free-text label such as the employee or department, since host names rarely say whose PC it is.
+        group.MapPut(
+            "/{id}/note",
+            async (HttpContext c, string id) =>
+            {
+                var u = Require(c, "Operator");
+                var note = ((await Body<NoteRequest>(c)).Note ?? "").Trim();
+                if (note.Length > MaxNoteLength)
+                    throw new ApiError(400, $"备注不能超过 {MaxNoteLength} 个字符");
+                return await s.Tx(async tx =>
+                {
+                    await tx.Lock(ComplianceService.DeviceLock(id));
+                    var d = await s.Device(tx, id);
+                    await tx.SetDeviceNote(id, note);
+                    await tx.Audit(u.Username, "SetDeviceNote", $"{d.HostName}（{id}）：{note}", s.Now);
+                    return await s.Summary(tx, d with { Note = note });
                 });
             }
         );

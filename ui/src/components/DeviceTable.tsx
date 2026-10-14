@@ -21,6 +21,7 @@ export function DeviceTable({
       render: (_, d) => (
         <Space orientation="vertical" size={0}>
           <Typography.Text strong>{d.hostName}</Typography.Text>
+          {d.note && <Typography.Text>{d.note}</Typography.Text>}
           {!compact && (
             <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
               {d.id}

@@ -17,6 +17,7 @@ export interface DeviceSummary {
   protectionStatus: string;
   violationCount: number;
   simulated: boolean;
+  note?: string;
 }
 export interface Evidence {
   productId: string;

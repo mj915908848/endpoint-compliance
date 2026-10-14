@@ -1,22 +1,7 @@
 import { type ReactNode } from "react";
-import {
-  Anchor,
-  Descriptions,
-  Flex,
-  List as AntList,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from "antd";
-import {
-  CheckCircleFilled,
-  CloseCircleFilled,
-  ExclamationCircleFilled,
-  WarningOutlined,
-} from "@ant-design/icons";
-import { Empty, time, VerdictTag } from "./common";
+import { Collapse, List as AntList, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { CheckCircleFilled, CloseCircleFilled, WarningOutlined } from "@ant-design/icons";
+import { Empty, time } from "./common";
 import {
   controlLabel,
   controlStateLabel,
@@ -27,19 +12,6 @@ import {
   statusLabel,
 } from "./labels";
 import type { Control, Evidence, ModuleResult, Report, UserAccount } from "../types";
-
-/** Section titles; keep in sync with ReportRenderer.Markdown in Compliance.Core. */
-export const reportSections = [
-  "基本信息",
-  "检查结论",
-  "不通过项",
-  "软件与敏感文件",
-  "代理设置",
-  "网络线索与防护措施",
-  "检查覆盖",
-  "处理建议",
-  "适用范围与限制",
-];
 
 export const reportAdvice = [
   "按本单位制度处理已确认的软件和代理配置，补齐检查缺口后重新检查。",
@@ -253,26 +225,78 @@ export function ControlList({ controls }: { controls: Control[] }) {
   );
 }
 
-function Bullets({ items, empty }: { items: string[]; empty: string }) {
-  return items.length ? (
+function Bullets({ items }: { items: string[] }) {
+  return (
     <ul className="report-list">
       {items.map((v, i) => (
         <li key={i}>{v}</li>
       ))}
     </ul>
-  ) : (
-    <Typography.Text type="secondary">{empty}</Typography.Text>
   );
 }
 
-const verdictIcon = {
-  PASS: <CheckCircleFilled style={{ color: "var(--good)" }} />,
-  FAIL: <CloseCircleFilled style={{ color: "var(--danger)" }} />,
-  UNKNOWN: <ExclamationCircleFilled style={{ color: "var(--warning)" }} />,
-};
+function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
+  return (
+    <section className="report-section">
+      <Typography.Title level={5}>{title}</Typography.Title>
+      {children}
+    </section>
+  );
+}
 
-/** The device report, section for section the same as the downloadable Markdown. */
-export function ReportView({ report: r }: { report: Report }) {
+/** One evidence group; an empty group is a single line rather than an empty table. */
+function EvidenceGroup({
+  title,
+  values,
+  empty,
+  users,
+}: {
+  title: string;
+  values: Evidence[];
+  empty: string;
+  users?: UserAccount[];
+}) {
+  return (
+    <Section title={`${title}（${values.length}）`}>
+      {values.length ? (
+        <EvidenceTable values={values} users={users} />
+      ) : (
+        <Typography.Text type="secondary">{empty}</Typography.Text>
+      )}
+    </Section>
+  );
+}
+
+function Issues({ items, icon, note }: { items: string[]; icon: ReactNode; note?: string }) {
+  return (
+    <>
+      <AntList
+        size="small"
+        dataSource={items}
+        renderItem={(item) => (
+          <AntList.Item>
+            <Space align="start">
+              {icon}
+              {item}
+            </Space>
+          </AntList.Item>
+        )}
+      />
+      {note && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {note}
+        </Typography.Text>
+      )}
+    </>
+  );
+}
+
+/**
+ * What the latest scan found. The verdict, device facts and full coverage table live elsewhere on the
+ * device page, so this only lists the problems and the evidence behind them; the downloadable
+ * Markdown report keeps all nine sections.
+ */
+export function ReportFindings({ report: r }: { report: Report }) {
   const s = r.snapshot;
   const installation = s.evidence.filter((e) =>
     ["Installation", "Process", "Extension"].includes(e.kind),
@@ -281,151 +305,79 @@ export function ReportView({ report: r }: { report: Report }) {
   const sensitive = s.evidence.filter((e) => e.kind === "SensitiveFile");
   const sensitiveScopes = s.modules.filter((m) => m.module === "sensitive-files");
   const sensitiveNotes = r.sensitiveFileNotes ?? [];
-  const software = (
-    <EvidenceTable values={installation} empty="未发现相关软件的安装或运行记录" users={s.users} />
-  );
   const clue = s.evidence.filter((e) => ["Clue", "BlockedAttempt"].includes(e.kind));
-  const body: ReactNode[] = [
-    <Descriptions
-      size="small"
-      bordered
-      column={{ xs: 1, md: 2 }}
-      items={[
-        { label: "终端", children: s.hostName },
-        { label: "设备 ID", children: <span className="mono">{s.deviceId}</span> },
-        { label: "平台", children: s.platform },
-        { label: "采集时间", children: time(s.collectedAt) },
-        { label: "策略版本", children: `v${s.policyVersion}` },
-        ...(s.users?.length
-          ? [
-              {
-                label: "用户账户",
-                span: "filled" as const,
-                children: s.users.map((u) => `${u.name}（${u.sid}）`).join("；"),
-              },
-            ]
-          : []),
-        {
-          label: "数据来源",
-          children: s.simulated ? (
-            <Tag color="purple">模拟数据，不能作为实机验收依据</Tag>
-          ) : (
-            "终端实机采集"
-          ),
-        },
-      ]}
-    />,
-    <Space orientation="vertical" size={8}>
-      <Space>
-        <VerdictTag verdict={r.verdict} />
-        <Typography.Text strong>{r.summary}</Typography.Text>
-      </Space>
-      <Descriptions
-        size="small"
-        column={{ xs: 1, md: 3 }}
-        items={[
-          { label: "违规对象", children: r.violationCount },
-          { label: "确认证据", children: r.evidenceCount },
-          { label: "防护状态", children: r.protectionStatus },
-        ]}
-      />
-      <Typography.Text type="secondary">
-        同一产品在同一用户下的安装、进程和扩展记录合并计为一个违规对象。
-      </Typography.Text>
-    </Space>,
-    r.reasons.length ? (
-      <AntList
-        size="small"
-        dataSource={r.reasons}
-        renderItem={(reason) => (
-          <AntList.Item>
-            <Space align="start">
-              <CloseCircleFilled style={{ color: "var(--danger)" }} />
-              {reason}
-            </Space>
-          </AntList.Item>
-        )}
-      />
-    ) : (
-      <Typography.Text type="secondary">
-        未发现确认违规。结论的完整性以“检查覆盖”一节为准。
-      </Typography.Text>
-    ),
-    sensitive.length || sensitiveNotes.length || sensitiveScopes.length ? (
-      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-        {software}
-        <Typography.Text strong>敏感文件</Typography.Text>
-        {sensitiveNotes.length > 0 && <Bullets items={sensitiveNotes} empty="" />}
-        <SensitiveFileTable
-          values={sensitive}
-          users={s.users}
-          complete={
-            sensitiveScopes.length > 0 && sensitiveScopes.every((m) => m.status === "Complete")
-          }
-        />
-      </Space>
-    ) : (
-      software
-    ),
-    <EvidenceTable values={proxy} empty="未发现代理设置" users={s.users} />,
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <EvidenceTable values={clue} empty="没有网络线索或拦截记录" users={s.users} />
-      <ControlList controls={s.controls} />
-    </Space>,
-    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      {r.coverageGaps.length > 0 && (
-        <AntList
-          size="small"
-          header={<Typography.Text strong>检查缺口</Typography.Text>}
-          dataSource={r.coverageGaps}
-          renderItem={(gap) => (
-            <AntList.Item>
-              <Space align="start">
-                <WarningOutlined style={{ color: "var(--warning)" }} />
-                {gap}
-              </Space>
-            </AntList.Item>
-          )}
-        />
-      )}
-      <CoverageTable modules={s.modules} users={s.users} />
-    </Space>,
-    <Bullets items={reportAdvice} empty="" />,
-    <Bullets items={reportLimits} empty="" />,
-  ];
   return (
     <div className="report">
-      <Flex className="report-summary" gap={16} align="center">
-        <span className="report-verdict-icon">{verdictIcon[r.verdict]}</span>
-        <div>
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {r.summary}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {s.hostName} · 采集于 {time(s.collectedAt)} · 策略 v{s.policyVersion}
-          </Typography.Text>
-        </div>
-      </Flex>
-      <Anchor
-        className="report-toc"
-        direction="horizontal"
-        replace
-        targetOffset={80}
-        items={reportSections.map((name, i) => ({
-          key: String(i),
-          href: `#report-${i + 1}`,
-          title: `${i + 1}. ${name}`,
-        }))}
+      <Typography.Text type="secondary">
+        本次检查采集于 {time(s.collectedAt)}，按策略 v{s.policyVersion} 判定
+      </Typography.Text>
+      {r.reasons.length > 0 && (
+        <Section title={`不通过项（${r.reasons.length}）`}>
+          <Issues
+            items={r.reasons}
+            icon={<CloseCircleFilled style={{ color: "var(--danger)" }} />}
+            note="同一产品在同一用户下的安装、进程和扩展记录合并计为一个违规对象。"
+          />
+        </Section>
+      )}
+      {r.coverageGaps.length > 0 && (
+        <Section title={`检查缺口（${r.coverageGaps.length}）`}>
+          <Issues
+            items={r.coverageGaps}
+            icon={<WarningOutlined style={{ color: "var(--warning)" }} />}
+            note="缺口不代表发现了新的违规，但会让结论无法判定为通过。逐项状态见“检查覆盖”。"
+          />
+        </Section>
+      )}
+      {r.reasons.length === 0 && r.coverageGaps.length === 0 && (
+        <Section title="未发现问题">
+          <Space align="start">
+            <CheckCircleFilled style={{ color: "var(--good)" }} />
+            所有必需检查项均已完成，未发现确认违规。
+          </Space>
+        </Section>
+      )}
+      <EvidenceGroup
+        title="软件安装与运行"
+        values={installation}
+        empty="未发现相关软件的安装或运行记录。"
+        users={s.users}
       />
-      {reportSections.map((name, i) => (
-        <section key={name} id={`report-${i + 1}`} className="report-section">
-          <Typography.Title level={5}>
-            <span className="report-index">{i + 1}</span>
-            {name}
-          </Typography.Title>
-          {body[i]}
-        </section>
-      ))}
+      {(sensitive.length > 0 || sensitiveNotes.length > 0 || sensitiveScopes.length > 0) && (
+        <Section title={`敏感文件（${sensitive.length}）`}>
+          {sensitiveNotes.length > 0 && <Bullets items={sensitiveNotes} />}
+          <SensitiveFileTable
+            values={sensitive}
+            users={s.users}
+            complete={
+              sensitiveScopes.length > 0 && sensitiveScopes.every((m) => m.status === "Complete")
+            }
+          />
+        </Section>
+      )}
+      <EvidenceGroup title="代理设置" values={proxy} empty="未发现代理设置。" users={s.users} />
+      <EvidenceGroup
+        title="网络线索与拦截记录"
+        values={clue}
+        empty="没有网络线索或拦截记录。"
+        users={s.users}
+      />
+      <Collapse
+        ghost
+        size="small"
+        items={[
+          {
+            key: "notes",
+            label: "处理建议与适用范围",
+            children: (
+              <Space orientation="vertical" size={8}>
+                <Bullets items={reportAdvice} />
+                <Bullets items={reportLimits} />
+              </Space>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

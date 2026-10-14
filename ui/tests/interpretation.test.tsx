@@ -76,8 +76,7 @@ describe("user scope labels", () => {
 
 describe("sensitive file report", () => {
   it("lists names that matched and says an incomplete scan proves nothing", async () => {
-    const { ReportView, reportSections } = await import("../src/components");
-    expect(reportSections[3]).toBe("软件与敏感文件");
+    const { ReportFindings } = await import("../src/components");
     const at = "2026-10-14T05:52:04Z";
     const report = {
       verdict: "PASS" as const,
@@ -121,7 +120,8 @@ describe("sensitive file report", () => {
         ],
       },
     };
-    render(<ReportView report={report} />);
+    render(<ReportFindings report={report} />);
+    expect(screen.getByText("敏感文件（1）")).toBeTruthy();
     expect(screen.getByText("D:\\资料\\机密名单.xlsx")).toBeTruthy();
     expect(screen.getByText("敏感文件：D 盘 命中过多，仅列出部分")).toBeTruthy();
     expect(screen.getAllByText("D 盘").length).toBeGreaterThan(0);

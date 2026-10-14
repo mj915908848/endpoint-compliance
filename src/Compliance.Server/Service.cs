@@ -146,7 +146,8 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             d.AppliedPolicyVersion,
             report?.ProtectionStatus ?? "未取得检查结果",
             report?.ViolationCount ?? 0,
-            d.Snapshot?.Simulated ?? false
+            d.Snapshot?.Simulated ?? false,
+            d.Note
         );
     }
 

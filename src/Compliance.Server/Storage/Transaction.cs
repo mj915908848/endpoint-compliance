@@ -94,8 +94,10 @@ public sealed class Transaction
 
     // ---- devices -------------------------------------------------------------------------
 
+    // Inserts leave out note (added by migration 3), so the legacy import in migration 2 can still insert.
     const string DeviceColumns =
         "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, controls, snapshot, snapshot_sequence, target_policy_version";
+    const string DeviceSelect = DeviceColumns + ", note";
 
     static DeviceRecord ReadDevice(DbDataReader r) =>
         new(
@@ -107,17 +109,18 @@ public sealed class Transaction
             r.IsDBNull(5) ? null : Wire.Read<ControlState[]>(r.GetString(5)),
             r.IsDBNull(6) ? null : Wire.Read<ScanSnapshot>(r.GetString(6)),
             Long(r, 7),
-            Long(r, 8)
+            Long(r, 8),
+            r.GetString(9)
         );
 
     public Task<DeviceRecord?> GetDevice(string id) =>
-        Single($"SELECT {DeviceColumns} FROM devices WHERE id = @id", ReadDevice, ("id", id));
+        Single($"SELECT {DeviceSelect} FROM devices WHERE id = @id", ReadDevice, ("id", id));
 
     /// <summary>Request authentication only needs the key, not the snapshot document.</summary>
     public Task<string?> GetDevicePublicKey(string id) =>
         Single("SELECT public_key_pem FROM devices WHERE id = @id", r => r.GetString(0), ("id", id));
 
-    public Task<List<DeviceRecord>> AllDevices() => Query($"SELECT {DeviceColumns} FROM devices", ReadDevice);
+    public Task<List<DeviceRecord>> AllDevices() => Query($"SELECT {DeviceSelect} FROM devices", ReadDevice);
 
     public async Task<bool> DeviceKeyExists(string publicKeyPem) =>
         await Count("SELECT COUNT(*) FROM devices WHERE public_key_pem = @key", ("key", publicKeyPem)) > 0;
@@ -162,6 +165,9 @@ public sealed class Transaction
             ("controls", Wire.Serialize(controls)),
             ("id", id)
         );
+
+    public Task SetDeviceNote(string id, string note) =>
+        Execute("UPDATE devices SET note = @note WHERE id = @id", ("note", note), ("id", id));
 
     public Task UpdateSnapshot(string id, ScanSnapshot snapshot, long sequence) =>
         Execute(

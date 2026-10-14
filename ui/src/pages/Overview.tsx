@@ -3,6 +3,7 @@ import { Button, Col, List, Row, Space, Tag, Typography } from "antd";
 import { useResource } from "../useResource";
 import {
   alertTypeLabel,
+  deviceName,
   DeviceTable,
   Empty,
   Fresh,
@@ -109,7 +110,11 @@ export function Overview({
                               <Typography.Text strong>{a.summary}</Typography.Text>
                             </Space>
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {a.hostName} · {time(a.lastSeen)}
+                              {deviceName({
+                                hostName: a.hostName,
+                                note: devices.data?.find((d) => d.id === a.deviceId)?.note,
+                              })}{" "}
+                              · {time(a.lastSeen)}
                               {a.acknowledged ? " · 已确认" : ""}
                             </Typography.Text>
                           </Space>

@@ -75,10 +75,13 @@ describe("policy editor", () => {
     renderPage();
     const name = await screen.findByLabelText("策略名称");
     expect(screen.queryByRole("region", { name: "未发布的修改" })).toBeNull();
+    const save = screen.getByRole("button", { name: "保存并发布" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
     await userEvent.clear(name);
     await userEvent.type(name, "研发部终端规范");
+    expect(save.disabled).toBe(false);
     const bar = screen.getByRole("region", { name: "未发布的修改" });
-    await userEvent.click(within(bar).getByRole("button", { name: "发布" }));
+    await userEvent.click(within(bar).getByRole("button", { name: "保存并发布" }));
     expect(
       (await screen.findAllByText("策略名称：endpoint-compliance → 研发部终端规范")).length,
     ).toBeGreaterThan(0);
@@ -143,7 +146,7 @@ describe("sensitive file rules", () => {
     expect(await screen.findByText("敏感文件扫描（1）")).toBeTruthy();
     expect(screen.getByText("只告警")).toBeTruthy();
     const bar = screen.getByRole("region", { name: "未发布的修改" });
-    await userEvent.click(within(bar).getByRole("button", { name: "发布" }));
+    await userEvent.click(within(bar).getByRole("button", { name: "保存并发布" }));
     expect((await screen.findAllByText("新增敏感文件规则：机密文件")).length).toBeGreaterThan(0);
     await userEvent.click(
       within(screen.getAllByRole("dialog").at(-1)!).getByRole("button", { name: "发布" }),

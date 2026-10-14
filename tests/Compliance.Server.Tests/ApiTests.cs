@@ -260,6 +260,33 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Operator_labels_a_device_with_a_note()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        var url = $"/api/devices/{f.Device}/note";
+
+        var saved = await f.Client.PutAsJsonAsync(url, new { note = "  张三 · 研发部  " });
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.Equal("张三 · 研发部", (await saved.Content.ReadFromJsonAsync<DeviceSummary>(Wire.Json))!.Note);
+        var list = (await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!;
+        Assert.Equal("张三 · 研发部", Assert.Single(list).Note);
+        Assert.Contains("SetDeviceNote", await f.Client.GetStringAsync("/api/audit"));
+
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (await f.Client.PutAsJsonAsync(url, new { note = new string('x', 101) })).StatusCode
+        );
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await f.Client.PutAsJsonAsync("/api/devices/missing/note", new { note = "x" })).StatusCode
+        );
+        await f.Login("reader");
+        Assert.Equal(HttpStatusCode.Forbidden, (await f.Client.PutAsJsonAsync(url, new { note = "" })).StatusCode);
+    }
+
+    [Fact]
     public async Task Reader_cannot_write_and_missing_csrf_is_rejected()
     {
         await using var f = new Fixture();

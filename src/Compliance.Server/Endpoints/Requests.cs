@@ -7,3 +7,5 @@ public record LoginRequest(string Username, string Password);
 public record CodeRequest(int? ExpiresMinutes = null);
 
 public record CommandRequest(string Type);
+
+public record NoteRequest(string? Note);
