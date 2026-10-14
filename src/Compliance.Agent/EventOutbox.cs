@@ -68,6 +68,17 @@ public sealed class EventOutbox : IAsyncDisposable
         }
         finally { gate.Release(); }
     }
+    public async Task<int> UnsentCountAsync(CancellationToken ct=default)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            using var cmd=db.CreateCommand();
+            cmd.CommandText="SELECT COUNT(*) FROM events";
+            return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+        }
+        finally { gate.Release(); }
+    }
     public int OversizedInLastBatch { get; private set; }
     public async Task<AgentEvent[]> PendingBatchAsync(int max,int maxWireBytes,CancellationToken ct=default)
     {

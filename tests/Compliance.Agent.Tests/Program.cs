@@ -18,6 +18,7 @@ await Check("outbox persists sequence and only deletes acknowledged ids", async 
             var first = await q.EnqueueAsync("Health", "test:one", null, "first");
             var second = await q.EnqueueAsync("Violation", "test:two", null, "second");
             Assert(first.Sequence == 1 && second.Sequence == 2, "sequence order");
+            Assert(await q.UnsentCountAsync()==2,"undelivered count missed queued events");
             await q.AcknowledgeAsync([first.EventId]);
         }
         await using(var q = new EventOutbox(path, 3))
@@ -30,6 +31,19 @@ await Check("outbox persists sequence and only deletes acknowledged ids", async 
             try { await q.EnqueueAsync("Health", "test:four", null, "fourth"); } catch (OutboxCapacityException) { full = true; }
             Assert(full, "capacity did not fail closed");
         }
+    }
+    finally { File.Delete(path); }
+});
+await Check("one-shot delivery count includes delayed retries", async () =>
+{
+    var path=Path.Combine(Path.GetTempPath(),"compliance-unsent-"+Guid.NewGuid()+".sqlite");
+    try
+    {
+        await using var queue=new EventOutbox(path);
+        var evt=await queue.EnqueueAsync("Health","offline",null,"retain");
+        await queue.RetryAsync([evt.EventId],TimeSpan.FromMinutes(1),"offline",false);
+        Assert((await queue.PendingAsync(10)).Length==0,"retry was not delayed");
+        Assert(await queue.UnsentCountAsync()==1,"undelivered count hid delayed retry");
     }
     finally { File.Delete(path); }
 });
@@ -86,6 +100,26 @@ await Check("HTTP is limited to explicit loopback fixture", async () =>
         bool rejected=false; try { AgentRuntime.ValidateServer(url,fixture); } catch(InvalidOperationException) { rejected=true; }
         Assert(rejected,"unsafe HTTP accepted: "+url);
     }
+    await Task.CompletedTask;
+});
+await Check("native HTTP trial accepts explicit private addresses only for one shot", async () =>
+{
+    Compliance.Agent.Program.ValidateLocalDemoArguments(true,true,false);
+    foreach(var (once,fixture) in new[]{(false,false),(true,true)})
+    {
+        bool rejected=false;try { Compliance.Agent.Program.ValidateLocalDemoArguments(true,once,fixture); } catch(InvalidOperationException) { rejected=true; }
+        Assert(rejected,"invalid local demo launch accepted");
+    }
+    foreach(var url in new[]{"http://127.0.0.1:5080","http://127.0.0.1:5090","http://192.168.1.2:5080","http://10.10.0.8:8090","http://172.16.0.8:5000"})
+        Assert(AgentRuntime.ValidateServer(url,false,true).Scheme=="http","private HTTP trial URL rejected: "+url);
+    foreach(var url in new[]{"http://localhost:5080","http://8.8.8.8:5080","http://0.0.0.0:5080","http://192.168.1.2:5080/path","http://192.168.1.2:5080/?x=1","http://user@192.168.1.2:5080"})
+    {
+        bool rejected=false;try { AgentRuntime.ValidateServer(url,false,true); } catch(InvalidOperationException) { rejected=true; }
+        Assert(rejected,"unsafe local demo URL accepted: "+url);
+    }
+    Assert(AgentRuntime.IsLoopbackDemoStatus("{\"mode\":\"LoopbackDemo\"}"),"demo server rejected");
+    Assert(AgentRuntime.IsLoopbackDemoStatus("{\"mode\":\"LanHttpTrial\"}"),"LAN trial server rejected");
+    Assert(!AgentRuntime.IsLoopbackDemoStatus("{\"mode\":\"Production\"}"),"production status accepted as demo");
     await Task.CompletedTask;
 });
 await Check("incident state survives restart and recovery waits for complete scan", async () =>

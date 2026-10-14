@@ -90,7 +90,7 @@ public sealed class AgentApi(HttpClient client, Uri baseUri, string? deviceId, E
     }
 }
 
-public sealed class AgentRuntime(AgentConfiguration config,string configPath,bool simulated,string? fixturePath)
+public sealed class AgentRuntime(AgentConfiguration config,string configPath,bool simulated,string? fixturePath,bool localDemo=false)
 {
     private readonly string statePath=Path.Combine(config.DataDirectory,"policy.signed.json");
     private PolicyDocument? policy;
@@ -98,19 +98,50 @@ public sealed class AgentRuntime(AgentConfiguration config,string configPath,boo
     private DateTimeOffset lastFull=DateTimeOffset.MinValue;
     private DateTimeOffset lastLight=DateTimeOffset.MinValue;
     private ScanSnapshot? latest;
-    public static Uri ValidateServer(string url,bool simulation)
+    public static Uri ValidateServer(string url,bool simulation,bool localDemo=false)
     {
         var uri=new Uri(url,UriKind.Absolute);
+        if(localDemo)
+        {
+            if(uri.Scheme==Uri.UriSchemeHttp && IsTrialAddress(uri.Host) && uri.AbsolutePath=="/" && uri.Query.Length==0 && uri.Fragment.Length==0 && uri.UserInfo.Length==0)
+                return uri;
+            throw new InvalidOperationException("HTTP trial requires an explicit loopback or private IPv4 server address without a path");
+        }
         if(uri.Scheme==Uri.UriSchemeHttps) return uri;
         if(simulation && uri.Scheme==Uri.UriSchemeHttp && IPAddress.TryParse(uri.Host,out var ip) && IPAddress.IsLoopback(ip)) return uri;
         if(simulation && uri.Scheme==Uri.UriSchemeHttp && uri.Host.Equals("localhost",StringComparison.OrdinalIgnoreCase)) return uri;
         throw new InvalidOperationException("Agent server requires HTTPS; HTTP is allowed only for explicit loopback fixture simulation");
     }
+    private static bool IsTrialAddress(string host)
+    {
+        if(!IPAddress.TryParse(host,out var ip) || ip.AddressFamily!=System.Net.Sockets.AddressFamily.InterNetwork) return false;
+        var b=ip.GetAddressBytes();
+        return b[0]==127 || b[0]==10 || b[0]==172 && b[1]>=16 && b[1]<=31 || b[0]==192 && b[1]==168;
+    }
+    public static bool IsLoopbackDemoStatus(string json)
+    {
+        try
+        {
+            using var document=JsonDocument.Parse(json);
+            return document.RootElement.TryGetProperty("mode",out var mode) && mode.ValueKind==JsonValueKind.String && mode.GetString() is "LoopbackDemo" or "LanHttpTrial";
+        }
+        catch(JsonException) { return false; }
+    }
+    private async Task VerifyLocalDemoAsync(HttpClient client,Uri uri,CancellationToken ct)
+    {
+        if(!localDemo) return;
+        using var response=await client.GetAsync(new Uri(uri,"/api/status"),ct);
+        response.EnsureSuccessStatusCode();
+        if(!IsLoopbackDemoStatus(await response.Content.ReadAsStringAsync(ct)))
+            throw new InvalidOperationException("The HTTP server has not enabled trial mode");
+    }
     public async Task EnrollAsync(string code,CancellationToken ct)
     {
         using var key=new DeviceIdentity(config.DataDirectory,simulated).LoadOrCreate();
         using var client=CreateInternalClient();
-        var api=new AgentApi(client,ValidateServer(config.ServerUrl,simulated),null,key);
+        var uri=ValidateServer(config.ServerUrl,simulated,localDemo);
+        await VerifyLocalDemoAsync(client,uri,ct);
+        var api=new AgentApi(client,uri,null,key);
         var response=await api.SendAsync<EnrollmentResponse>(HttpMethod.Post,"/api/agent/enroll",new EnrollmentRequest(code,Environment.MachineName,key.ExportSubjectPublicKeyInfoPem()),ct);
         config=config with { DeviceId=response.DeviceId,PolicyPublicKeyPem=response.PolicyPublicKeyPem,PolicyKeyId=response.PolicyKeyId };
         AgentConfiguration.Save(configPath,config);
@@ -118,15 +149,22 @@ public sealed class AgentRuntime(AgentConfiguration config,string configPath,boo
     public async Task RunAsync(bool once,CancellationToken ct)
     {
         if(string.IsNullOrWhiteSpace(config.DeviceId) || string.IsNullOrWhiteSpace(config.PolicyPublicKeyPem)) throw new InvalidOperationException("Enroll first with --enroll --code");
-        var uri=ValidateServer(config.ServerUrl,simulated);
+        var uri=ValidateServer(config.ServerUrl,simulated,localDemo);
         using var key=new DeviceIdentity(config.DataDirectory,simulated).LoadOrCreate();
         using var client=CreateInternalClient();
+        await VerifyLocalDemoAsync(client,uri,ct);
         var api=new AgentApi(client,uri,config.DeviceId,key);
         await using var queue=new EventOutbox(Path.Combine(config.DataDirectory,"outbox.sqlite"));
         await using var notices=new NotificationStore(Path.Combine(config.DataDirectory,"notices.sqlite"));
         var pipeTask=OperatingSystem.IsWindows() && !once ? new NotificationPipe(notices).RunAsync(ct) : Task.CompletedTask;
         await LoadCachedPolicy();
-        if(once) { await Cycle(api,queue,notices,true,ct); return; }
+        if(once)
+        {
+            await Cycle(api,queue,notices,true,ct);
+            if(localDemo && await queue.UnsentCountAsync(ct)>0)
+                throw new InvalidOperationException("Local scan finished but upload is still queued; keep the demo server running and retry this scan");
+            return;
+        }
         while(!ct.IsCancellationRequested)
         {
             if(pipeTask.IsFaulted) await pipeTask;

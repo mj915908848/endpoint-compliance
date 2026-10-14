@@ -21,9 +21,10 @@ public partial class Program
         var app=b.Build();var settings=app.Services.GetRequiredService<Settings>();var service=app.Services.GetRequiredService<ComplianceService>();
         if(settings.DemoMode){
             var urls=b.Configuration["urls"]??"http://127.0.0.1:5080";
-            foreach(var url in urls.Split(';')){if(!Uri.TryCreate(url,UriKind.Absolute,out var uri)||!(uri.Host=="localhost"||IPAddress.TryParse(uri.Host,out var address)&&IPAddress.IsLoopback(address)))throw new InvalidOperationException("Demo listeners must be loopback");}
+            foreach(var url in urls.Split(';')){if(!TrialNetwork.IsAllowedListener(url,settings.DemoHttpLan))throw new InvalidOperationException("Demo listener requires a loopback address, or an explicit private IPv4 address with Compliance:DemoHttpLan enabled");}
             if(b.Configuration["urls"]==null)app.Urls.Add("http://127.0.0.1:5080");
         }
+        else if(settings.DemoHttpLan) throw new InvalidOperationException("DemoHttpLan requires DemoMode");
         if(settings.TrustedProxies.Length>0){
             var options=new ForwardedHeadersOptions {ForwardedHeaders=ForwardedHeaders.XForwardedFor|ForwardedHeaders.XForwardedProto,ForwardLimit=1};
             options.KnownIPNetworks.Clear();options.KnownProxies.Clear();foreach(var proxy in settings.TrustedProxies)options.KnownProxies.Add(IPAddress.Parse(proxy));app.UseForwardedHeaders(options);
@@ -31,7 +32,7 @@ public partial class Program
         await service.Initialize();
         app.Use(async(c,next)=>{
             try{
-                if(settings.DemoMode){if(c.Connection.RemoteIpAddress is { } remote && !IPAddress.IsLoopback(remote))throw new ApiError(403,"Demo accepts loopback only");}
+                if(settings.DemoMode){if(c.Connection.RemoteIpAddress is { } remote && !(settings.DemoHttpLan?TrialNetwork.IsPrivateOrLoopback(remote):IPAddress.IsLoopback(remote)))throw new ApiError(403,"Demo accepts only its configured local or private-network clients");}
                 else if(!c.Request.IsHttps)throw new ApiError(400,"HTTPS is required");
                 c.Response.Headers["X-Content-Type-Options"]="nosniff";c.Response.Headers["Content-Security-Policy"]="default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
                 if(c.Request.Path.StartsWithSegments("/api"))c.Response.Headers.CacheControl="no-store";
@@ -76,7 +77,7 @@ public partial class Program
     static async Task<T> Body<T>(HttpContext c)=>await c.Request.ReadFromJsonAsync<T>(Wire.Json)??throw new ApiError(400,"Body required");
     static void Map(WebApplication app,ComplianceService s,Settings settings)
     {
-        app.MapGet("/api/status",()=>new {mode=settings.DemoMode?"LoopbackDemo":"Production",storage=settings.Storage,networkCapabilities=new[]{new {id="network",implemented=false,verified=false,detail="通用 API 网络执行层未实现"}},policyPublicKeyPem=s.PublicKey,policyKeyId=s.KeyId});
+        app.MapGet("/api/status",()=>new {mode=settings.DemoMode?(settings.DemoHttpLan?"LanHttpTrial":"LoopbackDemo"):"Production",storage=settings.Storage,networkCapabilities=new[]{new {id="network",implemented=false,verified=false,detail="通用 API 网络执行层未实现"}},policyPublicKeyPem=s.PublicKey,policyKeyId=s.KeyId});
         app.MapPost("/api/auth/login",async(HttpContext c)=>{
             var login=await Body<LoginRequest>(c);if(string.IsNullOrWhiteSpace(login.Username)||login.Username.Length>100||login.Password==null||login.Password.Length>1024)throw new ApiError(401,"Invalid credentials");
             var result=await s.Tx(async tx=>{

@@ -5,6 +5,7 @@ param(
     [string]$DataDirectory = "$env:ProgramData\ComplianceAgent"
 )
 $ErrorActionPreference = 'Stop'
+if ($ServerUrl.StartsWith('http://',[StringComparison]::OrdinalIgnoreCase)) { throw 'For an HTTP trial, run 本机采集试用.bat from the package root. The persistent service installer requires HTTPS.' }
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Administrator required' }
 if (-not $ServerUrl.StartsWith('https://',[StringComparison]::OrdinalIgnoreCase)) { throw 'Production agent requires HTTPS' }
 if (Get-Service ComplianceAgent -ErrorAction SilentlyContinue) { throw 'Service exists; use approved upgrade procedure' }

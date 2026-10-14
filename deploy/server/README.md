@@ -6,7 +6,8 @@
 
 | 键 | 要求 |
 | --- | --- |
-| Compliance:DemoMode | 生产 false；仅本机演示 true |
+| Compliance:DemoMode | 生产 false；HTTP 试用 true |
+| Compliance:DemoHttpLan | 默认 false；仅隔离内网 HTTP 试用时显式设置 true，监听本机私有 IPv4 地址 |
 | Compliance:Storage | 生产 Postgres；Sqlite仅允许演示 |
 | Compliance:Database | PostgreSQL完整连接串；推荐SSL Mode=VerifyFull与受信CA；测试的loopback无TLS不能照搬生产 |
 | Compliance:SigningKeyPath | 受保护持久密钥路径；不可每次启动随机更换；与数据库一起备份 |

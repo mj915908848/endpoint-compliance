@@ -9,6 +9,7 @@ namespace Compliance.Server;
 public sealed class Settings
 {
     public bool DemoMode {get;set;}
+    public bool DemoHttpLan {get;set;}
     public string Storage {get;set;}="Postgres";
     public string Database {get;set;}="";
     public string SigningKeyPath {get;set;}="";
