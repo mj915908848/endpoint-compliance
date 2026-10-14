@@ -128,7 +128,8 @@ export function OverviewGuide({ devices }: { devices: DeviceSummary[] }) {
   );
 }
 
-export function DeviceGuide({ device }: { device: DeviceSummary }) {
+/** The device's verdict in plain language; `children` adds facts such as heartbeat times below it. */
+export function DeviceGuide({ device, children }: { device: DeviceSummary; children?: ReactNode }) {
   if (device.onlineState !== "Online")
     return (
       <Notice
@@ -136,11 +137,16 @@ export function DeviceGuide({ device }: { device: DeviceSummary }) {
         showIcon
         aria-label="设备结果说明"
         title="暂无法判断：终端未在线"
-        description={`该终端最近没有上报心跳。${
-          device.lastVerdict === "FAIL"
-            ? "上次检查未通过，已发现的违规仍需处理。"
-            : "上次检查结果仅供参考。"
-        }${RERUN_HINT}`}
+        description={
+          <>
+            {`该终端最近没有上报心跳。${
+              device.lastVerdict === "FAIL"
+                ? "上次检查未通过，已发现的违规仍需处理。"
+                : "上次检查结果仅供参考。"
+            }${RERUN_HINT}`}
+            {children}
+          </>
+        }
       />
     );
   if (device.currentVerdict === "FAIL")
@@ -150,7 +156,12 @@ export function DeviceGuide({ device }: { device: DeviceSummary }) {
         showIcon
         aria-label="设备结果说明"
         title={`检查未通过：发现 ${device.violationCount} 个违规对象`}
-        description="按照当前策略，禁用软件只要安装即视为违规，无论是否运行。请根据下方证据卸载相关软件、扩展或清除代理配置，然后重新检查。部分检查项读取失败不会抵消已确认的违规。"
+        description={
+          <>
+            按照当前策略，禁用软件只要安装即视为违规，无论是否运行。请根据下方证据卸载相关软件、扩展或清除代理配置，然后重新检查。部分检查项读取失败不会抵消已确认的违规。
+            {children}
+          </>
+        }
       />
     );
   if (device.currentVerdict === "UNKNOWN")
@@ -160,7 +171,9 @@ export function DeviceGuide({ device }: { device: DeviceSummary }) {
         showIcon
         aria-label="设备结果说明"
         title="暂无法判断"
-        description="缺少完整且有效的检查数据。请查看“检查覆盖”中未完成的项目，处理后重新检查。"
+        description={
+          <>缺少完整且有效的检查数据。请查看“检查覆盖”中未完成的项目，处理后重新检查。{children}</>
+        }
       />
     );
   return (
@@ -169,7 +182,12 @@ export function DeviceGuide({ device }: { device: DeviceSummary }) {
       showIcon
       aria-label="设备结果说明"
       title="检查通过"
-      description="在本次检查范围内未发现禁用项。结论仅适用于已覆盖的检查项，请同时关注检查覆盖与防护状态。"
+      description={
+        <>
+          在本次检查范围内未发现禁用项。结论仅适用于已覆盖的检查项，请同时关注检查覆盖与防护状态。
+          {children}
+        </>
+      }
     />
   );
 }

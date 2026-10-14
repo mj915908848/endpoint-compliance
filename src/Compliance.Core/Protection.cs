@@ -300,7 +300,7 @@ public static class ReportRenderer
         return $"{local:yyyy-MM-dd HH:mm:ss}（UTC{local:zzz}）";
     }
 
-    // Section titles and the advice/limit texts mirror ui/src/components/report.tsx.
+    // The advice/limit texts mirror ui/src/components/report.tsx.
     public static string Markdown(ComplianceReport report)
     {
         var s = report.Snapshot;

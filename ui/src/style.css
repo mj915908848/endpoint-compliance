@@ -94,6 +94,19 @@ body {
   border-radius: 8px;
   padding: 4px 20px 20px;
 }
+.device-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 24px;
+  margin-top: 10px;
+}
+.muted {
+  color: rgba(0, 0, 0, 0.45);
+}
+.device-fact .muted {
+  margin-right: 6px;
+}
 .metric {
   height: 100%;
 }
@@ -114,36 +127,12 @@ body {
 }
 
 /* Report */
-.report-summary {
-  padding: 16px 20px;
-  border-radius: 8px;
-  background: #f6f9fa;
-  border: 1px solid #e6ebee;
-  margin: 8px 0 12px;
-}
-.report-verdict-icon {
-  font-size: 36px;
-  line-height: 1;
-}
-.report-toc {
-  margin-bottom: 8px;
-}
 .report-section {
-  padding: 20px 0;
+  padding: 16px 0;
   border-top: 1px solid #eef1f3;
-  scroll-margin-top: 80px;
 }
-.report-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-right: 8px;
-  border-radius: 50%;
-  background: #1f6f84;
-  color: #fff;
-  font-size: 12px;
+.report-section:first-of-type {
+  margin-top: 12px;
 }
 .report-list {
   margin: 0;

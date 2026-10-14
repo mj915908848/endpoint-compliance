@@ -4,7 +4,7 @@ import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import { Providers } from "../src/providers";
-import type { DeviceSummary } from "../src/types";
+import type { DeviceSummary, Report, Snapshot } from "../src/types";
 
 const device: DeviceSummary = {
   id: "dev-1",
@@ -78,5 +78,75 @@ describe("deleting a device", () => {
     renderAt("/devices/dev-1");
     expect(await screen.findByText("OLD-PC")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /删除终端/ })).toBeNull();
+  });
+});
+
+describe("device detail", () => {
+  it("states the verdict once and lists only the problems and their evidence", async () => {
+    const failing: DeviceSummary = {
+      ...device,
+      onlineState: "Online",
+      currentVerdict: "FAIL",
+      lastVerdict: "FAIL",
+      lastScan: "2026-10-14T05:52:04Z",
+      violationCount: 1,
+    };
+    const snapshot: Snapshot = {
+      schemaVersion: 1,
+      deviceId: "dev-1",
+      hostName: "OLD-PC",
+      platform: "Windows",
+      simulated: false,
+      collectedAt: "2026-10-14T05:52:04Z",
+      policyVersion: 1,
+      evidence: [
+        {
+          productId: "cursor",
+          productName: "Cursor",
+          kind: "Installation",
+          objectKey: "app:cursor",
+          source: "registry",
+          summary: "Cursor 已安装",
+          userSid: null,
+          confirmed: true,
+        },
+      ],
+      modules: [
+        {
+          module: "installed",
+          scope: "machine",
+          status: "Complete",
+          collectedAt: "2026-10-14T05:52:04Z",
+          error: null,
+        },
+      ],
+      controls: [],
+    };
+    const report: Report = {
+      verdict: "FAIL",
+      summary: "不通过：发现 1 个违规对象",
+      reasons: ["Cursor：已安装（整机）"],
+      coverageGaps: [],
+      violationCount: 1,
+      evidenceCount: 1,
+      protectionStatus: "审计模式",
+      snapshot,
+    };
+    vi.stubGlobal("fetch", async (url: string) => {
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+      if (url === "/api/me") return json({ username: "admin", roles: ["Reader"], csrfToken: "t" });
+      if (url === "/api/devices/dev-1")
+        return json({ device: failing, snapshot, controls: [], pendingCommands: 0 });
+      if (url === "/api/devices/dev-1/report") return json(report);
+      return json([]);
+    });
+    renderAt("/devices/dev-1");
+    expect(await screen.findByText("Cursor：已安装（整机）")).toBeTruthy();
+    expect(screen.getAllByText(/发现 1 个违规对象/)).toHaveLength(1);
+    expect(screen.getByText("软件安装与运行（1）")).toBeTruthy();
+    expect(screen.getByText("未发现代理设置。")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "检查覆盖（1/1）" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /全部证据/ })).toBeNull();
   });
 });
