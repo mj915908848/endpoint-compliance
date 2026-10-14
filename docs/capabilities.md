@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | 平台 | 设备登记、签名请求、SQLite演示/PostgreSQL、报告、告警、角色/CSRF、签名策略、ScanNow | 客户内网部署、账号轮换/AD集成、持续容量压测 |
 | 用户采集 | ProfileList显式SID/路径/HKU已加载用户；未加载注册表显示UNKNOWN，可读的个人目录仍检查扩展、CLI和常见安装位置 | Windows10/11实际构建、多用户/AzureAD、权限与异常场景；未加载用户的注册表不自动挂载 |
-| 系统代理 | WinINET 用户设置、机器/用户持久代理环境变量、WinHTTP 基本配置及高级配置/PAC；采集进程自己的代理变量仅作线索；高级命令不可用或不可解析时显示 UNKNOWN | WinHTTP 高级配置各 Windows 版本实机兼容性、WPAD 自动发现结果与其他代理机制；会话级 Process 环境变量不代表机器持久配置 |
-| 安装/插件/CLI | 卸载登记、明确用户Appx、Clash/Codex已知服务登记、常见安装目录的目录名与exe双重匹配、VS Code/Cursor/Windsurf已知扩展目录、npm包及已知用户CLI路径；损坏扩展清单不遮蔽后续清单，读取失败保留缺口 | 未知软件、其他服务/启动项、便携文件改名、任意目录、PWA和新安装体系不承诺穷尽；企业例外管理待完善 |
+| 系统代理 | WinINET 用户设置、机器/用户持久代理环境变量、WinHTTP 基本配置（WinHttpGetDefaultProxyConfiguration）、整机与系统账户的 WinINet 连接设置（代理/PAC/自动检测）；不调用 netsh 等外部命令；采集进程自己的代理变量仅作线索；读取或解析失败时显示 UNKNOWN | Windows 11 `netsh winhttp set advproxy` 写入的高级代理与连接设置的对应关系待实机验证；WPAD 自动发现结果与其他代理机制；会话级 Process 环境变量不代表机器持久配置 |
+| 安装/插件/CLI | 卸载登记、按用户的 Appx/MSIX 包（读取 AppxAllUserStore，未登录用户同样覆盖，不调用 PowerShell）、Clash/Codex已知服务登记、常见安装目录的目录名与exe双重匹配、VS Code/Cursor/Windsurf已知扩展目录、npm包及已知用户CLI路径；损坏扩展清单不遮蔽后续清单，读取失败保留缺口 | 未知软件、其他服务/启动项、便携文件改名、任意目录、PWA和新安装体系不承诺穷尽；企业例外管理待完善 |
 | 端口 | 本机已知代理端口监听线索 | 完整IPv4/IPv6 PID映射、网络接口线索及更广采集待增强 |
 | 离线 | SQLite跨重启序号、补报ACK、去重和隔离 | 真实断电/磁盘耗尽、队列压力和系统性能 |
 | 通知 | 平台告警中心、普通用户托盘列表/确认 | 无SMTP/企业聊天适配器；本机免打扰/多会话展示实测 |

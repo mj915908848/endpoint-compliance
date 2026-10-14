@@ -377,8 +377,8 @@ await Check(
     async () =>
     {
         var policy = PolicySeed.Create();
-        var evidence = WindowsCollector.ParseAppxEvidence(
-            "{\"Name\":\"Microsoft.Copilot\",\"PackageFullName\":\"Microsoft.Copilot_1.0\"}",
+        var evidence = WindowsCollector.ParseAppxPackages(
+            ["Microsoft.Copilot_1.0.0.0_x64__8wekyb3d8bbwe", "Microsoft.WindowsCalculator_11.0_x64__8wekyb3d8bbwe"],
             "S-1-5-21-1-2-3-1001",
             policy
         );
@@ -390,27 +390,42 @@ await Check(
     }
 );
 await Check(
-    "advanced WinHTTP proxy and PAC are interpreted without retaining addresses",
+    "system connection settings report proxy, PAC and auto-detect without retaining addresses",
     async () =>
     {
-        var configured = WindowsCollector.ParseAdvancedWinHttp(
-            "Advanced proxy settings: {\"Proxy\":\"127.0.0.1:7890\",\"AutoconfigUrl\":\"\",\"AutoDetect\":false,\"ProxyIsEnabled\":true}"
-        );
-        Assert(configured.Proxy && !configured.Pac && !configured.AutoDetect, "advanced proxy missed");
-        var pac = WindowsCollector.ParseAdvancedWinHttp(
-            "{\"Proxy\":\"\",\"AutoconfigUrl\":\"https://example.test/pac\",\"AutoDetect\":false}"
-        );
-        Assert(!pac.Proxy && pac.Pac, "advanced PAC missed");
+        static byte[] Blob(int flags, string proxy, string pac)
+        {
+            var bytes = new List<byte>();
+            void Int(int v) => bytes.AddRange(BitConverter.GetBytes(v));
+            void Str(string v)
+            {
+                Int(v.Length);
+                bytes.AddRange(System.Text.Encoding.ASCII.GetBytes(v));
+            }
+            Int(0x46);
+            Int(1);
+            Int(flags);
+            Str(proxy);
+            Str("<local>");
+            Str(pac);
+            return bytes.ToArray();
+        }
+        var proxy = WindowsCollector.ParseConnectionSettings(Blob(0x3, "127.0.0.1:7890", ""));
+        Assert(proxy.Proxy && !proxy.Pac && !proxy.AutoDetect, "system proxy missed");
+        var pac = WindowsCollector.ParseConnectionSettings(Blob(0x5, "", "https://example.test/pac"));
+        Assert(!pac.Proxy && pac.Pac, "system PAC missed");
+        var direct = WindowsCollector.ParseConnectionSettings(Blob(0x9, "127.0.0.1:7890", ""));
+        Assert(!direct.Proxy && direct.AutoDetect, "disabled proxy server was reported as active");
         bool bad = false;
         try
         {
-            WindowsCollector.ParseAdvancedWinHttp("unsupported output");
+            WindowsCollector.ParseConnectionSettings([1, 2, 3]);
         }
-        catch (System.Text.Json.JsonException)
+        catch (InvalidDataException)
         {
             bad = true;
         }
-        Assert(bad, "unparsed advanced output was accepted");
+        Assert(bad, "truncated connection settings were accepted");
         await Task.CompletedTask;
     }
 );
