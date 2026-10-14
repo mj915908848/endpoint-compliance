@@ -279,16 +279,13 @@ public sealed partial class WindowsCollector
     }
 
     /// <summary>
-    /// Matches per-user Store packages. <paramref name="packageFullNames"/> come from
-    /// HKLM\...\Appx\AppxAllUserStore\&lt;SID&gt;, where a full name is "Name_Version_Arch_Resource_Publisher".
-    /// That list keeps entries for versions an update has replaced, so only names for which
-    /// <paramref name="isInstalled"/> holds count, and all versions of one app become a single record.
+    /// Matches a user's Store packages by package name; a full name is "Name_Version_Arch_Resource_Publisher".
+    /// Several installed versions of one app (e.g. framework or staged updates) become a single record.
     /// </summary>
     public static Evidence[] ParseAppxPackages(
         IEnumerable<string> packageFullNames,
         string userSid,
-        PolicyDocument policy,
-        Func<string, bool> isInstalled
+        PolicyDocument policy
     )
     {
         if (string.IsNullOrWhiteSpace(userSid))
@@ -308,7 +305,7 @@ public sealed partial class WindowsCollector
                 .ToArray();
             if (rules.Length == 0)
                 continue;
-            var versions = app.Where(p => isInstalled(p.Full)).Select(p => p.Parts[1]).Distinct().ToArray();
+            var versions = app.Select(p => p.Parts[1]).Distinct().ToArray();
             if (versions.Length == 0)
                 continue;
             foreach (var rule in rules)
@@ -372,5 +369,39 @@ public sealed partial class WindowsCollector
         if (Regex.IsMatch(text, @"(?i)teredo|6to4|isatap|ip-https|wan miniport|kernel debug|loopback"))
             return false;
         return tunnelType || Regex.IsMatch(text, @"(?i)tun|tap|wireguard|mihomo|clash");
+    }
+
+    /// <summary>
+    /// Clue for a tunnel adapter, or null when it is not a tunnel, is one of Windows' own, or the policy approves
+    /// it. Adapters matching a product's <see cref="ProductRule.AdapterNames"/> name that product, but an adapter
+    /// name alone never confirms a violation.
+    /// </summary>
+    public static Evidence? TunnelEvidence(
+        string id,
+        string name,
+        string description,
+        bool tunnelType,
+        PolicyDocument policy
+    )
+    {
+        if (!IsTunnelClue(name, description, tunnelType))
+            return null;
+        var text = name + " " + description;
+        bool Contains(string pattern) => text.Contains(pattern, StringComparison.OrdinalIgnoreCase);
+        if (policy.ApprovedNetworkAdapters.Any(Contains))
+            return null;
+        var product = policy.Products.FirstOrDefault(p => p.AdapterNames.Any(Contains));
+        return new(
+            product?.Id ?? "interface-clue",
+            product?.Name ?? "隧道网卡",
+            EvidenceKind.Clue,
+            "nic:" + id,
+            "网络接口",
+            product is null
+                ? $"发现隧道类网卡“{name}”（{description}），归属和用途未核实"
+                : $"隧道类网卡“{name}”（{description}）疑似由 {product.Name} 创建，仅凭网卡名称不能确认",
+            null,
+            false
+        );
     }
 }

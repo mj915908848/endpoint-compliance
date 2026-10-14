@@ -373,33 +373,27 @@ await Check(
     }
 );
 await Check(
-    "Store package evidence remains scoped to the owning user and ignores replaced versions",
+    "Store package evidence stays scoped to the owning user, one record per app",
     async () =>
     {
         var policy = PolicySeed.Create();
-        string[] listed =
-        [
-            "Microsoft.Copilot_1.0.0.0_x64__8wekyb3d8bbwe",
-            "Microsoft.Copilot_1.1.0.0_x64__8wekyb3d8bbwe",
-            "Microsoft.Copilot_1.2.0.0_x64__8wekyb3d8bbwe",
-            "Microsoft.WindowsCalculator_11.0_x64__8wekyb3d8bbwe",
-        ];
         var evidence = WindowsCollector.ParseAppxPackages(
-            listed,
+            [
+                "Microsoft.Copilot_1.1.0.0_x64__8wekyb3d8bbwe",
+                "Microsoft.Copilot_1.2.0.0_neutral_~_8wekyb3d8bbwe",
+                "Microsoft.WindowsCalculator_11.0_x64__8wekyb3d8bbwe",
+            ],
             "S-1-5-21-1-2-3-1001",
-            policy,
-            full => !full.Contains("_1.0.0.0_")
+            policy
         );
         Assert(
             evidence.Length == 1 && evidence[0].UserSid == "S-1-5-21-1-2-3-1001",
             "Appx versions were not merged or scope was lost"
         );
         Assert(
-            evidence[0].Summary.Contains("1.1.0.0") && !evidence[0].Summary.Contains("1.0.0.0"),
-            "a replaced package version was reported as installed"
+            evidence[0].Summary.Contains("1.1.0.0") && evidence[0].Summary.Contains("1.2.0.0"),
+            "installed versions missing from the record"
         );
-        var removed = WindowsCollector.ParseAppxPackages(listed, "S-1-5-21-1-2-3-1001", policy, _ => false);
-        Assert(removed.Length == 0, "leftover registry entries for a removed app produced a violation");
         await Task.CompletedTask;
     }
 );
@@ -431,6 +425,43 @@ await Check(
         {
             File.Delete(path);
         }
+        await Task.CompletedTask;
+    }
+);
+await Check(
+    "approved VPN adapters are skipped and known proxy tunnels name their product as a clue",
+    async () =>
+    {
+        var policy = PolicySeed.Create();
+        Assert(
+            WindowsCollector.TunnelEvidence("1", "aTrustVNIC", "aTrust Tunnel", false, policy) is null,
+            "approved aTrust adapter reported"
+        );
+        var clash = WindowsCollector.TunnelEvidence("2", "Mihomo", "Meta Tunnel", false, policy);
+        Assert(clash is { ProductId: "clash", Kind: EvidenceKind.Clue, Confirmed: false }, "Mihomo TUN not attributed");
+        var singBox = WindowsCollector.TunnelEvidence("3", "singbox_tun", "sing-tun Tunnel", false, policy);
+        Assert(singBox?.ProductId == "sing-box", "sing-box TUN not attributed");
+        var unknown = WindowsCollector.TunnelEvidence("4", "et_12_1omv", "et_12_1omv Tunnel", false, policy);
+        Assert(unknown?.ProductId == "interface-clue", "unknown tunnel lost");
+        var report = ReportEngine.Evaluate(
+            policy with
+            {
+                Version = 1,
+            },
+            new ScanSnapshot
+            {
+                DeviceId = "d",
+                HostName = "h",
+                Platform = "Windows",
+                CollectedAt = DateTimeOffset.UtcNow,
+                PolicyVersion = 1,
+                Evidence = [clash!],
+                Modules = [],
+                Controls = [],
+            },
+            DateTimeOffset.UtcNow
+        );
+        Assert(report.ViolationCount == 0, "an adapter-name clue was counted as a violation");
         await Task.CompletedTask;
     }
 );

@@ -515,5 +515,15 @@ Test(
                 .Verdict
         )
 );
+Test(
+    "approved network adapters must be short explicit names",
+    () =>
+    {
+        PolicyCrypto.Validate(p with { ApprovedNetworkAdapters = ["aTrust", "Corporate VPN"] });
+        Throws(() => PolicyCrypto.Validate(p with { ApprovedNetworkAdapters = [""] }));
+        Throws(() => PolicyCrypto.Validate(p with { ApprovedNetworkAdapters = ["a"] }));
+        Throws(() => PolicyCrypto.Validate(p with { ApprovedNetworkAdapters = null! }));
+    }
+);
 Console.WriteLine($"Core tests: {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

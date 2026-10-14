@@ -45,6 +45,9 @@ public record ProductRule(
 )
 {
     public string[] DisplayNames { get; init; } = [];
+
+    /// <summary>Substrings of tunnel adapter names or descriptions this product creates; a match is a clue only.</summary>
+    public string[] AdapterNames { get; init; } = [];
 }
 
 public record PolicyDocument
@@ -66,6 +69,12 @@ public record PolicyDocument
     public ProductRule[] Products { get; init; } = [];
     public string[] BlockDomains { get; init; } = [];
     public ApplicationDenyRule[] ApplicationRules { get; init; } = [];
+
+    /// <summary>
+    /// Network adapters the customer has approved (e.g. its own VPN), matched case-insensitively as substrings
+    /// of the adapter name or description. Approved adapters are not reported as clues.
+    /// </summary>
+    public string[] ApprovedNetworkAdapters { get; init; } = [];
 }
 
 public record ApplicationDenyRule(string ProductId, string Name, string Sha256, string Type = "Exe");

@@ -148,6 +148,12 @@ export function Policies({ session }: { session: Session }) {
                       { label: "禁用产品", children: `${policy.products.length} 项` },
                       { label: "禁止访问的域名", children: `${policy.blockDomains.length} 项` },
                       {
+                        label: "已批准的网卡",
+                        children: policy.approvedNetworkAdapters?.length
+                          ? policy.approvedNetworkAdapters.join("、")
+                          : "无",
+                      },
+                      {
                         label: "必需检查项",
                         children: policy.requiredModules.map(moduleLabel).join("、") || "未定义",
                       },

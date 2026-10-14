@@ -35,7 +35,7 @@ def fixture(evidence):
     snap={'deviceId':'fixture','hostName':'Simulated Windows endpoint','platform':'Windows','simulated':True,'collectedAt':now,'policyVersion':1,'evidence':evidence,'modules':[{'module':m,'scope':'machine','status':'Complete','collectedAt':now} for m in ['installed','processes','proxy','extensions','appx','ports','users','cli']],'controls':[]}
     (data/'snapshot.json').write_text(json.dumps(snap))
 def agent(enrollment=None):
-    cmd=[args.dotnet,str(root/'src/Compliance.Agent/bin/Release/net10.0/Compliance.Agent.dll'),'--fixture',str(data/'snapshot.json'),'--data-dir',str(data/'agent'),'--server',base,'--once']
+    cmd=[args.dotnet,str(root/'src/Compliance.Agent/bin/Release/net10.0-windows10.0.19041.0/Compliance.Agent.dll'),'--fixture',str(data/'snapshot.json'),'--data-dir',str(data/'agent'),'--server',base,'--once']
     if enrollment:cmd += ['--enroll','--code',enrollment]
     with (data/'agent.log').open('a') as log:
         p=subprocess.run(cmd,cwd=root,stdout=log,stderr=subprocess.STDOUT,timeout=45)

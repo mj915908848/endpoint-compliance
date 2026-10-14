@@ -103,7 +103,7 @@ try:
             "collectedAt": now, "policyVersion": 1, "evidence": evidence, "controls": [],
             "modules": [{"module": m, "scope": "machine", "status": "Complete", "collectedAt": now} for m in modules],
         }))
-        cmd = [args.dotnet, str(root / "src/Compliance.Agent/bin/Release/net10.0/Compliance.Agent.dll"),
+        cmd = [args.dotnet, str(root / "src/Compliance.Agent/bin/Release/net10.0-windows10.0.19041.0/Compliance.Agent.dll"),
                "--fixture", str(folder / "snapshot.json"), "--data-dir", str(folder / "state"),
                "--server", base, "--once"]
         if not (folder / "state").exists():

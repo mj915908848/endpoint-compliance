@@ -20,11 +20,37 @@ public static class PolicySeed
                 "clash",
                 "Clash / Mihomo",
                 "proxy",
-                ["Clash for Windows", "Clash Verge", "Clash Verge Rev", "Mihomo", "Clash Meta"],
-                ["clash.exe", "mihomo.exe", "clash-verge.exe", "Clash for Windows.exe"]
-            ),
+                [
+                    "Clash for Windows",
+                    "Clash Verge",
+                    "Clash Verge Rev",
+                    "Mihomo",
+                    "Clash Meta",
+                    "FlClash",
+                    "Clash Nyanpasu",
+                ],
+                [
+                    "clash.exe",
+                    "mihomo.exe",
+                    "clash-verge.exe",
+                    "Clash for Windows.exe",
+                    "FlClash.exe",
+                    "clash-nyanpasu.exe",
+                ]
+            ) with
+            {
+                AdapterNames = ["Mihomo", "Meta Tunnel", "Clash"],
+            },
             R("surge", "Surge", "proxy", ["Surge"], ["surge.exe"]),
-            R("sing-box", "sing-box", "proxy", ["sing-box"], ["sing-box.exe"]),
+            R("sing-box", "sing-box", "proxy", ["sing-box"], ["sing-box.exe"]) with
+            {
+                AdapterNames = ["sing-tun", "singbox"],
+            },
+            R("shadowsocks", "Shadowsocks", "proxy", ["Shadowsocks"], ["Shadowsocks.exe"]),
+            R("hiddify", "Hiddify", "proxy", ["Hiddify"], ["Hiddify.exe", "HiddifyCli.exe"]) with
+            {
+                AdapterNames = ["Hiddify"],
+            },
             R(
                 "v2ray",
                 "V2Ray / Xray / v2rayN",
@@ -130,6 +156,8 @@ public static class PolicySeed
             RequiredModules = ["installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli"],
             Products = rules,
             BlockDomains = rules.SelectMany(r => r.Domains).Distinct().ToArray(),
+            // Sangfor aTrust is a common enterprise zero-trust VPN; customers adjust this list to their own.
+            ApprovedNetworkAdapters = ["aTrust"],
         };
     }
 }

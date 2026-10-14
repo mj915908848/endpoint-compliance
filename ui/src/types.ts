@@ -109,6 +109,7 @@ export interface Policy {
   lightweightFreshMinutes: number;
   products: Product[];
   blockDomains: string[];
+  approvedNetworkAdapters?: string[];
   applicationRules: {
     productId: string;
     name: string;

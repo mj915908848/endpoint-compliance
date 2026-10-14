@@ -323,16 +323,14 @@ internal sealed class CliCollector : ICollector
 }
 
 /// <summary>
-/// Store (Appx/MSIX) packages per user, read from the machine-wide AppxAllUserStore so users who are
-/// not logged on are covered too. Replaces the former <c>powershell Get-AppxPackage -User</c> call.
+/// Store (Appx/MSIX) packages per user through <c>PackageManager.FindPackagesForUser</c>, the API behind
+/// <c>Get-AppxPackage -User</c>. It needs administrator rights (the service runs as LocalSystem) and also
+/// covers users who are not logged on. The AppxAllUserStore registry key is not used: on a real device it
+/// listed versions an update had replaced and missed the one actually installed.
 /// </summary>
-[SupportedOSPlatform("windows")]
+[SupportedOSPlatform("windows10.0.19041.0")]
 internal sealed class AppxCollector : ICollector
 {
-    private const string Store = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore";
-    private const string Repository =
-        @"SOFTWARE\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\PackageRepository\Packages";
-
     public string Module => "appx";
     public bool Inventory => true;
 
@@ -343,26 +341,9 @@ internal sealed class AppxCollector : ICollector
 
     public Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct)
     {
-        using var store =
-            RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64).OpenSubKey(Store)
-            ?? throw new IOException("AppxAllUserStore unreadable");
-        // A user without any per-user package has no subkey; that is an empty result, not an error.
-        using var user = store.OpenSubKey(scope.Scope);
-        var packages = user?.GetSubKeyNames() ?? [];
-        using var repository = Registry.LocalMachine.OpenSubKey(Repository);
-        var windowsApps = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "WindowsApps"
-        );
-        if (packages.Length > 0 && repository is null && !WindowsCollector.DirectoryPresent(windowsApps))
-            throw new IOException("无法确认应用包是否仍已安装：包仓库和 WindowsApps 目录均不可读");
-        // A package still on the machine has a repository entry; its folder is the fallback check.
-        bool Installed(string full)
-        {
-            using var entry = repository?.OpenSubKey(full);
-            return entry is not null || WindowsCollector.DirectoryPresent(Path.Combine(windowsApps, full));
-        }
-        evidence.AddRange(WindowsCollector.ParseAppxPackages(packages, scope.Scope, context.Policy, Installed));
+        var manager = new Windows.Management.Deployment.PackageManager();
+        var packages = manager.FindPackagesForUser(scope.Scope).Select(p => p.Id.FullName).ToArray();
+        evidence.AddRange(WindowsCollector.ParseAppxPackages(packages, scope.Scope, context.Policy));
         return Task.CompletedTask;
     }
 }

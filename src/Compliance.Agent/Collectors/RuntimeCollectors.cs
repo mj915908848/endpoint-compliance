@@ -90,29 +90,18 @@ internal sealed class PortsCollector : ICollector
                     false
                 )
             );
-        foreach (
-            var nic in NetworkInterface
-                .GetAllNetworkInterfaces()
-                .Where(n =>
-                    WindowsCollector.IsTunnelClue(
-                        n.Name,
-                        n.Description,
-                        n.NetworkInterfaceType == NetworkInterfaceType.Tunnel
-                    )
-                )
-        )
-            evidence.Add(
-                new(
-                    "interface-clue",
-                    "隧道网卡",
-                    EvidenceKind.Clue,
-                    "nic:" + nic.Id,
-                    "网络接口",
-                    $"发现隧道类网卡“{nic.Name}”（{nic.Description}），归属和用途未核实",
-                    null,
-                    false
-                )
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            var clue = WindowsCollector.TunnelEvidence(
+                nic.Id,
+                nic.Name,
+                nic.Description,
+                nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel,
+                context.Policy
             );
+            if (clue is not null)
+                evidence.Add(clue);
+        }
         return Task.CompletedTask;
     }
 }

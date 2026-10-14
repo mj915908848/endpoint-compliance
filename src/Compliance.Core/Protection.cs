@@ -89,10 +89,18 @@ public static class PolicyCrypto
                 || r.ExtensionIds is null
                 || r.Domains is null
                 || r.DisplayNames is null
+                || r.AdapterNames is null
+                || r.AdapterNames.Any(n => string.IsNullOrWhiteSpace(n) || n.Length > 64)
             )
             || doc.Products.Select(r => r.Id).Distinct().Count() != doc.Products.Length
         )
             throw new ArgumentException("Invalid product identities");
+        if (
+            doc.ApprovedNetworkAdapters is null
+            || doc.ApprovedNetworkAdapters.Length > 100
+            || doc.ApprovedNetworkAdapters.Any(n => string.IsNullOrWhiteSpace(n) || n.Length < 3 || n.Length > 64)
+        )
+            throw new ArgumentException("Invalid approved network adapters");
         DomainRules.CompileEdge(doc.BlockDomains);
         foreach (var rule in doc.ApplicationRules)
             if (
