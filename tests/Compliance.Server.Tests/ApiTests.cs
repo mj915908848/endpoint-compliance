@@ -227,6 +227,39 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Deleted_device_disappears_with_its_alerts_and_can_enroll_again()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("v", 1, f.Clock.Now, "Violation", "x", Detail: "confirmed")])
+        );
+        Assert.Single((await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!);
+
+        await f.Login("reader");
+        Assert.Equal(HttpStatusCode.Forbidden, (await f.Client.DeleteAsync($"/api/devices/{f.Device}")).StatusCode);
+        await f.Login();
+        Assert.Equal(HttpStatusCode.OK, (await f.Client.DeleteAsync($"/api/devices/{f.Device}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Client.DeleteAsync($"/api/devices/{f.Device}")).StatusCode);
+
+        Assert.Empty((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
+        Assert.Empty((await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!);
+        Assert.Contains("DeleteDevice", await f.Client.GetStringAsync("/api/audit"));
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (
+                await f.Agent("POST", "/api/agent/events", new EventBatch([new("w", 2, f.Clock.Now, "Violation", "y")]))
+            ).StatusCode
+        );
+
+        var again = (await f.Enroll(await f.Code())).DeviceId;
+        Assert.NotEqual(f.Device, again);
+    }
+
+    [Fact]
     public async Task Reader_cannot_write_and_missing_csrf_is_rejected()
     {
         await using var f = new Fixture();

@@ -64,6 +64,22 @@ static partial class Endpoints
             }
         );
 
+        group.MapDelete(
+            "/{id}",
+            async (HttpContext c, string id) =>
+            {
+                var u = Require(c, "Operator");
+                return await s.Tx(async tx =>
+                {
+                    await tx.Lock(ComplianceService.DeviceLock(id));
+                    var d = await s.Device(tx, id);
+                    await tx.DeleteDevice(id);
+                    await tx.Audit(u.Username, "DeleteDevice", $"{d.HostName}（{id}）", s.Now);
+                    return new { deleted = id };
+                });
+            }
+        );
+
         group.MapPost(
             "/{id}/commands",
             async (HttpContext c, string id) =>

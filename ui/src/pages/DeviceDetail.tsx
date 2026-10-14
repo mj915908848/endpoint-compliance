@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { App, Button, Col, Descriptions, Dropdown, Row, Space, Tabs, Tag } from "antd";
-import { ArrowLeftOutlined, DownloadOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import { downloadJson, downloadReport, request } from "../api";
 import { useResource, useRefresh } from "../useResource";
 import {
@@ -33,7 +33,7 @@ export function DeviceDetailPage({
   session: Session;
   back: () => void;
 }) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const refresh = useRefresh();
   const encoded = encodeURIComponent(id),
     detail = useResource<DeviceDetail>(`/api/devices/${encoded}`),
@@ -59,6 +59,30 @@ export function DeviceDetailPage({
     } finally {
       setBusy(false);
     }
+  }
+  function remove() {
+    if (!d) return;
+    modal.confirm({
+      title: `删除终端 ${d.hostName}？`,
+      content:
+        "将删除该终端的检查记录、告警和待执行请求，此操作不可撤销。该电脑上的客户端将无法再上报，如需继续管控，请生成新的注册码重新注册。",
+      okText: "删除",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await request(`/api/devices/${encoded}`, {
+            method: "DELETE",
+            csrfToken: session.csrfToken,
+          });
+          message.success(`已删除终端 ${d.hostName}`);
+          back();
+          refresh();
+        } catch (e) {
+          message.error(errorText(e));
+        }
+      },
+    });
   }
   async function download(kind: string) {
     try {
@@ -98,6 +122,11 @@ export function DeviceDetailPage({
               <Button icon={<DownloadOutlined />}>下载报告</Button>
             </Dropdown>
             <Button onClick={refresh}>刷新</Button>
+            {role(session, "Operator") && (
+              <Button danger icon={<DeleteOutlined />} disabled={!d} onClick={remove}>
+                删除终端
+              </Button>
+            )}
           </Space>
         }
       />

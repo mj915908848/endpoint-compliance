@@ -136,6 +136,17 @@ public sealed class Transaction
             ("target", d.TargetPolicyVersion)
         );
 
+    /// <summary>Removes a device and everything recorded for it; its agent can no longer sign requests.</summary>
+    public async Task DeleteDevice(string id)
+    {
+        await Execute("DELETE FROM events WHERE device_id = @id", ("id", id));
+        await Execute("DELETE FROM alerts WHERE device_id = @id", ("id", id));
+        await Execute("DELETE FROM snapshot_incidents WHERE device_id = @id", ("id", id));
+        await Execute("DELETE FROM commands WHERE device_id = @id", ("id", id));
+        await Execute("DELETE FROM nonces WHERE device = @id", ("id", id));
+        await Execute("DELETE FROM devices WHERE id = @id", ("id", id));
+    }
+
     public Task UpdateHeartbeat(
         string id,
         string hostName,
