@@ -25,6 +25,17 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Content_security_policy_allows_inline_styles_but_only_same_origin_scripts()
+    {
+        await using var f = new Fixture();
+        var csp = (await f.Client.GetAsync("/api/status")).Headers.GetValues("Content-Security-Policy").Single();
+        Assert.Contains("default-src 'self'", csp);
+        Assert.Contains("style-src 'self' 'unsafe-inline'", csp);
+        Assert.DoesNotContain("script-src", csp);
+        Assert.Contains("frame-ancestors 'none'", csp);
+    }
+
+    [Fact]
     public async Task Enrollment_is_expiring_single_use_and_persists_across_restart()
     {
         await using var f = new Fixture();

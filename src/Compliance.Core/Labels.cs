@@ -1,0 +1,69 @@
+namespace Compliance.Core;
+
+/// <summary>Chinese display names shared by the report engine and the Markdown report; keep in sync with ui/src/components/labels.ts.</summary>
+public static class Labels
+{
+    public static string Module(string module) =>
+        module switch
+        {
+            "installed" => "已安装软件",
+            "installed-paths" => "常见安装目录",
+            "services" => "系统服务",
+            "processes" => "运行中的进程",
+            "proxy" => "系统代理",
+            "proxy-env" => "代理环境变量",
+            "proxy-advanced" => "代理高级设置",
+            "extensions" => "编辑器扩展",
+            "appx" => "应用商店应用",
+            "ports" => "端口与网络接口",
+            "users" => "用户账户",
+            "cli" => "命令行工具",
+            _ => module,
+        };
+
+    public static string Status(string status) =>
+        status switch
+        {
+            "Complete" => "已完成",
+            "Error" => "读取失败",
+            "Unknown" => "未覆盖",
+            _ => status,
+        };
+
+    public static string Scope(string? scope) => scope is null or "machine" ? "整机" : "用户 " + scope;
+
+    public static string Evidence(EvidenceKind kind) =>
+        kind switch
+        {
+            EvidenceKind.Installation => "已安装",
+            EvidenceKind.Process => "正在运行",
+            EvidenceKind.Extension => "扩展已安装",
+            EvidenceKind.Proxy => "代理设置",
+            EvidenceKind.Clue => "待核查线索",
+            EvidenceKind.BlockedAttempt => "拦截记录",
+            _ => kind.ToString(),
+        };
+
+    public static string Control(string id) =>
+        id switch
+        {
+            "application" => "应用程序拦截",
+            "edge" => "Edge 浏览器策略",
+            "network" => "网络访问拦截",
+            _ => id,
+        };
+
+    public static string ControlState(string state) =>
+        state switch
+        {
+            "Verified" => "已验证",
+            "Applied" => "已应用",
+            "AppliedUnverified" => "已应用，未验证",
+            "PendingManualApplication" => "待人工部署",
+            "Uncovered" => "未覆盖",
+            "Error" => "读取失败",
+            _ => state,
+        };
+
+    public static string YesNo(bool value) => value ? "是" : "否";
+}

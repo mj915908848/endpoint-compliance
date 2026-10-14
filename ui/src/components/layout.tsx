@@ -1,31 +1,24 @@
 import { type ReactNode } from "react";
+import { Card, Flex, Statistic, Typography } from "antd";
 import { ErrorNotice, Loading } from "./common";
 
 export function Panel({
   title,
-  eyebrow,
   actions,
   children,
 }: {
-  title: string;
-  eyebrow?: string;
+  title: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="panel">
-      <div className="panel-head">
-        <div>
-          {eyebrow && <span className="eyebrow">{eyebrow}</span>}
-          <h2>{title}</h2>
-        </div>
-        {actions}
-      </div>
+    <Card title={title} extra={actions} className="panel">
       {children}
-    </section>
+    </Card>
   );
 }
 
+/** Renders children only when the resource is loaded and current. */
 export function Fresh({
   error,
   loading,
@@ -35,7 +28,13 @@ export function Fresh({
   loading: boolean;
   children: ReactNode;
 }) {
-  return error ? <ErrorNotice error={error} /> : loading ? <Loading /> : <>{children}</>;
+  return error ? (
+    <ErrorNotice error={error} title="数据读取失败" />
+  ) : loading ? (
+    <Loading />
+  ) : (
+    <>{children}</>
+  );
 }
 
 export function Metric({
@@ -46,37 +45,65 @@ export function Metric({
 }: {
   label: string;
   value: string | number;
-  tone?: string;
-  caption?: string;
+  tone?: "good" | "danger" | "warning" | "neutral";
+  caption?: ReactNode;
 }) {
+  const color =
+    tone === "good"
+      ? "var(--good)"
+      : tone === "danger"
+        ? "var(--danger)"
+        : tone === "warning"
+          ? "var(--warning)"
+          : undefined;
   return (
-    <div className={`metric ${tone ?? ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {caption && <small>{caption}</small>}
-    </div>
+    <Card size="small" className="metric">
+      <Statistic title={label} value={value} styles={{ content: { color } }} />
+      {caption && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {caption}
+        </Typography.Text>
+      )}
+    </Card>
+  );
+}
+
+export function UpdatedAt({ at, refreshing }: { at: number | null; refreshing?: boolean }) {
+  if (!at) return null;
+  return (
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      {refreshing
+        ? "正在刷新…"
+        : `数据更新于 ${new Date(at).toLocaleTimeString("zh-CN", { hour12: false })}`}
+    </Typography.Text>
   );
 }
 
 export function PageHeading({
-  kicker,
   title,
   description,
   action,
+  extra,
 }: {
-  kicker: string;
-  title: string;
-  description: string;
+  title: ReactNode;
+  description?: ReactNode;
   action?: ReactNode;
+  extra?: ReactNode;
 }) {
   return (
-    <div className="page-heading">
+    <Flex className="page-heading" justify="space-between" align="end" gap={16} wrap>
       <div>
-        <span className="eyebrow">{kicker}</span>
-        <h1>{title}</h1>
-        <p>{description}</p>
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          {title}
+        </Typography.Title>
+        {description && (
+          <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>
+            {description}
+          </Typography.Paragraph>
+        )}
+        {extra}
       </div>
       {action}
-    </div>
+    </Flex>
   );
 }

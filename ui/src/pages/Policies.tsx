@@ -1,30 +1,42 @@
 import { useEffect, useMemo, useState } from "react";
-import { request } from "../api";
-import { useResource } from "../useResource";
 import {
-  Badge,
+  Alert,
+  App,
+  Button,
+  Checkbox,
+  Col,
+  Descriptions,
+  Input,
+  Row,
+  Space,
+  Steps,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
+import { request } from "../api";
+import { useResource, useRefresh } from "../useResource";
+import {
+  controlLabel,
   Empty,
   ErrorNotice,
-  time,
   errorText,
-  Panel,
   Fresh,
+  moduleLabel,
   PageHeading,
+  Panel,
+  time,
 } from "../components";
 import { role } from "../session";
 import type { Draft, Policy, Session, SignedPolicy } from "../types";
 
-export function Policies({
-  session,
-  revision,
-  refresh,
-}: {
-  session: Session;
-  revision: number;
-  refresh: () => void;
-}) {
-  const current = useResource<SignedPolicy>("/api/policies/current", revision),
-    drafts = useResource<Draft[]>("/api/policies/drafts", revision);
+const modeLabel = (mode: string) => (mode === "Enforce" ? "强制模式" : "审计模式");
+
+export function Policies({ session }: { session: Session }) {
+  const { message } = App.useApp();
+  const refresh = useRefresh();
+  const current = useResource<SignedPolicy>("/api/policies/current"),
+    drafts = useResource<Draft[]>("/api/policies/drafts");
   const policy = useMemo(() => {
     try {
       return current.data ? (JSON.parse(current.data.payload) as Policy) : null;
@@ -35,7 +47,6 @@ export function Policies({
   const [editor, setEditor] = useState(""),
     [reviewed, setReviewed] = useState(false),
     [error, setError] = useState<string | null>(null),
-    [notice, setNotice] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
   useEffect(() => {
     if (policy && !editor)
@@ -52,218 +63,242 @@ export function Policies({
         ),
       );
   }, [policy, editor]);
-  async function mutate(path: string, body: unknown, message: string) {
+
+  async function mutate(path: string, body: unknown, done: string) {
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
-      await request(path, {
-        method: "POST",
-        body,
-        csrfToken: session.csrfToken,
-      });
-      setNotice(message);
+      await request(path, { method: "POST", body, csrfToken: session.csrfToken });
+      message.success(done);
       refresh();
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
     } finally {
       setBusy(false);
     }
   }
-  function save() {
+  async function save() {
     let document: Policy;
     try {
       document = JSON.parse(editor) as Policy;
       if (!document || typeof document !== "object" || Array.isArray(document)) throw Error();
     } catch {
-      setError("策略 JSON 格式无效");
+      setError("策略内容不是有效的 JSON。");
       return;
     }
     if (policy && document.version <= policy.version) {
-      setError("新版本号必须大于当前版本");
+      setError(`新版本号必须大于当前版本 v${policy.version}。`);
       return;
     }
-    mutate(
-      "/api/policies/drafts",
-      { document, impactReviewed: reviewed },
-      "草稿已保存，等待独立审核。",
-    );
+    if (
+      await mutate(
+        "/api/policies/drafts",
+        { document, impactReviewed: reviewed },
+        "草稿已保存，等待其他审核人审核。",
+      )
+    )
+      setReviewed(false);
   }
+
   return (
     <>
       <PageHeading
-        kicker="GOVERNANCE / POLICY"
-        title="策略与规则"
-        description="草稿、影响确认、独立复核、发布分步记录；强制策略由服务端再次校验设备与执行能力。"
-        action={
-          <button className="secondary" onClick={refresh}>
-            刷新策略
-          </button>
-        }
+        title="策略管理"
+        description="策略需经过“起草、影响评估、独立审核、发布”四步。强制模式发布前，管理端会再次校验终端是否具备相应的防护能力。"
+        action={<Button onClick={refresh}>刷新</Button>}
       />
-      <ErrorNotice error={error} />
-      {notice && (
-        <div className="success-notice" role="status">
-          {notice}
-        </div>
-      )}
-      <div className="detail-grid">
-        <Panel eyebrow="CURRENT RELEASE" title="当前已签名策略">
-          <Fresh error={current.error} loading={current.loading}>
-            {policy ? (
-              <>
-                <div className="policy-meta">
-                  <Badge tone={policy.mode === "Enforce" ? "warning" : "neutral"}>
-                    {policy.mode === "Audit" ? "审计模式" : "强制模式"}
-                  </Badge>
-                  <strong>v{policy.version}</strong>
-                  <span>{policy.policyId}</span>
-                </div>
-                <dl className="facts">
-                  <dt>有效期</dt>
-                  <dd>
-                    {time(policy.issuedAt)} — {time(policy.expiresAt)}
-                  </dd>
-                  <dt>目标设备</dt>
-                  <dd>{policy.targetDeviceIds.length} 台</dd>
-                  <dt>产品规则</dt>
-                  <dd>{policy.products.length} 项</dd>
-                  <dt>域名规则</dt>
-                  <dd>{policy.blockDomains.length} 项</dd>
-                  <dt>必需执行层</dt>
-                  <dd>{policy.requiredControls.join("、") || "未定义"}</dd>
-                </dl>
-                <p className="muted small">
-                  页面显示服务端签名文档内容；发布和实际生效状态分别由服务端与终端报告。
-                </p>
-              </>
-            ) : (
-              <Empty title="无法解析当前策略" />
-            )}
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <ErrorNotice error={error} />
+        <Row gutter={[16, 16]}>
+          <Col xs={24} xl={14}>
+            <Panel title="当前生效策略">
+              <Fresh error={current.error} loading={current.loading}>
+                {policy ? (
+                  <Descriptions
+                    size="small"
+                    bordered
+                    column={1}
+                    items={[
+                      {
+                        label: "版本",
+                        children: (
+                          <Space>
+                            <Typography.Text strong>v{policy.version}</Typography.Text>
+                            <Tag color={policy.mode === "Enforce" ? "warning" : "default"}>
+                              {modeLabel(policy.mode)}
+                            </Tag>
+                            <Typography.Text type="secondary" className="mono">
+                              {policy.policyId}
+                            </Typography.Text>
+                          </Space>
+                        ),
+                      },
+                      {
+                        label: "有效期",
+                        children: `${time(policy.issuedAt)} 至 ${time(policy.expiresAt)}`,
+                      },
+                      {
+                        label: "适用终端",
+                        children: policy.targetDeviceIds.length
+                          ? `${policy.targetDeviceIds.length} 台指定终端`
+                          : "全部终端",
+                      },
+                      { label: "禁用产品", children: `${policy.products.length} 项` },
+                      { label: "禁止访问的域名", children: `${policy.blockDomains.length} 项` },
+                      {
+                        label: "必需检查项",
+                        children: policy.requiredModules.map(moduleLabel).join("、") || "未定义",
+                      },
+                      {
+                        label: "必需防护措施",
+                        children: policy.requiredControls.map(controlLabel).join("、") || "无",
+                      },
+                    ]}
+                  />
+                ) : (
+                  <Empty title="无法解析当前策略" />
+                )}
+              </Fresh>
+            </Panel>
+          </Col>
+          <Col xs={24} xl={10}>
+            <Panel title="发布流程">
+              <Steps
+                orientation="vertical"
+                size="small"
+                current={-1}
+                items={[
+                  { title: "起草", content: "发布人编辑策略内容并确认适用终端。" },
+                  { title: "影响评估", content: "确认已评估目标终端、业务影响和例外情况。" },
+                  { title: "独立审核", content: "由另一名具有审核权限的账号审核通过。" },
+                  { title: "发布", content: "发布人发布；管理端校验强制模式所需的防护能力。" },
+                ]}
+              />
+              <Alert
+                type="info"
+                showIcon
+                title="审计模式只检查、不拦截。发布成功仅表示管理端已签发策略，终端是否已接收和生效，请以终端上报为准。"
+              />
+            </Panel>
+          </Col>
+        </Row>
+        <Panel title="策略草稿">
+          <Fresh error={drafts.error} loading={drafts.loading}>
+            <Table<Draft>
+              rowKey="id"
+              dataSource={drafts.data ?? []}
+              size="middle"
+              scroll={{ x: 640 }}
+              pagination={{ pageSize: 10, hideOnSinglePage: true }}
+              locale={{ emptyText: <Empty title="暂无策略草稿" /> }}
+              columns={[
+                {
+                  title: "草稿",
+                  key: "id",
+                  render: (_, d) => <span className="mono">{d.id.slice(0, 12)}</span>,
+                },
+                {
+                  title: "版本",
+                  key: "version",
+                  render: (_, d) => `v${d.document.version} · ${modeLabel(d.document.mode)}`,
+                },
+                {
+                  title: "起草 / 审核",
+                  key: "people",
+                  render: (_, d) => (
+                    <Space orientation="vertical" size={0}>
+                      <span>起草：{d.createdBy}</span>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        审核：{d.approvedBy ?? "未审核"}
+                      </Typography.Text>
+                    </Space>
+                  ),
+                },
+                {
+                  title: "状态",
+                  key: "state",
+                  render: (_, d) => (
+                    <Tag color={d.published ? "success" : d.approvedBy ? "processing" : "warning"}>
+                      {d.published ? "已发布" : d.approvedBy ? "已审核" : "待审核"}
+                    </Tag>
+                  ),
+                },
+                {
+                  title: "操作",
+                  key: "actions",
+                  render: (_, d) => (
+                    <Space>
+                      {!d.published &&
+                        !d.approvedBy &&
+                        role(session, "Reviewer") &&
+                        d.createdBy !== session.username && (
+                          <Button
+                            size="small"
+                            disabled={busy}
+                            onClick={() =>
+                              mutate(
+                                `/api/policies/${encodeURIComponent(d.id)}/approve`,
+                                {},
+                                "审核通过。",
+                              )
+                            }
+                          >
+                            审核通过
+                          </Button>
+                        )}
+                      {!d.published && d.approvedBy && role(session, "Publisher") && (
+                        <Button
+                          size="small"
+                          type="primary"
+                          disabled={busy}
+                          onClick={() =>
+                            mutate(
+                              `/api/policies/${encodeURIComponent(d.id)}/publish`,
+                              {},
+                              "策略已发布，请留意终端的接收和生效情况。",
+                            )
+                          }
+                        >
+                          发布
+                        </Button>
+                      )}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
           </Fresh>
         </Panel>
-        <Panel eyebrow="PUBLISH FLOW" title="审批边界">
-          <ol className="flow-list">
-            <li>编辑策略文档与规则，确认目标设备。</li>
-            <li>检查影响并勾选“已审阅影响”。</li>
-            <li>由其他 Reviewer 账号独立审批。</li>
-            <li>Publisher 发布；服务端校验强制执行能力。</li>
-          </ol>
-          <div className="callout">
-            审计模式不会声称阻断生效。发布成功也不代表终端已收到、应用或验证策略。
-          </div>
-        </Panel>
-      </div>
-      <Panel eyebrow="DRAFTS" title="草稿与审批">
-        {" "}
-        <Fresh error={drafts.error} loading={drafts.loading}>
-          {drafts.data?.length ? (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>草稿</th>
-                    <th>模式 / 版本</th>
-                    <th>创建 / 审批</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {drafts.data.map((d) => (
-                    <tr key={d.id}>
-                      <td className="mono">{d.id.slice(0, 12)}</td>
-                      <td>
-                        {d.document.mode} · v{d.document.version}
-                      </td>
-                      <td>
-                        {d.createdBy}
-                        <small>复核：{d.approvedBy ?? "待审批"}</small>
-                      </td>
-                      <td>
-                        <Badge tone={d.published ? "good" : d.approvedBy ? "neutral" : "warning"}>
-                          {d.published ? "已发布" : d.approvedBy ? "已审批" : "待审批"}
-                        </Badge>
-                      </td>
-                      <td>
-                        <div className="inline">
-                          {!d.published &&
-                            role(session, "Reviewer") &&
-                            d.createdBy !== session.username && (
-                              <button
-                                className="secondary compact"
-                                disabled={busy}
-                                onClick={() =>
-                                  mutate(
-                                    `/api/policies/${encodeURIComponent(d.id)}/approve`,
-                                    {},
-                                    "草稿已审批。",
-                                  )
-                                }
-                              >
-                                审批
-                              </button>
-                            )}
-                          {!d.published && d.approvedBy && role(session, "Publisher") && (
-                            <button
-                              className="primary compact"
-                              disabled={busy}
-                              onClick={() =>
-                                mutate(
-                                  `/api/policies/${encodeURIComponent(d.id)}/publish`,
-                                  {},
-                                  "发布请求已完成，请核对终端实际应用状态。",
-                                )
-                              }
-                            >
-                              发布
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <Empty title="暂无策略草稿" />
-          )}
-        </Fresh>
-      </Panel>
-      {role(session, "Publisher") && (
-        <Panel eyebrow="EDITOR" title="创建策略草稿">
-          <p className="muted">
-            从当前策略生成下一版本初稿。使用 JSON
-            编辑产品、域名、目标设备及执行要求；格式与约束由管理端校验。
-          </p>
-          <label className="block-label">
-            策略文档 JSON
-            <textarea
+        {role(session, "Publisher") && (
+          <Panel title="新建策略草稿">
+            <Typography.Paragraph type="secondary">
+              已根据当前策略生成下一版本的初稿。可在 JSON
+              中编辑禁用产品、域名、适用终端和防护要求，提交后由管理端校验格式和约束。
+            </Typography.Paragraph>
+            <Input.TextArea
+              aria-label="策略内容（JSON）"
               className="json-editor"
               spellCheck={false}
+              autoSize={{ minRows: 12, maxRows: 28 }}
               value={editor}
               onChange={(e) => {
                 setEditor(e.target.value);
                 setReviewed(false);
               }}
             />
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={reviewed}
-              onChange={(e) => setReviewed(e.target.checked)}
-            />
-            已审阅目标设备、业务影响、例外和执行能力
-          </label>
-          <div className="form-actions">
-            <button className="primary" disabled={busy || !reviewed || !editor} onClick={save}>
-              {busy ? "正在提交…" : "保存草稿"}
-            </button>
-          </div>
-        </Panel>
-      )}
+            <Space style={{ marginTop: 12 }} wrap>
+              <Checkbox checked={reviewed} onChange={(e) => setReviewed(e.target.checked)}>
+                我已评估适用终端、业务影响、例外情况和防护能力
+              </Checkbox>
+              <Button type="primary" loading={busy} disabled={!reviewed || !editor} onClick={save}>
+                保存草稿
+              </Button>
+            </Space>
+          </Panel>
+        )}
+      </Space>
     </>
   );
 }

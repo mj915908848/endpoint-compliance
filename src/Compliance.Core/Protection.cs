@@ -278,89 +278,102 @@ public static class ReportRenderer
             .Replace(">", "&gt;")
             .Replace("`", "'");
 
-    private static string ModuleLabel(string module) =>
-        module switch
-        {
-            "installed" => "软件安装",
-            "installed-paths" => "常见安装目录",
-            "services" => "服务登记",
-            "processes" => "运行进程",
-            "proxy" => "系统代理",
-            "proxy-env" => "代理环境变量",
-            "proxy-advanced" => "高级代理",
-            "extensions" => "扩展检查",
-            "appx" => "商店应用",
-            "ports" => "端口与接口",
-            "users" => "用户范围",
-            "cli" => "命令行工具",
-            _ => module,
-        };
+    private static string Time(DateTimeOffset t) => $"{t:yyyy-MM-dd HH:mm:ss}（UTC{t:zzz}）";
 
-    private static string StatusLabel(string status) =>
-        status switch
-        {
-            "Complete" => "已完成",
-            "Error" => "读取失败",
-            "Unknown" => "未覆盖",
-            _ => status,
-        };
-
+    // Section titles and the advice/limit texts mirror ui/src/components/report.tsx.
     public static string Markdown(ComplianceReport report)
     {
         var s = report.Snapshot;
-        var b = new StringBuilder("# 客户终端合规检查报告\n\n");
+        var b = new StringBuilder("# 终端合规检查报告\n\n");
         b.AppendLine("## 1. 基本信息\n")
-            .AppendLine(
-                $"- 设备：{Cell(s.HostName)}（{Cell(s.DeviceId)}）\n- 平台：{Cell(s.Platform)}\n- 原始采集时间：{s.CollectedAt:O}\n"
-                    + $"- 规则版本：{s.PolicyVersion}\n- 数据版本：{s.SchemaVersion}\n- 模拟：{(s.Simulated ? "是，不能用于原生验收" : "否")}\n"
-            );
+            .AppendLine($"- 终端：{Cell(s.HostName)}")
+            .AppendLine($"- 设备 ID：{Cell(s.DeviceId)}")
+            .AppendLine($"- 平台：{Cell(s.Platform)}")
+            .AppendLine($"- 采集时间：{Time(s.CollectedAt)}")
+            .AppendLine($"- 策略版本：v{s.PolicyVersion}")
+            .AppendLine($"- 数据格式版本：{s.SchemaVersion}")
+            .AppendLine($"- 数据来源：{(s.Simulated ? "模拟数据，不能作为实机验收依据" : "终端实机采集")}\n");
         b.AppendLine("## 2. 检查结论\n")
-            .AppendLine(
-                $"**{Cell(report.Summary)}**\n\n- 违规对象：{report.ViolationCount}\n- 确认违规证据：{report.EvidenceCount}（同一对象的多条证据合并计数）\n"
-                    + $"- 防护状态：{Cell(report.ProtectionStatus)}\n"
-            );
+            .AppendLine($"**{Cell(report.Summary)}**\n")
+            .AppendLine($"- 违规对象：{report.ViolationCount}")
+            .AppendLine($"- 确认证据：{report.EvidenceCount}")
+            .AppendLine($"- 防护状态：{Cell(report.ProtectionStatus)}\n")
+            .AppendLine("同一产品在同一用户下的安装、进程和扩展记录合并计为一个违规对象。\n");
         b.AppendLine("## 3. 不通过项\n");
         foreach (var reason in report.Reasons)
             b.AppendLine("- " + Cell(reason));
         if (report.Reasons.Length == 0)
-            b.AppendLine("未发现当前确认违规；完整性以检查覆盖为准。");
-        b.AppendLine("\n## 4. 软件安装与进程\n");
+            b.AppendLine("未发现确认违规。结论的完整性以“检查覆盖”一节为准。");
+        b.AppendLine("\n## 4. 软件安装与运行\n");
         Table(
             b,
-            s.Evidence.Where(e => e.Kind is EvidenceKind.Installation or EvidenceKind.Process or EvidenceKind.Extension)
+            s.Evidence.Where(e =>
+                e.Kind is EvidenceKind.Installation or EvidenceKind.Process or EvidenceKind.Extension
+            ),
+            "未发现相关软件的安装或运行记录。"
         );
-        b.AppendLine("\n## 5. 代理配置\n");
-        Table(b, s.Evidence.Where(e => e.Kind == EvidenceKind.Proxy));
-        b.AppendLine("\n## 6. 端口与执行层线索\n");
-        Table(b, s.Evidence.Where(e => e.Kind is EvidenceKind.Clue or EvidenceKind.BlockedAttempt));
-        foreach (var c in s.Controls)
+        b.AppendLine("\n## 5. 代理设置\n");
+        Table(b, s.Evidence.Where(e => e.Kind == EvidenceKind.Proxy), "未发现代理设置。");
+        b.AppendLine("\n## 6. 网络线索与防护措施\n");
+        Table(
+            b,
+            s.Evidence.Where(e => e.Kind is EvidenceKind.Clue or EvidenceKind.BlockedAttempt),
+            "没有网络线索或拦截记录。"
+        );
+        if (s.Controls.Length == 0)
+            b.AppendLine("\n终端未上报防护措施，因此不能认定拦截已经生效。");
+        else
+        {
             b.AppendLine(
-                $"- {Cell(c.Id)}：{Cell(c.State)}，版本 {c.Version}；已验证：{c.Verified}；需重启：{c.RebootRequired}；{Cell(c.Detail)}"
+                "\n| 防护措施 | 状态 | 已验证 | 需重启 | 策略版本 | 说明 |\n| --- | --- | --- | --- | --- | --- |"
             );
-        b.AppendLine("\n## 7. 检查覆盖\n\n| 模块 | 范围 | 状态 | 原始时间 | 错误 |\n| --- | --- | --- | --- | --- |");
+            foreach (var c in s.Controls)
+                b.AppendLine(
+                    $"| {Cell(Labels.Control(c.Id))} | {Cell(Labels.ControlState(c.State))} | {Labels.YesNo(c.Verified)} | {Labels.YesNo(c.RebootRequired)} | v{c.Version} | {Cell(c.Detail)} |"
+                );
+        }
+        b.AppendLine("\n## 7. 检查覆盖\n");
+        if (report.CoverageGaps.Length > 0)
+        {
+            b.AppendLine("检查缺口：\n");
+            foreach (var gap in report.CoverageGaps)
+                b.AppendLine("- " + Cell(gap));
+            b.AppendLine();
+        }
+        b.AppendLine("| 检查项 | 范围 | 状态 | 采集时间 | 说明 |\n| --- | --- | --- | --- | --- |");
         foreach (var m in s.Modules)
             b.AppendLine(
-                $"| {Cell(ModuleLabel(m.Module))}（{Cell(m.Module)}） | {Cell(m.Scope)} | {Cell(StatusLabel(m.Status))} | {m.CollectedAt:O} | {Cell(m.Error)} |"
+                $"| {Cell(Labels.Module(m.Module))} | {Cell(Labels.Scope(m.Scope))} | {Labels.Status(m.Status)} | {Time(m.CollectedAt)} | {Cell(m.Error ?? "—")} |"
             );
-        foreach (var gap in report.CoverageGaps)
-            b.AppendLine("- 缺口：" + Cell(gap));
         b.AppendLine(
-            "\n## 8. 处理建议\n\n- 按客户制度处理已确认软件/代理，修复采集缺口后重新检查。\n- 管理员确认告警不代表技术恢复；恢复必须有新的完整采集。\n- 强制策略先审计、试点并验证阻断和回滚。\n"
+            "\n## 8. 处理建议\n\n"
+                + "- 按本单位制度处理已确认的软件和代理配置，补齐检查缺口后重新检查。\n"
+                + "- 在管理端确认告警只表示已知悉，不代表问题已解决；问题是否解决以终端新的完整检查为准。\n"
+                + "- 启用强制策略前，先在审计模式下试运行，并验证拦截效果和回退方案。\n"
         );
         b.AppendLine(
-            "## 9. 范围与限制\n\n- 此结论只适用于声明的设备、用户、采集范围与原始采集时间；清单不是穷尽清单。\n- 端口/接口和弱名称仅为线索；阻断尝试不证明成功使用。\n"
-                + "- 浏览器策略不证明任意程序 API 已阻断；通用网络过滤需要独立执行层验证。\n- 无 Windows 实机、安装包签名和客户网关验收证据时不能认定生产防护验收通过。\n"
-                + "- 不读取聊天内容、密码或浏览历史，不自动卸载。\n"
+            "## 9. 适用范围与限制\n\n"
+                + "- 结论仅适用于报告所列终端、用户、检查项和采集时间；检查清单并非穷尽。\n"
+                + "- 端口、网络接口和名称相似的程序只作为线索，不能单独认定违规；拦截记录也不代表曾经成功使用。\n"
+                + "- 浏览器策略只覆盖浏览器访问，不能证明其他程序的网络访问已被阻断。\n"
+                + "- 在完成 Windows 实机、安装包签名和网关验收前，不能据此认定生产环境防护已经生效。\n"
+                + "- 检查不读取聊天内容、密码或浏览记录，也不会自动卸载软件。\n"
         );
         return b.ToString();
     }
 
-    private static void Table(StringBuilder b, IEnumerable<Evidence> records)
+    private static void Table(StringBuilder b, IEnumerable<Evidence> records, string empty)
     {
-        b.AppendLine("| 产品 | 类型 | 用户 | 依据 | 确认 |\n| --- | --- | --- | --- | --- |");
-        foreach (var e in records)
+        var rows = records.ToArray();
+        if (rows.Length == 0)
+        {
+            b.AppendLine(empty);
+            return;
+        }
+        b.AppendLine("| 产品 | 类型 | 范围 | 说明 | 来源 |\n| --- | --- | --- | --- | --- |");
+        foreach (var e in rows)
             b.AppendLine(
-                $"| {Cell(e.ProductName)} | {e.Kind} | {Cell(e.UserSid ?? "machine")} | {Cell(e.Source)}: {Cell(e.Summary)} | {e.Confirmed} |"
+                $"| {Cell(e.ProductName)} | {(e.Confirmed ? "确认" : "线索")} · {Labels.Evidence(e.Kind)} | {Cell(Labels.Scope(e.UserSid))} | {Cell(e.Summary)} | {Cell(e.Source)} |"
             );
     }
 }

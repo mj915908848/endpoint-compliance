@@ -109,7 +109,7 @@ public partial class App : System.Windows.Application
             if (list is not null)
             {
                 list.Children.Clear();
-                list.Children.Add(new TextBlock { Text = "服务通知不可用；稍后自动重试。" });
+                list.Children.Add(new TextBlock { Text = "暂时无法读取通知，稍后将自动重试。" });
             }
         }
     }

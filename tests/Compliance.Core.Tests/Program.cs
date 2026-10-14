@@ -174,7 +174,7 @@ Test(
             now
         );
         Eq(1, r.Reasons.Length);
-        Yes(r.Reasons[0].Contains("Cursor") && r.Reasons[0].Contains("2 条证据"));
+        Yes(r.Reasons[0].Contains("Cursor") && r.Reasons[0].Contains("共 2 条证据"));
         Eq(2, r.EvidenceCount);
     }
 );
@@ -438,7 +438,7 @@ Test(
         var r = ReportEngine.Evaluate(p, clean with { Modules = [] }, now);
         var md = ReportRenderer.Markdown(r);
         Eq(9, md.Split('\n').Count(x => x.StartsWith("## ")));
-        Yes(md.Contains("无法判断") && md.Contains("installed") && md.Contains("未启用"));
+        Yes(md.Contains("无法判断") && md.Contains("缺少必需检查项：已安装软件") && md.Contains("只检查，不拦截"));
     }
 );
 Test(
@@ -459,7 +459,7 @@ Test(
             now
         );
         var md = ReportRenderer.Markdown(r);
-        Yes(md.Contains("同一对象的多条证据合并计数") && md.Contains("扩展检查") && md.Contains("读取失败"));
+        Yes(md.Contains("合并计为一个违规对象") && md.Contains("编辑器扩展") && md.Contains("读取失败"));
     }
 );
 Test(

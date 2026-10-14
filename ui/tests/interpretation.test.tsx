@@ -21,15 +21,15 @@ const device: DeviceSummary = {
 describe("plain-language result explanation", () => {
   it("shows the confirmed failures before technical details", () => {
     render(<DeviceGuide device={device} />);
-    expect(screen.getByText(/本次检查不通过：发现 3 个违规对象/)).toBeTruthy();
-    expect(screen.getByText(/安装也不允许/)).toBeTruthy();
+    expect(screen.getByText(/检查未通过：发现 3 个违规对象/)).toBeTruthy();
+    expect(screen.getByText(/只要安装即视为违规/)).toBeTruthy();
   });
 
   it("does not turn an offline historical failure into a pass", () => {
     const offline = { ...device, onlineState: "Offline", currentVerdict: "UNKNOWN" as const };
     render(<OverviewGuide devices={[offline]} />);
-    expect(screen.getByText(/当前没有在线检查结论/)).toBeTruthy();
-    expect(screen.getByText(/上次检查不通过/)).toBeTruthy();
+    expect(screen.getByText(/当前没有在线终端，无法给出检查结论/)).toBeTruthy();
+    expect(screen.getByText(/上次检查未通过/)).toBeTruthy();
     expect(screen.getByText(/重新运行“本机采集试用.bat”/)).toBeTruthy();
   });
 
@@ -58,7 +58,7 @@ describe("plain-language result explanation", () => {
       },
     ];
     render(<CoverageGuide modules={modules} />);
-    expect(screen.getByText(/1 项读取失败，1 项未能覆盖/)).toBeTruthy();
-    expect(screen.getByText(/不代表新发现违规/)).toBeTruthy();
+    expect(screen.getByText(/1 项读取失败，1 项未覆盖/)).toBeTruthy();
+    expect(screen.getByText(/并不表示发现了新的违规/)).toBeTruthy();
   });
 });

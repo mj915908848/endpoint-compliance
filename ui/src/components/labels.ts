@@ -1,69 +1,98 @@
-import type { ModuleResult } from "../types";
+import type { ModuleResult, Verdict } from "../types";
 
-export const reportNames = [
-  "基本信息",
-  "检查结论",
-  "不通过项",
-  "软件安装与进程",
-  "代理配置",
-  "端口与执行层线索",
-  "检查覆盖",
-  "处理建议",
-  "范围与限制",
-];
+const lookup = (table: Record<string, string>) => (key: string) => table[key] ?? key;
 
-export function moduleLabel(module: string) {
-  return (
-    (
-      {
-        installed: "软件安装",
-        "installed-paths": "常见安装目录",
-        services: "服务登记",
-        processes: "运行进程",
-        proxy: "系统代理",
-        "proxy-env": "代理环境变量",
-        "proxy-advanced": "高级代理",
-        extensions: "IDE 扩展",
-        appx: "商店应用",
-        ports: "端口与接口",
-        users: "用户范围",
-        cli: "命令行工具",
-      } as Record<string, string>
-    )[module] ?? module
-  );
-}
+export const verdictLabels: Record<Verdict, string> = {
+  PASS: "通过",
+  FAIL: "不通过",
+  UNKNOWN: "无法判断",
+};
 
-export function statusLabel(status: string) {
-  return (
-    ({ Complete: "已完成", Error: "读取失败", Unknown: "未覆盖" } as Record<string, string>)[
-      status
-    ] ?? status
-  );
-}
+export const onlineLabel = lookup({
+  Online: "在线",
+  SuspectedOffline: "疑似失联",
+  Offline: "失联",
+});
 
-export function evidenceLabel(kind: string) {
-  return (
-    (
-      {
-        Installation: "已安装",
-        Process: "运行中",
-        Extension: "扩展已安装",
-        Proxy: "代理配置",
-        Clue: "待核线索",
-        BlockedAttempt: "拦截记录",
-      } as Record<string, string>
-    )[kind] ?? kind
-  );
-}
+export const moduleLabel = lookup({
+  installed: "已安装软件",
+  "installed-paths": "常见安装目录",
+  services: "系统服务",
+  processes: "运行中的进程",
+  proxy: "系统代理",
+  "proxy-env": "代理环境变量",
+  "proxy-advanced": "代理高级设置",
+  extensions: "编辑器扩展",
+  appx: "应用商店应用",
+  ports: "端口与网络接口",
+  users: "用户账户",
+  cli: "命令行工具",
+});
 
+export const statusLabel = lookup({ Complete: "已完成", Error: "读取失败", Unknown: "未覆盖" });
+
+export const evidenceLabel = lookup({
+  Installation: "已安装",
+  Process: "正在运行",
+  Extension: "扩展已安装",
+  Proxy: "代理设置",
+  Clue: "待核查线索",
+  BlockedAttempt: "拦截记录",
+});
+
+export const alertTypeLabel = lookup({
+  Violation: "确认违规",
+  BlockedAttempt: "已拦截",
+  Health: "设备健康",
+  Offline: "设备失联",
+  Clue: "待核查线索",
+});
+
+export const auditActionLabel = lookup({
+  Login: "登录",
+  Logout: "退出登录",
+  CreateUser: "创建账号",
+  CreateEnrollmentCode: "生成登记码",
+  EnrollDevice: "终端登记",
+  RequestScan: "请求重新检查",
+  ScanReply: "终端回复检查请求",
+  AcknowledgeAlert: "确认告警",
+  CreatePolicyDraft: "创建策略草稿",
+  ApprovePolicy: "审核通过策略",
+  PublishPolicy: "发布策略",
+  SeedAuditPolicy: "初始化审计策略",
+  Offline: "终端失联",
+  OnlineRecovered: "终端恢复在线",
+  SnapshotRecovered: "检查结果恢复",
+});
+
+export const controlLabel = lookup({
+  application: "应用程序拦截",
+  edge: "Edge 浏览器策略",
+  network: "网络访问拦截",
+});
+
+export const controlStateLabel = lookup({
+  Verified: "已验证",
+  Applied: "已应用",
+  AppliedUnverified: "已应用，未验证",
+  PendingManualApplication: "待人工部署",
+  Uncovered: "未覆盖",
+  Error: "读取失败",
+});
+
+export const scopeLabel = (scope: string | null | undefined) =>
+  !scope || scope === "machine" ? "整机" : `用户 ${scope}`;
+
+/** Turns raw collector exceptions into an explanation an administrator can act on. */
 export function moduleErrorLabel(result: ModuleResult) {
   const error = result.error ?? "";
   if (/User hive not loaded|offline hive was not mounted/i.test(error))
-    return "该用户的注册表未加载；需要登录后重新检查，或由管理员补做离线用户检查。";
+    return "该用户的注册表未加载。请在该用户登录后重新检查，或由管理员补做离线检查。";
   if (/JsonReaderException|JsonException/i.test(error))
-    return `${moduleLabel(result.module)}的配置格式无法解析；本项覆盖不完整。`;
-  if (/UnauthorizedAccessException/i.test(error)) return "没有读取权限；本项覆盖不完整。";
+    return `${moduleLabel(result.module)}的配置文件无法解析，本项检查不完整。`;
+  if (/UnauthorizedAccessException/i.test(error)) return "没有读取权限，本项检查不完整。";
   if (/Profile path missing|Profile path unavailable/i.test(error))
-    return "用户目录不可用；本项覆盖不完整。";
+    return "用户目录不可用，本项检查不完整。";
   return error;
 }

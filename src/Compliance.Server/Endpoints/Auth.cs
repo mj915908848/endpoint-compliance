@@ -20,7 +20,7 @@ static partial class Endpoints
                             id = "network",
                             implemented = false,
                             verified = false,
-                            detail = "通用 API 网络执行层未实现",
+                            detail = "尚未实现。目前只能通过浏览器策略拦截浏览器访问；其他程序的网络访问需依靠单位的出口网关或代理拦截。",
                         },
                     },
                     policyPublicKeyPem = s.PublicKey,

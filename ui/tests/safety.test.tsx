@@ -35,14 +35,14 @@ describe("safety boundaries", () => {
   it("offline historical PASS is explicitly historical and current remains unknown", () => {
     render(<DeviceState device={deviceFixture} />);
     expect(screen.getByText("无法判断")).toBeTruthy();
-    expect(screen.getByText(/上次结论：范围内通过/)).toBeTruthy();
+    expect(screen.getByText(/上次结论：通过/)).toBeTruthy();
     expect(screen.getByText("失联")).toBeTruthy();
-    expect(screen.queryByText("当前范围内通过")).toBeNull();
+    expect(screen.queryByText("通过")).toBeNull();
   });
   it("never presents an offline PASS as a current pass even if the payload is inconsistent", () => {
     render(<DeviceState device={{ ...deviceFixture, currentVerdict: "PASS" }} />);
     expect(screen.getByText("无法判断")).toBeTruthy();
-    expect(screen.getByText(/上次结论：范围内通过/)).toBeTruthy();
+    expect(screen.getByText(/上次结论：通过/)).toBeTruthy();
   });
   it("acknowledging does not locally resolve a technical incident", async () => {
     const user = userEvent.setup();
@@ -50,8 +50,8 @@ describe("safety boundaries", () => {
     render(<AlertCard alert={alertFixture} canAck onAck={acknowledge} />);
     await user.click(screen.getByRole("button", { name: "确认已阅" }));
     await waitFor(() => expect(screen.getByText("已确认")).toBeTruthy());
-    expect(screen.getByText("问题持续")).toBeTruthy();
-    expect(screen.getByText(/确认不会改变设备检查结论/)).toBeTruthy();
+    // Acknowledging records that someone has seen it; only new scan evidence resolves it.
+    expect(screen.getByText("未恢复")).toBeTruthy();
   });
   it("reader cannot acknowledge", () => {
     render(<AlertCard alert={alertFixture} canAck={false} onAck={async () => {}} />);
@@ -65,9 +65,9 @@ describe("safety boundaries", () => {
         onAck={async () => {}}
       />,
     );
-    expect(screen.getByText("技术已恢复")).toBeTruthy();
+    expect(screen.getByText("已恢复")).toBeTruthy();
     expect(screen.getByText("待确认")).toBeTruthy();
-    expect(screen.queryByText("问题持续")).toBeNull();
+    expect(screen.queryByText("未恢复")).toBeNull();
   });
   it("rejected authentication is visible and password stays masked", async () => {
     const user = userEvent.setup();
@@ -82,7 +82,7 @@ describe("safety boundaries", () => {
     const password = screen.getByLabelText("密码");
     expect(password.getAttribute("type")).toBe("password");
     await user.type(password, "fixture-password");
-    await user.click(screen.getByRole("button", { name: "登录管理中心" }));
+    await user.click(screen.getByRole("button", { name: /登\s*录/ }));
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText("账号或密码不正确")).toBeTruthy();
   });

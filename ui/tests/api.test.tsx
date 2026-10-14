@@ -1,8 +1,25 @@
+import type { ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { request } from "../src/api";
-import { useResource } from "../src/useResource";
-afterEach(() => vi.unstubAllGlobals());
+import { createQueryClient, POLL_MS, TIMEOUT_MESSAGE, useResource } from "../src/useResource";
+
+function wrapper() {
+  const client = createQueryClient();
+  return {
+    client,
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  };
+}
+const json = (body: string) =>
+  new Response(body, { headers: { "Content-Type": "application/json" } });
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 describe("management request boundary", () => {
   it("sends sameorigin credentials and CSRF only in headers", async () => {
     let sent: RequestInit | undefined;
@@ -41,14 +58,15 @@ describe("management request boundary", () => {
     );
     const { result, rerender } = renderHook(({ path }) => useResource<{ id: string }>(path), {
       initialProps: { path: "/api/devices/old" },
+      ...wrapper(),
     });
     rerender({ path: "/api/devices/new" });
     await act(async () => {
-      deferred.get("/api/devices/new")?.(new Response('{"id":"new"}'));
+      deferred.get("/api/devices/new")?.(json('{"id":"new"}'));
     });
     await waitFor(() => expect(result.current.data?.id).toBe("new"));
     await act(async () => {
-      deferred.get("/api/devices/old")?.(new Response('{"id":"old"}'));
+      deferred.get("/api/devices/old")?.(json('{"id":"old"}'));
     });
     expect(result.current.data?.id).toBe("new");
   });
@@ -57,43 +75,64 @@ describe("management request boundary", () => {
     vi.stubGlobal("fetch", async () => {
       call++;
       return call === 1
-        ? new Response('{"currentVerdict":"PASS"}')
+        ? json('{"currentVerdict":"PASS"}')
         : new Response('{"error":"管理端不可用"}', {
             status: 503,
             headers: { "Content-Type": "application/json" },
           });
     });
-    const { result, rerender } = renderHook(
-      ({ revision }) => useResource<{ currentVerdict: string }>("/api/devices", revision),
-      { initialProps: { revision: 0 } },
-    );
+    const { client, wrapper: Wrapper } = wrapper();
+    const { result } = renderHook(() => useResource<{ currentVerdict: string }>("/api/devices"), {
+      wrapper: Wrapper,
+    });
     await waitFor(() => expect(result.current.data?.currentVerdict).toBe("PASS"));
-    rerender({ revision: 1 });
+    await act(() => client.invalidateQueries());
     await waitFor(() => expect(result.current.error).toBe("管理端不可用"));
     expect(result.current.data).toBeNull();
   });
-  it("expires an open PASS view before refreshing when no new response arrives", async () => {
-    vi.useFakeTimers();
+  it("keeps the current data on screen while a background refresh is in flight", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let calls = 0;
     vi.stubGlobal("fetch", () => {
       calls++;
       return calls === 1
-        ? Promise.resolve(new Response('{"currentVerdict":"PASS"}'))
+        ? Promise.resolve(json('{"currentVerdict":"PASS"}'))
         : new Promise<Response>(() => {});
     });
-    try {
-      const { result } = renderHook(() => useResource<{ currentVerdict: string }>("/api/devices"));
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
-      });
-      expect(result.current.data?.currentVerdict).toBe("PASS");
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(30_000);
-      });
-      expect(calls).toBeGreaterThan(1);
-      expect(result.current.data).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+    const { result } = renderHook(
+      () => useResource<{ currentVerdict: string }>("/api/devices"),
+      wrapper(),
+    );
+    await waitFor(() => expect(result.current.data?.currentVerdict).toBe("PASS"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_MS + 1);
+    });
+    expect(calls).toBeGreaterThan(1);
+    expect(result.current.refreshing).toBe(true);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.data?.currentVerdict).toBe("PASS");
+  });
+  it("drops an open PASS view when a refresh times out", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let calls = 0;
+    vi.stubGlobal("fetch", (_url: string, options: RequestInit) => {
+      calls++;
+      if (calls === 1) return Promise.resolve(json('{"currentVerdict":"PASS"}'));
+      return new Promise<Response>((_, reject) =>
+        options.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        ),
+      );
+    });
+    const { result } = renderHook(
+      () => useResource<{ currentVerdict: string }>("/api/devices"),
+      wrapper(),
+    );
+    await waitFor(() => expect(result.current.data?.currentVerdict).toBe("PASS"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_MS + 12_001);
+    });
+    await waitFor(() => expect(result.current.error).toBe(TIMEOUT_MESSAGE));
+    expect(result.current.data).toBeNull();
   });
 });

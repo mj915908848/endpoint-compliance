@@ -1,21 +1,25 @@
 import { useState } from "react";
+import { App, Button, Col, Descriptions, Dropdown, Row, Space, Tabs, Tag } from "antd";
+import { ArrowLeftOutlined, DownloadOutlined } from "@ant-design/icons";
 import { downloadJson, downloadReport, request } from "../api";
-import { useResource } from "../useResource";
+import { useResource, useRefresh } from "../useResource";
 import {
+  ControlList,
+  CoverageGuide,
+  CoverageTable,
   DeviceGuide,
   DeviceState,
   Empty,
-  ErrorNotice,
-  time,
-  verdictLabels,
   errorText,
-  Panel,
+  EvidenceTable,
   Fresh,
   Metric,
+  onlineLabel,
   PageHeading,
-  ControlList,
-  SnapshotView,
   ReportView,
+  time,
+  UpdatedAt,
+  verdictLabels,
 } from "../components";
 import { role } from "../session";
 import type { DeviceDetail, Report, Session } from "../types";
@@ -24,173 +28,188 @@ export function DeviceDetailPage({
   id,
   session,
   back,
-  revision,
-  refresh,
 }: {
   id: string;
   session: Session;
   back: () => void;
-  revision: number;
-  refresh: () => void;
 }) {
+  const { message } = App.useApp();
+  const refresh = useRefresh();
   const encoded = encodeURIComponent(id),
-    detail = useResource<DeviceDetail>(`/api/devices/${encoded}`, revision),
-    report = useResource<Report>(
-      detail.data?.snapshot ? `/api/devices/${encoded}/report` : null,
-      revision,
-    );
-  const [actionError, setActionError] = useState<string | null>(null),
-    [busy, setBusy] = useState(false);
+    detail = useResource<DeviceDetail>(`/api/devices/${encoded}`),
+    report = useResource<Report>(detail.data?.snapshot ? `/api/devices/${encoded}/report` : null);
+  const [busy, setBusy] = useState(false);
   const d = detail.data?.device;
+  const snapshot = detail.data?.snapshot;
+  const online = d?.onlineState === "Online";
+  const fileName = `终端报告-${id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+
   async function scan() {
     setBusy(true);
-    setActionError(null);
     try {
       await request(`/api/devices/${encoded}/commands`, {
         method: "POST",
         body: { type: "ScanNow" },
         csrfToken: session.csrfToken,
       });
+      message.success("已发送检查请求，终端下次联系管理端时执行。");
       refresh();
     } catch (e) {
-      setActionError(errorText(e));
+      message.error(errorText(e));
     } finally {
       setBusy(false);
     }
   }
-  async function markdown() {
-    setActionError(null);
+  async function download(kind: string) {
     try {
-      await downloadReport(id);
+      if (kind === "md") await downloadReport(id);
+      else if (report.data) downloadJson(report.data, `${fileName}.json`);
     } catch (e) {
-      setActionError(errorText(e));
+      message.error(errorText(e));
     }
   }
+
   return (
     <>
-      <div className="backline">
-        <button className="link-button" onClick={back}>
-          ← 返回终端列表
-        </button>
-      </div>
+      <Button type="link" icon={<ArrowLeftOutlined />} onClick={back} style={{ paddingLeft: 0 }}>
+        返回终端列表
+      </Button>
       <PageHeading
-        kicker="DEVICE / DETAIL"
         title={d?.hostName ?? "终端详情"}
-        description={d ? `设备 ID：${d.id}` : "正在读取设备事实"}
+        description={d ? <span className="mono">设备 ID：{d.id}</span> : "正在读取终端信息"}
+        extra={<UpdatedAt at={detail.updatedAt} refreshing={detail.refreshing} />}
         action={
-          <div className="inline">
+          <Space wrap>
             {role(session, "Operator") && (
-              <button className="secondary" disabled={busy || !d} onClick={scan}>
-                {busy ? "正在提交…" : "请求重新检查"}
-              </button>
+              <Button loading={busy} disabled={!d} onClick={scan}>
+                请求重新检查
+              </Button>
             )}
-            <button className="secondary" onClick={refresh}>
-              刷新状态
-            </button>
-          </div>
+            <Dropdown
+              disabled={!report.data}
+              menu={{
+                items: [
+                  { key: "md", label: "Markdown 报告" },
+                  { key: "json", label: "JSON 数据" },
+                ],
+                onClick: ({ key }) => void download(key),
+              }}
+            >
+              <Button icon={<DownloadOutlined />}>下载报告</Button>
+            </Dropdown>
+            <Button onClick={refresh}>刷新</Button>
+          </Space>
         }
       />
-      <ErrorNotice error={actionError} />
       <Fresh error={detail.error} loading={detail.loading}>
         {d && (
-          <>
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
             <DeviceGuide device={d} />
-            <div className="metric-grid">
-              <Metric
-                label="当前检查结论"
-                value={d.onlineState === "Online" ? verdictLabels[d.currentVerdict] : "无法判断"}
-                tone={
-                  d.onlineState === "Online" && d.currentVerdict === "PASS"
-                    ? "good"
-                    : d.onlineState === "Online" && d.currentVerdict === "FAIL"
-                      ? "danger"
-                      : "warning"
-                }
-                caption={
-                  d.onlineState === "Online"
-                    ? "设备在线"
-                    : `设备${d.onlineState === "Offline" ? "失联" : "疑似失联"}；上次结论仅供参考`
-                }
-              />
-              <Metric
-                label="确认违规对象"
-                value={d.violationCount}
-                tone={d.violationCount ? "danger" : "neutral"}
-              />
-              <Metric
-                label="目标 / 已应用策略"
-                value={`v${d.targetPolicyVersion} / v${d.appliedPolicyVersion}`}
-                caption={d.protectionStatus}
-              />
-              <Metric
-                label="待处理命令"
-                value={detail.data?.pendingCommands ?? 0}
-                caption={`最近心跳 ${time(d.lastHeartbeat)}`}
+            <Row gutter={[16, 16]}>
+              <Col xs={12} lg={6}>
+                <Metric
+                  label="当前结论"
+                  value={online ? verdictLabels[d.currentVerdict] : "无法判断"}
+                  tone={
+                    !online
+                      ? "warning"
+                      : d.currentVerdict === "PASS"
+                        ? "good"
+                        : d.currentVerdict === "FAIL"
+                          ? "danger"
+                          : "warning"
+                  }
+                  caption={online ? "终端在线" : `${onlineLabel(d.onlineState)}，上次结论仅供参考`}
+                />
+              </Col>
+              <Col xs={12} lg={6}>
+                <Metric
+                  label="违规对象"
+                  value={d.violationCount}
+                  tone={d.violationCount ? "danger" : "neutral"}
+                />
+              </Col>
+              <Col xs={12} lg={6}>
+                <Metric
+                  label="策略版本（目标 / 已应用）"
+                  value={`v${d.targetPolicyVersion} / v${d.appliedPolicyVersion}`}
+                  caption={d.protectionStatus}
+                />
+              </Col>
+              <Col xs={12} lg={6}>
+                <Metric
+                  label="待执行的检查请求"
+                  value={detail.data?.pendingCommands ?? 0}
+                  caption={`最近心跳 ${time(d.lastHeartbeat)}`}
+                />
+              </Col>
+            </Row>
+            <div className="panel tabs-panel">
+              <Tabs
+                defaultActiveKey="report"
+                items={[
+                  {
+                    key: "report",
+                    label: "检查报告",
+                    children: !snapshot ? (
+                      <Empty title="暂无检查报告">终端完成首次检查后生成报告。</Empty>
+                    ) : (
+                      <Fresh error={report.error} loading={report.loading}>
+                        {report.data && <ReportView report={report.data} />}
+                      </Fresh>
+                    ),
+                  },
+                  {
+                    key: "evidence",
+                    label: `全部证据（${snapshot?.evidence.length ?? 0}）`,
+                    children: (
+                      <EvidenceTable values={snapshot?.evidence ?? []} empty="终端未上报证据" />
+                    ),
+                  },
+                  {
+                    key: "coverage",
+                    label: "检查覆盖",
+                    children: snapshot ? (
+                      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+                        <CoverageGuide modules={snapshot.modules} />
+                        <CoverageTable modules={snapshot.modules} />
+                      </Space>
+                    ) : (
+                      <Empty title="暂无检查数据" />
+                    ),
+                  },
+                  {
+                    key: "device",
+                    label: "设备与防护",
+                    children: (
+                      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                        <Descriptions
+                          size="small"
+                          bordered
+                          column={{ xs: 1, md: 2 }}
+                          items={[
+                            { label: "当前状态", children: <DeviceState device={d} /> },
+                            { label: "防护状态", children: d.protectionStatus || "未知" },
+                            { label: "最近检查", children: time(d.lastScan) },
+                            { label: "最近心跳", children: time(d.lastHeartbeat) },
+                            {
+                              label: "数据来源",
+                              children: d.simulated ? (
+                                <Tag color="purple">模拟终端，不能作为 Windows 实机验收依据</Tag>
+                              ) : (
+                                "终端实机"
+                              ),
+                            },
+                          ]}
+                        />
+                        <ControlList controls={detail.data?.controls ?? []} />
+                      </Space>
+                    ),
+                  },
+                ]}
               />
             </div>
-            {d.simulated && (
-              <div className="callout warning">
-                <strong>模拟终端</strong>
-                此设备的采集与执行证据来自模拟环境，不能作为 Windows 实机防护验收。
-              </div>
-            )}
-            <div className="detail-grid">
-              <Panel eyebrow="CURRENT STATE" title="设备与策略">
-                <dl className="facts">
-                  <dt>当前结论</dt>
-                  <dd>
-                    <DeviceState device={d} />
-                  </dd>
-                  <dt>最近采集</dt>
-                  <dd>{time(d.lastScan)}</dd>
-                  <dt>最近心跳</dt>
-                  <dd>{time(d.lastHeartbeat)}</dd>
-                  <dt>执行状态</dt>
-                  <dd>{d.protectionStatus || "未知"}</dd>
-                </dl>
-              </Panel>
-              <Panel eyebrow="CONTROL VERIFICATION" title="执行层证据">
-                <ControlList controls={detail.data?.controls ?? []} />
-              </Panel>
-            </div>
-            <Panel eyebrow="SCAN COVERAGE" title="检查范围与证据">
-              {detail.data?.snapshot ? (
-                <SnapshotView snapshot={detail.data.snapshot} />
-              ) : (
-                <Empty title="尚无检查快照">
-                  终端需要完成首次扫描后才会产生检查结论与固定报告。
-                </Empty>
-              )}
-            </Panel>
-            <Panel
-              eyebrow="REPORT"
-              title="固定九节报告"
-              actions={
-                <div className="inline">
-                  <button
-                    className="secondary compact"
-                    disabled={!report.data}
-                    onClick={() =>
-                      report.data &&
-                      downloadJson(
-                        report.data,
-                        `终端报告-${id.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`,
-                      )
-                    }
-                  >
-                    下载 JSON
-                  </button>
-                  <button className="secondary compact" disabled={!report.data} onClick={markdown}>
-                    下载 Markdown
-                  </button>
-                </div>
-              }
-            >
-              <Fresh error={report.error} loading={report.loading}>
-                {report.data ? <ReportView report={report.data} /> : <Empty title="尚无报告" />}
-              </Fresh>
-            </Panel>
-          </>
+          </Space>
         )}
       </Fresh>
     </>

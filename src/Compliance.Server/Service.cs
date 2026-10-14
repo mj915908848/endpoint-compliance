@@ -115,8 +115,8 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         return report with
         {
             Verdict = Verdict.UNKNOWN,
-            Summary = "设备失联或疑似失联，当前合规无法判断；保留历史检查结果",
-            CoverageGaps = report.CoverageGaps.Append("缺少新鲜心跳").ToArray(),
+            Summary = "终端失联或疑似失联，当前无法判断；以下为上次检查结果，仅供参考",
+            CoverageGaps = report.CoverageGaps.Append("终端最近没有上报心跳").ToArray(),
         };
     }
 
@@ -166,7 +166,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                     hostName,
                     "Offline",
                     "heartbeat",
-                    "设备心跳缺失，原因未确认",
+                    "终端长时间未上报心跳，原因待确认",
                     "Active",
                     0,
                     Now,

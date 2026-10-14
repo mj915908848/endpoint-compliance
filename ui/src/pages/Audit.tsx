@@ -1,46 +1,55 @@
+import { Table, Typography } from "antd";
 import { useResource } from "../useResource";
-import { Empty, time, Panel, Fresh, PageHeading } from "../components";
+import { auditActionLabel, Empty, Fresh, PageHeading, Panel, time, UpdatedAt } from "../components";
 import type { Audit } from "../types";
 
-export function AuditPage({ revision }: { revision: number }) {
-  const data = useResource<Audit[]>("/api/audit", revision);
+const systemActors: Record<string, string> = {
+  system: "系统",
+  bootstrap: "系统初始化",
+  enrollment: "终端登记",
+};
+
+export function AuditPage() {
+  const data = useResource<Audit[]>("/api/audit");
   return (
     <>
       <PageHeading
-        kicker="ACCOUNTABILITY / AUDIT"
         title="审计记录"
-        description="管理操作按时间倒序呈现，包括策略、告警和终端命令。"
+        description="按时间倒序记录所有管理操作，包括登录、策略变更、告警处理和终端请求。"
+        extra={<UpdatedAt at={data.updatedAt} refreshing={data.refreshing} />}
       />
       <Panel title="最近操作">
         <Fresh error={data.error} loading={data.loading}>
-          {data.data?.length ? (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>操作人</th>
-                    <th>动作</th>
-                    <th>目标</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.data.map((a) => (
-                    <tr key={a.id}>
-                      <td>{time(a.at)}</td>
-                      <td>{a.actor}</td>
-                      <td>
-                        <strong>{a.action}</strong>
-                      </td>
-                      <td className="mono">{a.target}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <Empty title="尚无审计记录" />
-          )}
+          <Table<Audit>
+            rowKey="id"
+            dataSource={data.data ?? []}
+            size="middle"
+            scroll={{ x: 640 }}
+            pagination={{ pageSize: 50, hideOnSinglePage: true, showSizeChanger: false }}
+            locale={{ emptyText: <Empty title="暂无审计记录" /> }}
+            columns={[
+              { title: "时间", key: "at", width: 190, render: (_, a) => time(a.at) },
+              {
+                title: "操作人",
+                key: "actor",
+                width: 160,
+                render: (_, a) => systemActors[a.actor] ?? a.actor,
+              },
+              {
+                title: "操作",
+                key: "action",
+                width: 180,
+                render: (_, a) => (
+                  <Typography.Text strong>{auditActionLabel(a.action)}</Typography.Text>
+                ),
+              },
+              {
+                title: "对象",
+                key: "target",
+                render: (_, a) => <span className="mono">{a.target}</span>,
+              },
+            ]}
+          />
         </Fresh>
       </Panel>
     </>

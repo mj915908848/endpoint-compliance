@@ -1,56 +1,95 @@
+import { Button, Space, Table, Typography, type TableColumnsType } from "antd";
 import { DeviceState, Empty, time } from "./common";
 import type { DeviceSummary } from "../types";
 
 export function DeviceTable({
   devices,
   onSelect,
+  pageSize = 20,
+  compact = false,
 }: {
   devices: DeviceSummary[];
   onSelect: (id: string) => void;
+  pageSize?: number | false;
+  /** Narrow layout for dashboards: host, state and last scan only. */
+  compact?: boolean;
 }) {
-  return devices.length === 0 ? (
-    <Empty title="暂无终端">使用一次性登记码为终端登记，终端首次上报后会显示在这里。</Empty>
-  ) : (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>终端</th>
-            <th>当前结论 / 连线</th>
-            <th>策略与防护</th>
-            <th>最近采集</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {devices.map((d) => (
-            <tr key={d.id}>
-              <td>
-                <strong>{d.hostName}</strong>
-                <small className="mono">{d.id}</small>
-              </td>
-              <td>
-                <DeviceState device={d} />
-              </td>
-              <td>
-                <strong>
-                  目标 v{d.targetPolicyVersion} · 已应用 v{d.appliedPolicyVersion}
-                </strong>
-                <small>{d.protectionStatus || "状态未知"}</small>
-              </td>
-              <td>
-                {time(d.lastScan)}
-                <small>心跳 {time(d.lastHeartbeat)}</small>
-              </td>
-              <td>
-                <button className="link-button" onClick={() => onSelect(d.id)}>
-                  查看详情 →
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+  const columns: TableColumnsType<DeviceSummary> = [
+    {
+      title: "终端",
+      key: "host",
+      render: (_, d) => (
+        <Space orientation="vertical" size={0}>
+          <Typography.Text strong>{d.hostName}</Typography.Text>
+          {!compact && (
+            <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
+              {d.id}
+            </Typography.Text>
+          )}
+        </Space>
+      ),
+    },
+    { title: "检查结论 / 在线状态", key: "state", render: (_, d) => <DeviceState device={d} /> },
+    {
+      title: "策略与防护",
+      key: "policy",
+      render: (_, d) => (
+        <Space orientation="vertical" size={0}>
+          <span>
+            目标 v{d.targetPolicyVersion} · 已应用 v{d.appliedPolicyVersion}
+          </span>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {d.protectionStatus || "状态未知"}
+          </Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: "最近检查",
+      key: "scan",
+      render: (_, d) => (
+        <Space orientation="vertical" size={0}>
+          <span>{time(d.lastScan)}</span>
+          {!compact && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              心跳 {time(d.lastHeartbeat)}
+            </Typography.Text>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: "",
+      key: "open",
+      width: 90,
+      render: (_, d) => (
+        <Button
+          type="link"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(d.id);
+          }}
+        >
+          查看详情
+        </Button>
+      ),
+    },
+  ];
+  const hidden = compact ? ["policy", "open"] : [];
+  return (
+    <Table<DeviceSummary>
+      rowKey="id"
+      dataSource={devices}
+      size="middle"
+      scroll={compact ? undefined : { x: 720 }}
+      pagination={pageSize ? { pageSize, hideOnSinglePage: true } : false}
+      locale={{
+        emptyText: (
+          <Empty title="暂无终端">使用一次性登记码登记终端，终端首次上报后将显示在此处。</Empty>
+        ),
+      }}
+      onRow={(d) => ({ onClick: () => onSelect(d.id), style: { cursor: "pointer" } })}
+      columns={columns.filter((c) => !hidden.includes(String(c.key)))}
+    />
   );
 }

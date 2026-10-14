@@ -102,8 +102,10 @@ public partial class Program
                     }
 
                     c.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                    // The UI's component library injects its styles at runtime, so inline styles are
+                    // allowed; scripts stay limited to files served by this origin.
                     c.Response.Headers["Content-Security-Policy"] =
-                        "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
+                        "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
                     if (c.Request.Path.StartsWithSegments("/api"))
                         c.Response.Headers.CacheControl = "no-store";
                     await next(c);

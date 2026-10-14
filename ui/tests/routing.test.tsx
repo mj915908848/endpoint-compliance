@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
+import { Providers } from "../src/providers";
 
 const session = { username: "admin", roles: ["Reader", "Operator"], csrfToken: "t" };
 
@@ -31,10 +32,12 @@ function Location() {
 
 function renderAt(path: string) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <App />
-      <Location />
-    </MemoryRouter>,
+    <Providers>
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+        <Location />
+      </MemoryRouter>
+    </Providers>,
   );
 }
 
@@ -46,7 +49,7 @@ describe("URL routing", () => {
   it("opens a device detail page directly from its URL", async () => {
     const calls = stubApi();
     renderAt("/devices/dev-1");
-    expect(await screen.findByText("← 返回终端列表")).toBeTruthy();
+    expect(await screen.findByText("返回终端列表")).toBeTruthy();
     await waitFor(() => expect(calls).toContain("GET /api/devices/dev-1"));
     expect(screen.getByRole("link", { name: /终端设备/ }).className).toContain("active");
   });
@@ -64,7 +67,7 @@ describe("URL routing", () => {
   it("returns from a device to the device list", async () => {
     stubApi();
     renderAt("/devices/dev-1");
-    await userEvent.click(await screen.findByText("← 返回终端列表"));
+    await userEvent.click(await screen.findByText("返回终端列表"));
     expect(location()).toBe("/devices");
   });
 
@@ -80,7 +83,7 @@ describe("URL routing", () => {
     await userEvent.type(await screen.findByLabelText(/用户名|账号/), "admin");
     await userEvent.type(screen.getByLabelText(/密码/), "test-admin-password-long");
     await userEvent.click(screen.getByRole("button", { name: /登录/ }));
-    expect(await screen.findByText("← 返回终端列表")).toBeTruthy();
+    expect(await screen.findByText("返回终端列表")).toBeTruthy();
     expect(location()).toBe("/devices/dev-1");
   });
 });

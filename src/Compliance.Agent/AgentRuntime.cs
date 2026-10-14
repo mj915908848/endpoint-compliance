@@ -300,7 +300,7 @@ public sealed class AgentRuntime(
                     await notices.AddAsync(
                         "health:outbox-capacity",
                         null,
-                        "离线事件队列已满；事件无法可靠保留，请联系管理员",
+                        "本机待上报的记录已达上限，新的记录可能无法保存，请联系管理员。",
                         ct
                     );
                     throw;
@@ -489,7 +489,7 @@ public sealed class AgentRuntime(
             await notices.AddAsync(
                 Guid.NewGuid().ToString("D"),
                 null,
-                "上报事件超过管理端限制，已隔离；审计记录不完整",
+                "有一条记录超出管理端的大小限制，已单独保存；审计记录可能不完整。",
                 ct
             );
             await queue.EnqueueAsync(
@@ -583,7 +583,7 @@ public sealed class AgentRuntime(
             findings[LocalKey(e)] = e.ProductName + "：" + e.Summary;
         }
         if (report.CoverageGaps.Length > 0)
-            findings["health:coverage"] = "采集或防护覆盖不完整；请联系管理员查看设备报告";
+            findings["health:coverage"] = "本机的检查或防护未能完全覆盖，请联系管理员查看设备报告。";
         return findings;
     }
 

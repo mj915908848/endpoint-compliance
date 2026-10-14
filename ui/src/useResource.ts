@@ -1,64 +1,72 @@
-import { useEffect, useState } from "react";
+import { QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { request } from "./api";
 
-// A visible PASS depends on server time and heartbeat. Expire it before every poll.
-export function useResource<T>(
-  path: string | null,
-  revision = 0,
-): { data: T | null; error: string | null; loading: boolean } {
-  const [state, setState] = useState<{
-    data: T | null;
-    error: string | null;
-    loading: boolean;
-  }>({ data: null, error: null, loading: !!path });
-  useEffect(() => {
-    if (!path) {
-      setState({ data: null, error: null, loading: false });
-      return;
-    }
-    let active = true;
-    let generation = 0;
-    let inFlight: AbortController | null = null;
-    function load() {
-      const version = ++generation;
-      inFlight?.abort();
-      const controller = new AbortController();
-      inFlight = controller;
-      setState({ data: null, error: null, loading: true });
-      const deadline = window.setTimeout(() => controller.abort(), 12_000);
-      request<T>(path!, { signal: controller.signal })
-        .then((data) => {
-          if (active && version === generation) setState({ data, error: null, loading: false });
-        })
-        .catch((error) => {
-          if (active && version === generation)
-            setState({
-              data: null,
-              error: controller.signal.aborted
-                ? "刷新超时，当前状态无法判断"
-                : error instanceof Error
-                  ? error.message
-                  : "读取失败",
-              loading: false,
-            });
-        })
-        .finally(() => window.clearTimeout(deadline));
-    }
-    const onVisible = () => {
-      if (document.visibilityState === "visible") load();
-    };
-    const onFocus = () => load();
-    load();
-    const poll = window.setInterval(load, 30_000);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      active = false;
-      inFlight?.abort();
-      window.clearInterval(poll);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [path, revision]);
-  return state;
+export const POLL_MS = 30_000;
+const TIMEOUT_MS = 12_000;
+export const TIMEOUT_MESSAGE = "刷新超时，当前状态无法判断";
+
+export function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        refetchInterval: POLL_MS,
+        refetchOnWindowFocus: true,
+        refetchIntervalInBackground: false,
+      },
+    },
+  });
+}
+
+// Abort a request when TanStack cancels it or when the server does not answer in time.
+async function fetchWithTimeout<T>(path: string, signal: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const cancel = () => controller.abort();
+  signal.addEventListener("abort", cancel);
+  try {
+    return await request<T>(path, { signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !signal.aborted) throw new Error(TIMEOUT_MESSAGE);
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
+export interface Resource<T> {
+  data: T | null;
+  error: string | null;
+  /** First load only; background refreshes keep the current data on screen. */
+  loading: boolean;
+  refreshing: boolean;
+  updatedAt: number | null;
+}
+
+/**
+ * Polls a management API path. Data stays visible while a refresh is in flight so the page
+ * does not jump, but a failed or timed-out refresh drops it: a verdict the server can no
+ * longer confirm must not stay on screen as if it were current.
+ */
+export function useResource<T>(path: string | null): Resource<T> {
+  const query = useQuery({
+    queryKey: [path],
+    queryFn: ({ signal }) => fetchWithTimeout<T>(path!, signal),
+    enabled: !!path,
+  });
+  const failed = query.isError;
+  return {
+    data: failed ? null : (query.data ?? null),
+    error: failed ? (query.error instanceof Error ? query.error.message : "读取失败") : null,
+    loading: !!path && query.isPending && !failed,
+    refreshing: query.isFetching && !query.isPending,
+    updatedAt: failed || !query.dataUpdatedAt ? null : query.dataUpdatedAt,
+  };
+}
+
+/** Re-reads every visible resource, e.g. after an action changed server state. */
+export function useRefresh() {
+  const client = useQueryClient();
+  return () => void client.invalidateQueries();
 }

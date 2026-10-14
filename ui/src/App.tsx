@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Navigate,
   NavLink,
@@ -8,8 +8,20 @@ import {
   useNavigate,
   useParams,
 } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { Avatar, Button, Flex, Layout, Menu, Space, Typography } from "antd";
+import {
+  AlertOutlined,
+  AuditOutlined,
+  DashboardOutlined,
+  DesktopOutlined,
+  FileProtectOutlined,
+  InfoCircleOutlined,
+  KeyOutlined,
+  SafetyCertificateOutlined,
+} from "@ant-design/icons";
 import { HttpError, request } from "./api";
-import { ErrorNotice, Loading, Login, errorText } from "./components";
+import { ErrorNotice, errorText, Loading, Login } from "./components";
 import { Alerts } from "./pages/Alerts";
 import { AuditPage } from "./pages/Audit";
 import { DeviceDetailPage } from "./pages/DeviceDetail";
@@ -20,15 +32,22 @@ import { Registration } from "./pages/Registration";
 import { SystemPage } from "./pages/System";
 import type { Session } from "./types";
 
-const pages: { path: string; label: string; glyph: string; sub: string }[] = [
-  { path: "/", label: "总览", glyph: "◫", sub: "当前态势" },
-  { path: "/devices", label: "终端设备", glyph: "▤", sub: "设备与报告" },
-  { path: "/alerts", label: "告警中心", glyph: "◇", sub: "处置记录" },
-  { path: "/policies", label: "策略发布", glyph: "▣", sub: "规则与审批" },
-  { path: "/registration", label: "终端登记", glyph: "⊕", sub: "一次性凭据" },
-  { path: "/audit", label: "审计记录", glyph: "≡", sub: "管理操作" },
-  { path: "/system", label: "系统状态", glyph: "◉", sub: "能力边界" },
+const pages: { path: string; label: string; icon: ReactNode }[] = [
+  { path: "/", label: "总览", icon: <DashboardOutlined /> },
+  { path: "/devices", label: "终端设备", icon: <DesktopOutlined /> },
+  { path: "/alerts", label: "告警中心", icon: <AlertOutlined /> },
+  { path: "/policies", label: "策略管理", icon: <FileProtectOutlined /> },
+  { path: "/registration", label: "终端登记", icon: <KeyOutlined /> },
+  { path: "/audit", label: "审计记录", icon: <AuditOutlined /> },
+  { path: "/system", label: "系统状态", icon: <InfoCircleOutlined /> },
 ];
+
+const roleLabels: Record<string, string> = {
+  Reader: "只读",
+  Operator: "操作员",
+  Publisher: "发布人",
+  Reviewer: "审核人",
+};
 
 // "/devices/abc" belongs to "/devices"; "/" only matches itself.
 function currentPage(pathname: string) {
@@ -38,21 +57,20 @@ function currentPage(pathname: string) {
 
 export const devicePath = (id: string) => `/devices/${encodeURIComponent(id)}`;
 
-function DeviceRoute(props: { session: Session; revision: number; refresh: () => void }) {
+function DeviceRoute({ session }: { session: Session }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  return <DeviceDetailPage key={id} id={id!} back={() => navigate("/devices")} {...props} />;
+  return <DeviceDetailPage key={id} id={id!} session={session} back={() => navigate("/devices")} />;
 }
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null),
     [authLoading, setAuthLoading] = useState(true),
     [authError, setAuthError] = useState<string | null>(null),
-    [revision, setRevision] = useState(0),
     [logoutBusy, setLogoutBusy] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const refresh = () => setRevision((n) => n + 1);
+  const queries = useQueryClient();
   async function check() {
     setAuthLoading(true);
     setAuthError(null);
@@ -74,8 +92,8 @@ export function App() {
       body: { username, password },
     });
     // Stay on the requested URL so a shared device link opens after login.
+    queries.clear();
     setSession(result);
-    refresh();
   }
   async function logout() {
     if (!session) return;
@@ -86,6 +104,7 @@ export function App() {
         body: {},
         csrfToken: session.csrfToken,
       });
+      queries.clear();
       setSession(null);
     } catch (e) {
       setAuthError(errorText(e));
@@ -101,72 +120,66 @@ export function App() {
     );
   if (authError && !session)
     return (
-      <div className="startup">
-        <ErrorNotice error={authError} />
-        <button className="secondary" onClick={check}>
-          重试连接
-        </button>
-      </div>
+      <Flex className="startup" vertical gap={16} align="center">
+        <ErrorNotice error={authError} title="无法连接管理端" />
+        <Button onClick={check}>重新连接</Button>
+      </Flex>
     );
   if (!session) return <Login onLogin={login} />;
+  const page = currentPage(location.pathname);
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="brand-icon">盾</div>
+    <Layout className="app-shell">
+      <Layout.Sider breakpoint="lg" collapsedWidth={0} width={216} className="sidebar">
+        <Flex className="sidebar-brand" align="center" gap={10}>
+          <SafetyCertificateOutlined className="brand-icon" />
           <div>
             <strong>终端合规</strong>
             <span>内网管理中心</span>
           </div>
-        </div>
-        <div className="sidebar-caption">工作区</div>
-        <nav aria-label="主导航">
-          {pages.map((p) => (
-            <NavLink
-              key={p.path}
-              to={p.path}
-              end={p.path === "/"}
-              className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
-            >
-              <span className="nav-glyph">{p.glyph}</span>
-              <span>
-                <strong>{p.label}</strong>
-                <small>{p.sub}</small>
-              </span>
-            </NavLink>
-          ))}
-        </nav>
-        <div className="sidebar-foot">
-          <span className="status-dot" />
-          仅连接当前内网管理端
-        </div>
-      </aside>
-      <div className="main-shell">
-        <header className="topbar">
-          <div className="breadcrumb">
-            管理中心 <span>/</span> {currentPage(location.pathname)?.label}
-          </div>
-          <div className="top-actions">
-            <span className="account">
-              <span className="avatar">{session.username.slice(0, 1).toUpperCase()}</span>
-              <span>
-                <strong>{session.username}</strong>
-                <small>{session.roles.join(" · ")}</small>
-              </span>
-            </span>
-            <button className="ghost" disabled={logoutBusy} onClick={logout}>
+        </Flex>
+        <Menu
+          theme="dark"
+          mode="inline"
+          aria-label="主导航"
+          selectedKeys={page ? [page.path] : []}
+          items={pages.map((p) => ({
+            key: p.path,
+            icon: p.icon,
+            label: (
+              <NavLink to={p.path} end={p.path === "/"}>
+                {p.label}
+              </NavLink>
+            ),
+          }))}
+        />
+      </Layout.Sider>
+      <Layout>
+        <Layout.Header className="topbar">
+          <Typography.Text type="secondary" className="breadcrumb">
+            管理中心 / {page?.label}
+          </Typography.Text>
+          <Space size={12}>
+            <Avatar size="small" className="avatar">
+              {session.username.slice(0, 1).toUpperCase()}
+            </Avatar>
+            <Space orientation="vertical" size={0} className="account">
+              <Typography.Text strong>{session.username}</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {session.roles.map((r) => roleLabels[r] ?? r).join(" · ")}
+              </Typography.Text>
+            </Space>
+            <Button type="text" loading={logoutBusy} onClick={logout}>
               退出
-            </button>
-          </div>
-        </header>
-        <main className="content">
+            </Button>
+          </Space>
+        </Layout.Header>
+        <Layout.Content className="content">
           <ErrorNotice error={authError} />
           <Routes>
             <Route
               path="/"
               element={
                 <Overview
-                  revision={revision}
                   openDevice={(id) => navigate(devicePath(id))}
                   openAlerts={() => navigate("/alerts")}
                 />
@@ -174,36 +187,21 @@ export function App() {
             />
             <Route
               path="/devices"
-              element={
-                <Devices
-                  revision={revision}
-                  refresh={refresh}
-                  openDevice={(id) => navigate(devicePath(id))}
-                />
-              }
+              element={<Devices openDevice={(id) => navigate(devicePath(id))} />}
             />
-            <Route
-              path="/devices/:id"
-              element={<DeviceRoute session={session} revision={revision} refresh={refresh} />}
-            />
-            <Route
-              path="/alerts"
-              element={<Alerts session={session} revision={revision} refresh={refresh} />}
-            />
-            <Route
-              path="/policies"
-              element={<Policies session={session} revision={revision} refresh={refresh} />}
-            />
+            <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
+            <Route path="/alerts" element={<Alerts session={session} />} />
+            <Route path="/policies" element={<Policies session={session} />} />
             <Route path="/registration" element={<Registration session={session} />} />
-            <Route path="/audit" element={<AuditPage revision={revision} />} />
-            <Route path="/system" element={<SystemPage revision={revision} />} />
+            <Route path="/audit" element={<AuditPage />} />
+            <Route path="/system" element={<SystemPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </main>
-        <footer className="footer">
-          终端合规管理中心 <span>·</span> 结论、执行、防护与通知状态分别核对
-        </footer>
-      </div>
-    </div>
+        </Layout.Content>
+        <Layout.Footer className="footer">
+          终端合规管理中心 · 检查结论、防护状态与告警处理分别记录
+        </Layout.Footer>
+      </Layout>
+    </Layout>
   );
 }

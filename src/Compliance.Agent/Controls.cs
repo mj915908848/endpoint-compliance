@@ -32,7 +32,7 @@ public static class WindowsControls
                     "application",
                     policy.Version,
                     "Uncovered",
-                    "No precise application hash rules; AppLocker not managed",
+                    "策略中没有按文件哈希定义的应用规则，未接管 AppLocker",
                     false
                 )
             );
@@ -42,21 +42,13 @@ public static class WindowsControls
                     "application",
                     policy.Version,
                     "PendingManualApplication",
-                    "Reviewed SHA-256 rules require AppLocker/WDAC compatibility and safe merge on a Windows pilot",
+                    "已审核的 SHA-256 规则需先在 Windows 试点机上确认与 AppLocker/WDAC 兼容并安全合并",
                     false
                 )
             );
         var patterns = EdgePolicyCompiler.Compile(policy.BlockDomains);
         if (!OperatingSystem.IsWindows())
-            states.Add(
-                new(
-                    "edge",
-                    policy.Version,
-                    "Uncovered",
-                    "Native Edge policy cannot be inspected outside Windows",
-                    false
-                )
-            );
+            states.Add(new("edge", policy.Version, "Uncovered", "非 Windows 环境无法读取 Edge 策略", false));
         else
         {
             try
@@ -74,15 +66,15 @@ public static class WindowsControls
                         policy.Version,
                         configured ? "AppliedUnverified" : "PendingManualApplication",
                         configured
-                            ? "Registry entries present; browser policy/actual block not verified"
-                            : "Edge policy entries absent; requires reviewed application",
+                            ? "注册表中已存在拦截规则，但浏览器是否实际拦截尚未验证"
+                            : "注册表中没有对应的 Edge 拦截规则，需要按审核流程部署",
                         false
                     )
                 );
             }
             catch (Exception ex)
             {
-                states.Add(new("edge", policy.Version, "Error", "Edge readback failed: " + ex.GetType().Name, false));
+                states.Add(new("edge", policy.Version, "Error", "读取 Edge 策略失败：" + ex.GetType().Name, false));
             }
         }
         states.Add(
@@ -90,7 +82,7 @@ public static class WindowsControls
                 "network",
                 policy.Version,
                 "Uncovered",
-                "No approved endpoint/gateway network adapter; arbitrary API paths unverified",
+                "未接入经批准的终端或网关网络拦截组件，其他程序的网络访问无法验证",
                 false
             )
         );
