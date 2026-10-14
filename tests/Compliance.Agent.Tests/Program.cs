@@ -429,6 +429,92 @@ await Check(
     }
 );
 await Check(
+    "listening socket table decodes ports in network byte order and owning PIDs",
+    async () =>
+    {
+        // IPv4 row: state, local addr, local port, remote addr, remote port, pid (little-endian DWORDs).
+        var v4 = new byte[4 + 24];
+        BitConverter.GetBytes(1).CopyTo(v4, 0);
+        BitConverter.GetBytes(2).CopyTo(v4, 4); // MIB_TCP_STATE_LISTEN
+        new byte[] { 127, 0, 0, 1 }.CopyTo(v4, 8);
+        new byte[] { 0x1E, 0xD9 }.CopyTo(v4, 12); // 7897
+        BitConverter.GetBytes(230732).CopyTo(v4, 24);
+        var listener = Assert1(TcpListeners.Parse(v4, ipv6: false));
+        Assert(
+            listener.Port == 7897 && listener.Pid == 230732 && System.Net.IPAddress.IsLoopback(listener.Address),
+            "IPv4 listener decoded wrong"
+        );
+        var v6 = new byte[4 + 56];
+        BitConverter.GetBytes(1).CopyTo(v6, 0);
+        System.Net.IPAddress.IPv6Loopback.GetAddressBytes().CopyTo(v6, 4);
+        new byte[] { 0x1E, 0xD9 }.CopyTo(v6, 24);
+        BitConverter.GetBytes(42).CopyTo(v6, 56);
+        var six = Assert1(TcpListeners.Parse(v6, ipv6: true));
+        Assert(six.Port == 7897 && six.Pid == 42, "IPv6 listener decoded wrong");
+        bool truncated = false;
+        try
+        {
+            TcpListeners.Parse([5, 0, 0, 0, 1, 2], ipv6: false);
+        }
+        catch (InvalidDataException)
+        {
+            truncated = true;
+        }
+        Assert(truncated, "truncated socket table accepted");
+        await Task.CompletedTask;
+
+        static PortListener Assert1(PortListener[] rows) =>
+            rows.Length == 1 ? rows[0] : throw new Exception("expected one listener, got " + rows.Length);
+    }
+);
+await Check(
+    "listening ports name their owning program and stay clues",
+    async () =>
+    {
+        var policy = PolicySeed.Create();
+        var loopback = System.Net.IPAddress.Loopback;
+        var clash = WindowsCollector.PortEvidence(new(loopback, 7897, 10, "verge-mihomo.exe"), policy);
+        Assert(
+            clash is { ProductId: "clash", Kind: EvidenceKind.Clue, Confirmed: false }
+                && clash.Summary.Contains("verge-mihomo.exe")
+                && clash.Summary.Contains("7897"),
+            "proxy port not attributed to Clash"
+        );
+        var odd = WindowsCollector.PortEvidence(new(loopback, 53000, 10, "verge-mihomo.exe"), policy);
+        Assert(odd?.ProductId == "clash", "a known product on an unusual port was ignored");
+        var unknown = WindowsCollector.PortEvidence(new(loopback, 7890, 11, "something.exe"), policy);
+        Assert(unknown?.ProductId == "port-clue" && unknown.Summary.Contains("something.exe"), "owner missing");
+        Assert(
+            WindowsCollector.PortEvidence(new(loopback, 5432, 12, "postgres.exe"), policy) is null,
+            "an ordinary service port was reported"
+        );
+        await Task.CompletedTask;
+    }
+);
+await Check(
+    "loopback proxy settings name the local program; other proxy addresses stay private",
+    async () =>
+    {
+        var policy = PolicySeed.Create();
+        Assert(WindowsCollector.LoopbackProxyPort("127.0.0.1:7897") == 7897, "plain loopback proxy");
+        Assert(
+            WindowsCollector.LoopbackProxyPort("http=127.0.0.1:7890;https=127.0.0.1:7890") == 7890,
+            "per-scheme proxy"
+        );
+        Assert(WindowsCollector.LoopbackProxyPort("http://localhost:1080") == 1080, "localhost URL proxy");
+        Assert(WindowsCollector.LoopbackProxyPort("[::1]:7897") == 7897, "IPv6 loopback proxy");
+        Assert(WindowsCollector.LoopbackProxyPort("proxy.corp.example:8080") is null, "remote proxy treated as local");
+        PortListener[] listeners = [new(System.Net.IPAddress.Any, 7897, 10, "clash-verge-service.exe")];
+        var local = WindowsCollector.ProxySummary("已启用代理服务器", "127.0.0.1:7897", listeners, policy);
+        Assert(local.Contains("7897") && local.Contains("Clash / Mihomo"), "loopback proxy owner missing: " + local);
+        var remote = WindowsCollector.ProxySummary("已启用代理服务器", "10.1.2.3:8080", listeners, policy);
+        Assert(!remote.Contains("10.1.2.3") && remote.Contains("不记录地址"), "remote proxy address leaked");
+        var idle = WindowsCollector.ProxySummary("已启用代理服务器", "127.0.0.1:9999", listeners, policy);
+        Assert(idle.Contains("没有程序监听"), "stale proxy setting not explained");
+        await Task.CompletedTask;
+    }
+);
+await Check(
     "approved VPN adapters are skipped and known proxy tunnels name their product as a clue",
     async () =>
     {

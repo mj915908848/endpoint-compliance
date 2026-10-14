@@ -59,12 +59,13 @@ internal sealed class ProcessesCollector : ICollector
     }
 }
 
-/// <summary>Common local proxy ports and tunnel adapters. These are clues only and never confirm a violation.</summary>
+/// <summary>
+/// Listening ports with their owning process, and tunnel adapters. These are clues only and never confirm a
+/// violation; naming the process lets an administrator see which program holds a proxy port.
+/// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class PortsCollector : ICollector
 {
-    private static readonly int[] ProxyPorts = [1080, 7890, 7897, 8080];
-
     public string Module => "ports";
     public bool Inventory => false;
 
@@ -72,24 +73,12 @@ internal sealed class PortsCollector : ICollector
 
     public Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct)
     {
-        foreach (
-            var ep in IPGlobalProperties
-                .GetIPGlobalProperties()
-                .GetActiveTcpListeners()
-                .Where(x => ProxyPorts.Contains(x.Port))
-        )
-            evidence.Add(
-                new(
-                    "port-clue",
-                    "监听端口",
-                    EvidenceKind.Clue,
-                    "tcp:" + ep.Address + ":" + ep.Port,
-                    "TCP",
-                    $"本机正在监听常见代理端口 {ep.Port}，所属进程和用途未核实",
-                    null,
-                    false
-                )
-            );
+        foreach (var listener in TcpListeners.Read())
+        {
+            var clue = WindowsCollector.PortEvidence(listener, context.Policy);
+            if (clue is not null && evidence.All(e => e.ObjectKey != clue.ObjectKey))
+                evidence.Add(clue);
+        }
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
             var clue = WindowsCollector.TunnelEvidence(

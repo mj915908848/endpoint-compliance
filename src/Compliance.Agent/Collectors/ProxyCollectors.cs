@@ -20,14 +20,25 @@ internal sealed class UserProxyCollector : ICollector
 
     public Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct)
     {
+        // Naming the program behind a loopback proxy is extra detail; without the socket table the proxy is
+        // still reported, just without an owner.
+        PortListener[] listeners;
+        try
+        {
+            listeners = TcpListeners.Read();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException)
+        {
+            listeners = [];
+        }
         if (scope.Profile is { } p)
-            ForUser(p.Sid, evidence);
+            ForUser(p.Sid, evidence, listeners, context.Policy);
         else
-            WinHttp(evidence);
+            WinHttp(evidence, listeners, context.Policy);
         return Task.CompletedTask;
     }
 
-    private static void ForUser(string sid, List<Evidence> evidence)
+    private static void ForUser(string sid, List<Evidence> evidence, PortListener[] listeners, PolicyDocument policy)
     {
         using var settings =
             Registry.Users.OpenSubKey(sid + @"\Software\Microsoft\Windows\CurrentVersion\Internet Settings")
@@ -43,7 +54,7 @@ internal sealed class UserProxyCollector : ICollector
                     EvidenceKind.Proxy,
                     "proxy:" + sid,
                     "用户代理设置",
-                    "已启用代理服务器（不记录地址）",
+                    WindowsCollector.ProxySummary("已启用代理服务器", server, listeners, policy),
                     sid
                 )
             );
@@ -70,7 +81,7 @@ internal sealed class UserProxyCollector : ICollector
         }
     }
 
-    private static void WinHttp(List<Evidence> evidence)
+    private static void WinHttp(List<Evidence> evidence, PortListener[] listeners, PolicyDocument policy)
     {
         if (!WinHttpGetDefaultProxyConfiguration(out var info))
             throw new IOException("WinHTTP proxy inspection failed: " + Marshal.GetLastWin32Error());
@@ -86,7 +97,12 @@ internal sealed class UserProxyCollector : ICollector
                         EvidenceKind.Proxy,
                         "winhttp",
                         "WinHTTP",
-                        "已设置 WinHTTP 代理（不记录地址），需核查是否属于例外"
+                        WindowsCollector.ProxySummary(
+                            "已设置 WinHTTP 代理",
+                            Marshal.PtrToStringUni(info.Proxy),
+                            listeners,
+                            policy
+                        ) + "，需核查是否属于例外"
                     )
                 );
             else if (info.AccessType is not NoProxy and not NamedProxy)

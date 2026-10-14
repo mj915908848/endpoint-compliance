@@ -33,6 +33,8 @@ public static class PolicySeed
                     "clash.exe",
                     "mihomo.exe",
                     "clash-verge.exe",
+                    "verge-mihomo.exe",
+                    "clash-verge-service.exe",
                     "Clash for Windows.exe",
                     "FlClash.exe",
                     "clash-nyanpasu.exe",

@@ -404,4 +404,91 @@ public sealed partial class WindowsCollector
             false
         );
     }
+
+    /// <summary>Product whose executable names include <paramref name="processName"/>, if any.</summary>
+    public static ProductRule? ProductForProcess(string? processName, PolicyDocument policy) =>
+        processName is null
+            ? null
+            : policy.Products.FirstOrDefault(r =>
+                r.ExecutableNames.Any(x => string.Equals(x, processName, StringComparison.OrdinalIgnoreCase))
+            );
+
+    /// <summary>"clash-verge-service.exe（进程号 123，属于 Clash / Mihomo）"; describes who owns a socket.</summary>
+    public static string DescribeOwner(PortListener owner, PolicyDocument policy)
+    {
+        var name = owner.ProcessName ?? "已退出的进程";
+        var product = ProductForProcess(owner.ProcessName, policy);
+        return product is null ? $"{name}（进程号 {owner.Pid}）" : $"{name}（进程号 {owner.Pid}，属于 {product.Name}）";
+    }
+
+    public static readonly int[] CommonProxyPorts = [1080, 7890, 7891, 7897, 8080, 10808, 10809, 2080];
+
+    /// <summary>
+    /// Clue for a listening socket: any port held by a known product's process, or a common proxy port held by
+    /// anything else. Listening alone never confirms a violation; the owning process is reported for review.
+    /// </summary>
+    public static Evidence? PortEvidence(PortListener listener, PolicyDocument policy)
+    {
+        var product = ProductForProcess(listener.ProcessName, policy);
+        if (product is null && !CommonProxyPorts.Contains(listener.Port))
+            return null;
+        return new(
+            product?.Id ?? "port-clue",
+            product?.Name ?? "监听端口",
+            EvidenceKind.Clue,
+            "tcp:" + listener.Address + ":" + listener.Port,
+            "TCP 监听",
+            product is null
+                ? $"本机常见代理端口 {listener.Port} 由 {DescribeOwner(listener, policy)} 监听，用途未核实"
+                : $"{DescribeOwner(listener, policy)} 正在监听端口 {listener.Port}",
+            null,
+            false
+        );
+    }
+
+    /// <summary>
+    /// Port of the first loopback entry in a WinINet/WinHTTP proxy string such as "127.0.0.1:7897" or
+    /// "http=127.0.0.1:7890;https=127.0.0.1:7890". Non-loopback servers return null so their address stays private.
+    /// </summary>
+    public static int? LoopbackProxyPort(string? proxyServer)
+    {
+        if (string.IsNullOrWhiteSpace(proxyServer))
+            return null;
+        foreach (var raw in proxyServer.Split([';', ' '], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var entry = raw.Contains('=') ? raw[(raw.IndexOf('=') + 1)..] : raw;
+            if (entry.Contains("://"))
+                entry = entry[(entry.IndexOf("://") + 3)..];
+            entry = entry.TrimEnd('/');
+            var colon = entry.LastIndexOf(':');
+            if (colon <= 0 || !int.TryParse(entry[(colon + 1)..], out var port) || port is < 1 or > 65535)
+                continue;
+            var host = entry[..colon].Trim('[', ']');
+            if (
+                host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || System.Net.IPAddress.TryParse(host, out var ip) && System.Net.IPAddress.IsLoopback(ip)
+            )
+                return port;
+        }
+        return null;
+    }
+
+    /// <summary>Summary for an enabled proxy: names the local program behind a loopback proxy, withholds other addresses.</summary>
+    public static string ProxySummary(
+        string prefix,
+        string? proxyServer,
+        IReadOnlyList<PortListener> listeners,
+        PolicyDocument policy
+    )
+    {
+        var port = LoopbackProxyPort(proxyServer);
+        if (port is null)
+            return prefix + "（不记录地址）";
+        var owner =
+            listeners.FirstOrDefault(l => l.Port == port && System.Net.IPAddress.IsLoopback(l.Address))
+            ?? listeners.FirstOrDefault(l => l.Port == port);
+        return owner is null
+            ? $"{prefix}，指向本机端口 {port}，当前没有程序监听该端口"
+            : $"{prefix}，指向本机端口 {port}，由 {DescribeOwner(owner, policy)} 监听";
+    }
 }
