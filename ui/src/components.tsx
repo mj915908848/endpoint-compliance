@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import type { Alert, DeviceSummary, Verdict } from "./types";
+import type { Alert, DeviceSummary, ModuleResult, Verdict } from "./types";
 export const verdictLabels: Record<Verdict, string> = {
   PASS: "范围内通过",
   FAIL: "不通过",
@@ -85,6 +85,76 @@ export function DeviceState({ device }: { device: DeviceSummary }) {
           {time(device.lastScan)}（历史记录）
         </small>
       )}
+    </div>
+  );
+}
+export function OverviewGuide({ devices }: { devices: DeviceSummary[] }) {
+  const online = devices.filter((d) => d.onlineState === "Online");
+  const failed = online.filter((d) => d.currentVerdict === "FAIL");
+  const offline = devices.filter((d) => d.onlineState !== "Online");
+  const lastFailed = offline.filter((d) => d.lastVerdict === "FAIL");
+  return (
+    <div className="result-guide" aria-label="检查结果说明">
+      <strong>先看结论</strong>
+      {devices.length === 0 ? (
+        <p>尚无终端上报。先登记设备并运行一次采集。</p>
+      ) : (
+        <>
+          <p>
+            {failed.length > 0
+              ? `${failed.length} 台在线终端当前不通过，发现 ${failed.reduce((count, d) => count + d.violationCount, 0)} 项已确认违规。下方“未恢复告警”列出原因。`
+              : online.length === 0
+                ? "当前没有在线检查结论，不能把页面上的 0 理解为通过。"
+                : online.some((d) => d.currentVerdict === "UNKNOWN")
+                  ? "在线终端中仍有检查不完整的设备，请查看设备详情。"
+                  : `${online.length} 台在线终端在已声明范围内通过。`}
+          </p>
+          {offline.length > 0 && (
+            <p>
+              另有 {offline.length} 台终端失联或疑似失联，当前无法判断。
+              {lastFailed.length > 0 && `其中 ${lastFailed.length} 台上次检查不通过，违规记录仍在。`}
+              若使用一次性试用包，请在待检电脑重新运行“本机采集试用.bat”，再刷新页面。
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+export function DeviceGuide({ device }: { device: DeviceSummary }) {
+  if (device.onlineState !== "Online")
+    return (
+      <div className="result-guide warning" aria-label="设备结果说明">
+        <strong>当前不能判定</strong>
+        <p>
+          这台电脑没有新心跳。
+          {device.lastVerdict === "FAIL" ? "上次检查不通过，已发现的违规记录仍需处理。" : "上次检查结果仅供参考。"}
+          若使用一次性试用包，请在这台电脑重新运行“本机采集试用.bat”，再刷新页面。
+        </p>
+      </div>
+    );
+  if (device.currentVerdict === "FAIL")
+    return (
+      <div className="result-guide danger" aria-label="设备结果说明">
+        <strong>本次检查不通过：发现 {device.violationCount} 项已确认违规</strong>
+        <p>客户规则是“安装也不允许”。请查看下方证据，移除禁用软件、扩展或代理配置后重新采集。其他项目读取失败不会抵消已确认的违规。</p>
+      </div>
+    );
+  return (
+    <div className={`result-guide ${device.currentVerdict === "UNKNOWN" ? "warning" : "good"}`} aria-label="设备结果说明">
+      <strong>{device.currentVerdict === "UNKNOWN" ? "当前无法判断" : "当前范围内通过"}</strong>
+      <p>{device.currentVerdict === "UNKNOWN" ? "没有足够完整的新鲜检查证据。请查看下方未覆盖项目，处理后重新采集。" : "本次已声明的检查范围内未发现禁用项；仍请查看覆盖范围和防护状态。"}</p>
+    </div>
+  );
+}
+export function CoverageGuide({ modules }: { modules: ModuleResult[] }) {
+  const errors = modules.filter((m) => m.status === "Error").length;
+  const unknown = modules.filter((m) => m.status !== "Complete" && m.status !== "Error").length;
+  const complete = modules.length - errors - unknown;
+  return (
+    <div className={`result-guide ${errors || unknown ? "warning" : "good"}`} aria-label="检查覆盖说明">
+      <strong>检查覆盖：{complete} 项完成，{errors} 项读取失败，{unknown} 项未能覆盖</strong>
+      <p>读取失败或账户配置未加载属于检查缺口，不代表新发现违规；已确认的违规仍需处理。处理完违规后若缺口仍在，结果可能继续显示“无法判断”。</p>
     </div>
   );
 }

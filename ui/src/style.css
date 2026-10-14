@@ -776,6 +776,52 @@ input[type="checkbox"] {
 .callout strong {
   margin-right: 8px;
 }
+.result-guide {
+  background: #eef7f8;
+  border: 1px solid #c9e3e7;
+  border-left: 4px solid #257e8c;
+  border-radius: 8px;
+  color: #183b49;
+  padding: 16px 20px;
+  margin: 0 0 18px;
+}
+.result-guide.warning {
+  background: #fff8ed;
+  border-color: #eed7a9;
+  border-left-color: #d7952e;
+}
+.result-guide.danger {
+  background: #fff1ef;
+  border-color: #efc5c2;
+  border-left-color: #d95f59;
+}
+.result-guide.good {
+  background: #eff8f4;
+  border-color: #c6e4d4;
+  border-left-color: #33a780;
+}
+.result-guide strong {
+  display: block;
+  font-size: 17px;
+  margin-bottom: 6px;
+}
+.result-guide p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.module-details {
+  margin: 12px 0 20px;
+}
+.module-details summary {
+  cursor: pointer;
+  color: #246b7d;
+  font-weight: 650;
+  padding: 6px 0;
+}
+.module-details .chips {
+  margin-top: 10px;
+}
 .policy-meta {
   display: flex;
   align-items: center;

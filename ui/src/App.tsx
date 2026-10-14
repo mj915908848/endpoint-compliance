@@ -3,11 +3,14 @@ import { downloadJson, downloadReport, HttpError, request } from "./api";
 import {
   AlertCard,
   Badge,
+  CoverageGuide,
+  DeviceGuide,
   DeviceState,
   Empty,
   ErrorNotice,
   Loading,
   Login,
+  OverviewGuide,
   time,
   VerdictBadge,
   verdictLabels,
@@ -219,6 +222,7 @@ function Overview({
         description="以管理端当前事实为准。失联设备单列，上次结论只作为历史记录。"
       />
       <Fresh error={devices.error} loading={devices.loading}>
+        <OverviewGuide devices={devices.data ?? []} />
         <div className="metric-grid">
           <Metric
             label="当前范围内通过"
@@ -384,6 +388,7 @@ function DeviceDetailPage({
       <Fresh error={detail.error} loading={detail.loading}>
         {d && (
           <>
+            <DeviceGuide device={d} />
             <div className="metric-grid">
               <Metric
                 label="当前检查结论"
@@ -537,20 +542,24 @@ function SnapshotView({ snapshot: s }: { snapshot: Snapshot }) {
         </span>
       </div>
       <h3>模块覆盖</h3>
+      <CoverageGuide modules={s.modules} />
       {s.modules.length === 0 ? (
         <Empty title="没有模块结果" />
       ) : (
-        <div className="chips">
-          {s.modules.map((m, i) => (
-            <div className="module-chip" key={i}>
-              <strong>{m.module}</strong>
-              <small>
-                {m.scope} · {m.status} · {time(m.collectedAt)}
-              </small>
-              {m.error && <span className="danger-text">{m.error}</span>}
-            </div>
-          ))}
-        </div>
+        <details className="module-details">
+          <summary>展开原始采集记录（含账户范围和技术错误）</summary>
+          <div className="chips">
+            {s.modules.map((m, i) => (
+              <div className="module-chip" key={i}>
+                <strong>{m.module}</strong>
+                <small>
+                  {m.scope} · {m.status} · {time(m.collectedAt)}
+                </small>
+                {m.error && <span className="danger-text">{m.error}</span>}
+              </div>
+            ))}
+          </div>
+        </details>
       )}
       <h3>证据清单</h3>
       {s.evidence.length === 0 ? (
