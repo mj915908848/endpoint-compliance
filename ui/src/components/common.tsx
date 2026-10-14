@@ -69,6 +69,10 @@ export function Loading() {
 }
 
 /** Current verdict for a device. Offline devices never show a current result, only history. */
+/** Host name with the operator's note, e.g. "DESKTOP-7Q2（张三 · 研发部）". */
+export const deviceName = (d: { hostName: string; note?: string }) =>
+  d.note ? `${d.hostName}（${d.note}）` : d.hostName;
+
 export function DeviceState({ device }: { device: DeviceSummary }) {
   const offline = device.onlineState !== "Online";
   return (
@@ -213,10 +217,12 @@ export function CoverageGuide({ modules }: { modules: ModuleResult[] }) {
 
 export function AlertCard({
   alert,
+  note,
   canAck,
   onAck,
 }: {
   alert: Alert;
+  note?: string;
   canAck: boolean;
   onAck: (id: string) => Promise<unknown>;
 }) {
@@ -249,7 +255,7 @@ export function AlertCard({
           </Space>
           <Typography.Text strong>{alert.summary}</Typography.Text>
           <Typography.Text type="secondary">
-            {alert.hostName} · {alert.objectKey}
+            {deviceName({ hostName: alert.hostName, note })} · {alert.objectKey}
           </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             首次发现 {time(alert.firstSeen)} · 最近发现 {time(alert.lastSeen)} · 事件序号{" "}

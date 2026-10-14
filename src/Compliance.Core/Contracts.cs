@@ -184,7 +184,8 @@ public record DeviceSummary(
     long AppliedPolicyVersion,
     string ProtectionStatus,
     int ViolationCount,
-    bool Simulated
+    bool Simulated,
+    string Note = ""
 );
 
 public record AlertSummary(

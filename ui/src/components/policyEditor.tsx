@@ -20,7 +20,7 @@ import {
 import { PlusOutlined } from "@ant-design/icons";
 import type { DeviceSummary, Policy, Product } from "../types";
 import { categoryLabel, controlLabel, moduleLabel } from "./labels";
-import { Empty } from "./common";
+import { deviceName, Empty } from "./common";
 import { Panel } from "./layout";
 
 export const modules = [
@@ -219,7 +219,7 @@ export function PolicyEditor({
                   onChange={(ids: string[]) => set({ targetDeviceIds: ids })}
                   optionFilterProp="label"
                   options={[
-                    ...devices.map((d) => ({ value: d.id, label: d.hostName })),
+                    ...devices.map((d) => ({ value: d.id, label: deviceName(d) })),
                     ...value.targetDeviceIds
                       .filter((id) => !devices.some((d) => d.id === id))
                       .map((id) => ({ value: id, label: `${id}（已删除）` })),

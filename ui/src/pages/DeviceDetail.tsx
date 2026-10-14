@@ -1,6 +1,11 @@
 import { type ReactNode, useState } from "react";
-import { App, Button, Descriptions, Dropdown, Space, Tabs, Tag } from "antd";
-import { ArrowLeftOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
+import { App, Button, Descriptions, Dropdown, Input, Space, Tabs, Tag, Typography } from "antd";
+import {
+  ArrowLeftOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  EditOutlined,
+} from "@ant-design/icons";
 import { downloadJson, downloadReport, request } from "../api";
 import { useResource, useRefresh } from "../useResource";
 import {
@@ -8,6 +13,7 @@ import {
   CoverageGuide,
   CoverageTable,
   DeviceGuide,
+  deviceName,
   Empty,
   errorText,
   Fresh,
@@ -57,10 +63,19 @@ export function DeviceDetailPage({
       setBusy(false);
     }
   }
+  async function saveNote(note: string) {
+    await request(`/api/devices/${encoded}/note`, {
+      method: "PUT",
+      body: { note },
+      csrfToken: session.csrfToken,
+    });
+    message.success(note ? "备注已保存" : "备注已清除");
+    refresh();
+  }
   function remove() {
     if (!d) return;
     modal.confirm({
-      title: `删除终端 ${d.hostName}？`,
+      title: `删除终端 ${deviceName(d)}？`,
       content:
         "将删除该终端的检查记录、告警和待执行请求，此操作不可撤销。该电脑上的客户端将无法再上报，如需继续管控，请生成新的注册码重新注册。",
       okText: "删除",
@@ -97,7 +112,21 @@ export function DeviceDetailPage({
       </Button>
       <PageHeading
         title={d?.hostName ?? "终端详情"}
-        description={d ? <span className="mono">设备 ID：{d.id}</span> : "正在读取终端信息"}
+        description={
+          d ? (
+            <Space orientation="vertical" size={2}>
+              <DeviceNote
+                key={d.note}
+                note={d.note ?? ""}
+                canEdit={role(session, "Operator")}
+                onSave={saveNote}
+              />
+              <span className="mono">设备 ID：{d.id}</span>
+            </Space>
+          ) : (
+            "正在读取终端信息"
+          )
+        }
         extra={<UpdatedAt at={detail.updatedAt} refreshing={detail.refreshing} />}
         action={
           <Space wrap>
@@ -221,5 +250,64 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
       <span className="muted">{label}</span>
       {children}
     </span>
+  );
+}
+
+/** Who uses this PC; host names alone rarely say. */
+function DeviceNote({
+  note,
+  canEdit,
+  onSave,
+}: {
+  note: string;
+  canEdit: boolean;
+  onSave: (note: string) => Promise<void>;
+}) {
+  const [text, setText] = useState<string | null>(null),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState<string | null>(null);
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave((text ?? "").trim());
+      setText(null);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (text !== null)
+    return (
+      <Space orientation="vertical" size={2}>
+        <Space.Compact>
+          <Input
+            aria-label="终端备注"
+            autoFocus
+            maxLength={100}
+            placeholder="例如：张三 · 研发部 · 工位 A-12"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onPressEnter={save}
+            style={{ width: 320 }}
+          />
+          <Button type="primary" loading={busy} onClick={save}>
+            保存
+          </Button>
+          <Button onClick={() => setText(null)}>取消</Button>
+        </Space.Compact>
+        {error && <Typography.Text type="danger">{error}</Typography.Text>}
+      </Space>
+    );
+  return (
+    <Space size={4}>
+      {note ? <Typography.Text>备注：{note}</Typography.Text> : <span>未填写备注</span>}
+      {canEdit && (
+        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => setText(note)}>
+          {note ? "修改" : "添加备注"}
+        </Button>
+      )}
+    </Space>
   );
 }

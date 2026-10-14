@@ -15,7 +15,7 @@ export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
         (filter === "offline"
           ? d.onlineState !== "Online"
           : d.onlineState === "Online" && d.currentVerdict === filter)) &&
-      `${d.hostName} ${d.id}`.toLowerCase().includes(query.toLowerCase()),
+      `${d.hostName} ${d.note ?? ""} ${d.id}`.toLowerCase().includes(query.toLowerCase()),
   );
   return (
     <>
@@ -31,11 +31,11 @@ export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
           <Space wrap>
             <Input.Search
               aria-label="搜索设备"
-              placeholder="主机名或设备 ID"
+              placeholder="主机名、备注或设备 ID"
               allowClear
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              style={{ width: 220 }}
+              style={{ width: 240 }}
             />
             <Select
               aria-label="筛选状态"

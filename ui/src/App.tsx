@@ -190,7 +190,10 @@ export function App() {
               element={<Devices openDevice={(id) => navigate(devicePath(id))} />}
             />
             <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
-            <Route path="/alerts" element={<Alerts session={session} />} />
+            <Route
+              path="/alerts"
+              element={<Alerts session={session} openDevice={(id) => navigate(devicePath(id))} />}
+            />
             <Route path="/policies" element={<Policies session={session} />} />
             <Route path="/registration" element={<Registration session={session} />} />
             <Route path="/audit" element={<AuditPage />} />

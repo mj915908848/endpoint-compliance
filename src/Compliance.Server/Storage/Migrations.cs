@@ -15,6 +15,7 @@ public static class Migrations
     [
         new(1, "relational schema", CreateSchema),
         new(2, "import legacy records table", ImportLegacyRecords),
+        new(3, "device notes", tx => tx.Execute("ALTER TABLE devices ADD COLUMN note TEXT NOT NULL DEFAULT ''")),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
