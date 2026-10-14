@@ -1,22 +1,18 @@
 import { useState } from "react";
 import { useResource } from "../useResource";
 import { Panel, Fresh, PageHeading, DeviceTable } from "../components";
-import { DeviceDetailPage } from "./DeviceDetail";
-import type { DeviceSummary, Session } from "../types";
+import type { DeviceSummary } from "../types";
 
 export function Devices({
-  session,
   revision,
   refresh,
-  initialDevice,
+  openDevice,
 }: {
-  session: Session;
   revision: number;
   refresh: () => void;
-  initialDevice: string | null;
+  openDevice: (id: string) => void;
 }) {
-  const [id, setId] = useState<string | null>(initialDevice),
-    [query, setQuery] = useState(""),
+  const [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all");
   const data = useResource<DeviceSummary[]>("/api/devices", revision);
   const visible = (data.data ?? []).filter(
@@ -25,16 +21,6 @@ export function Devices({
         (filter === "offline" ? d.onlineState !== "Online" : d.currentVerdict === filter)) &&
       `${d.hostName} ${d.id}`.toLowerCase().includes(query.toLowerCase()),
   );
-  if (id)
-    return (
-      <DeviceDetailPage
-        id={id}
-        session={session}
-        back={() => setId(null)}
-        revision={revision}
-        refresh={refresh}
-      />
-    );
   return (
     <>
       <PageHeading
@@ -72,7 +58,7 @@ export function Devices({
         }
       >
         <Fresh error={data.error} loading={data.loading}>
-          <DeviceTable devices={visible} onSelect={setId} />
+          <DeviceTable devices={visible} onSelect={openDevice} />
         </Fresh>
       </Panel>
     </>

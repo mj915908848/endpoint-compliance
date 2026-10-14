@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
+import {
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router";
 import { HttpError, request } from "./api";
 import { ErrorNotice, Loading, Login, errorText } from "./components";
 import { Alerts } from "./pages/Alerts";
 import { AuditPage } from "./pages/Audit";
+import { DeviceDetailPage } from "./pages/DeviceDetail";
 import { Devices } from "./pages/Devices";
 import { Overview } from "./pages/Overview";
 import { Policies } from "./pages/Policies";
@@ -10,25 +20,38 @@ import { Registration } from "./pages/Registration";
 import { SystemPage } from "./pages/System";
 import type { Session } from "./types";
 
-type Page = "overview" | "devices" | "alerts" | "policies" | "registration" | "audit" | "system";
-const pages: { id: Page; label: string; glyph: string; sub: string }[] = [
-  { id: "overview", label: "总览", glyph: "◫", sub: "当前态势" },
-  { id: "devices", label: "终端设备", glyph: "▤", sub: "设备与报告" },
-  { id: "alerts", label: "告警中心", glyph: "◇", sub: "处置记录" },
-  { id: "policies", label: "策略发布", glyph: "▣", sub: "规则与审批" },
-  { id: "registration", label: "终端登记", glyph: "⊕", sub: "一次性凭据" },
-  { id: "audit", label: "审计记录", glyph: "≡", sub: "管理操作" },
-  { id: "system", label: "系统状态", glyph: "◉", sub: "能力边界" },
+const pages: { path: string; label: string; glyph: string; sub: string }[] = [
+  { path: "/", label: "总览", glyph: "◫", sub: "当前态势" },
+  { path: "/devices", label: "终端设备", glyph: "▤", sub: "设备与报告" },
+  { path: "/alerts", label: "告警中心", glyph: "◇", sub: "处置记录" },
+  { path: "/policies", label: "策略发布", glyph: "▣", sub: "规则与审批" },
+  { path: "/registration", label: "终端登记", glyph: "⊕", sub: "一次性凭据" },
+  { path: "/audit", label: "审计记录", glyph: "≡", sub: "管理操作" },
+  { path: "/system", label: "系统状态", glyph: "◉", sub: "能力边界" },
 ];
+
+// "/devices/abc" belongs to "/devices"; "/" only matches itself.
+function currentPage(pathname: string) {
+  const section = "/" + (pathname.split("/")[1] ?? "");
+  return pages.find((p) => p.path === section);
+}
+
+export const devicePath = (id: string) => `/devices/${encodeURIComponent(id)}`;
+
+function DeviceRoute(props: { session: Session; revision: number; refresh: () => void }) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  return <DeviceDetailPage key={id} id={id!} back={() => navigate("/devices")} {...props} />;
+}
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null),
     [authLoading, setAuthLoading] = useState(true),
     [authError, setAuthError] = useState<string | null>(null),
-    [page, setPage] = useState<Page>("overview"),
-    [selectedDevice, setSelectedDevice] = useState<string | null>(null),
     [revision, setRevision] = useState(0),
     [logoutBusy, setLogoutBusy] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
   const refresh = () => setRevision((n) => n + 1);
   async function check() {
     setAuthLoading(true);
@@ -50,8 +73,8 @@ export function App() {
       method: "POST",
       body: { username, password },
     });
+    // Stay on the requested URL so a shared device link opens after login.
     setSession(result);
-    setPage("overview");
     refresh();
   }
   async function logout() {
@@ -99,20 +122,18 @@ export function App() {
         <div className="sidebar-caption">工作区</div>
         <nav aria-label="主导航">
           {pages.map((p) => (
-            <button
-              key={p.id}
-              className={`nav-item ${page === p.id ? "active" : ""}`}
-              onClick={() => {
-                setPage(p.id);
-                if (p.id === "devices") setSelectedDevice(null);
-              }}
+            <NavLink
+              key={p.path}
+              to={p.path}
+              end={p.path === "/"}
+              className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}
             >
               <span className="nav-glyph">{p.glyph}</span>
               <span>
                 <strong>{p.label}</strong>
                 <small>{p.sub}</small>
               </span>
-            </button>
+            </NavLink>
           ))}
         </nav>
         <div className="sidebar-foot">
@@ -123,7 +144,7 @@ export function App() {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumb">
-            管理中心 <span>/</span> {pages.find((p) => p.id === page)?.label}
+            管理中心 <span>/</span> {currentPage(location.pathname)?.label}
           </div>
           <div className="top-actions">
             <span className="account">
@@ -140,32 +161,44 @@ export function App() {
         </header>
         <main className="content">
           <ErrorNotice error={authError} />
-          {page === "overview" && (
-            <Overview
-              revision={revision}
-              openDevice={(id) => {
-                setSelectedDevice(id);
-                setPage("devices");
-              }}
-              openAlerts={() => setPage("alerts")}
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <Overview
+                  revision={revision}
+                  openDevice={(id) => navigate(devicePath(id))}
+                  openAlerts={() => navigate("/alerts")}
+                />
+              }
             />
-          )}{" "}
-          {page === "devices" && (
-            <Devices
-              key={selectedDevice ?? "list"}
-              session={session}
-              revision={revision}
-              refresh={refresh}
-              initialDevice={selectedDevice}
+            <Route
+              path="/devices"
+              element={
+                <Devices
+                  revision={revision}
+                  refresh={refresh}
+                  openDevice={(id) => navigate(devicePath(id))}
+                />
+              }
             />
-          )}{" "}
-          {page === "alerts" && <Alerts session={session} revision={revision} refresh={refresh} />}{" "}
-          {page === "policies" && (
-            <Policies session={session} revision={revision} refresh={refresh} />
-          )}{" "}
-          {page === "registration" && <Registration session={session} />}{" "}
-          {page === "audit" && <AuditPage revision={revision} />}{" "}
-          {page === "system" && <SystemPage revision={revision} />}
+            <Route
+              path="/devices/:id"
+              element={<DeviceRoute session={session} revision={revision} refresh={refresh} />}
+            />
+            <Route
+              path="/alerts"
+              element={<Alerts session={session} revision={revision} refresh={refresh} />}
+            />
+            <Route
+              path="/policies"
+              element={<Policies session={session} revision={revision} refresh={refresh} />}
+            />
+            <Route path="/registration" element={<Registration session={session} />} />
+            <Route path="/audit" element={<AuditPage revision={revision} />} />
+            <Route path="/system" element={<SystemPage revision={revision} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </main>
         <footer className="footer">
           终端合规管理中心 <span>·</span> 结论、执行、防护与通知状态分别核对
