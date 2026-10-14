@@ -14,11 +14,9 @@ public partial class Program
 {
     public static async Task Main(string[] args)
     {
-        var b = WebApplication.CreateBuilder(new WebApplicationOptions
-        {
-            Args = args,
-            WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
-        });
+        var b = WebApplication.CreateBuilder(
+            new WebApplicationOptions { Args = args, WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot") }
+        );
         b.Services.AddSingleton(_ => b.Configuration.GetSection("Compliance").Get<Settings>() ?? new());
         b.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         b.Services.AddSingleton<Store>();
@@ -29,9 +27,19 @@ public partial class Program
         b.Services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = 429;
-            o.AddPolicy("login", c => RateLimitPartition.GetFixedWindowLimiter(
-                c.Connection.RemoteIpAddress?.ToString() ?? "loopback",
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            o.AddPolicy(
+                "login",
+                c =>
+                    RateLimitPartition.GetFixedWindowLimiter(
+                        c.Connection.RemoteIpAddress?.ToString() ?? "loopback",
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = 20,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0,
+                        }
+                    )
+            );
         });
 
         var app = b.Build();
@@ -44,9 +52,12 @@ public partial class Program
             foreach (var url in urls.Split(';'))
             {
                 if (!TrialNetwork.IsAllowedListener(url, settings.DemoHttpLan))
-                    throw new InvalidOperationException("Demo listener requires a loopback address, or an explicit private IPv4 address with Compliance:DemoHttpLan enabled");
+                    throw new InvalidOperationException(
+                        "Demo listener requires a loopback address, or an explicit private IPv4 address with Compliance:DemoHttpLan enabled"
+                    );
             }
-            if (b.Configuration["urls"] == null) app.Urls.Add("http://127.0.0.1:5080");
+            if (b.Configuration["urls"] == null)
+                app.Urls.Add("http://127.0.0.1:5080");
         }
         else if (settings.DemoHttpLan)
         {
@@ -62,58 +73,77 @@ public partial class Program
             };
             options.KnownIPNetworks.Clear();
             options.KnownProxies.Clear();
-            foreach (var proxy in settings.TrustedProxies) options.KnownProxies.Add(IPAddress.Parse(proxy));
+            foreach (var proxy in settings.TrustedProxies)
+                options.KnownProxies.Add(IPAddress.Parse(proxy));
             app.UseForwardedHeaders(options);
         }
 
         await service.Initialize();
 
-        app.Use(async (c, next) =>
-        {
-            try
+        app.Use(
+            async (c, next) =>
             {
-                if (settings.DemoMode)
+                try
                 {
-                    if (c.Connection.RemoteIpAddress is { } remote
-                        && !(settings.DemoHttpLan ? TrialNetwork.IsPrivateOrLoopback(remote) : IPAddress.IsLoopback(remote)))
-                        throw new ApiError(403, "Demo accepts only its configured local or private-network clients");
-                }
-                else if (!c.Request.IsHttps)
-                {
-                    throw new ApiError(400, "HTTPS is required");
-                }
+                    if (settings.DemoMode)
+                    {
+                        if (
+                            c.Connection.RemoteIpAddress is { } remote
+                            && !(
+                                settings.DemoHttpLan
+                                    ? TrialNetwork.IsPrivateOrLoopback(remote)
+                                    : IPAddress.IsLoopback(remote)
+                            )
+                        )
+                            throw new ApiError(
+                                403,
+                                "Demo accepts only its configured local or private-network clients"
+                            );
+                    }
+                    else if (!c.Request.IsHttps)
+                    {
+                        throw new ApiError(400, "HTTPS is required");
+                    }
 
-                c.Response.Headers["X-Content-Type-Options"] = "nosniff";
-                c.Response.Headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
-                if (c.Request.Path.StartsWithSegments("/api")) c.Response.Headers.CacheControl = "no-store";
+                    c.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                    c.Response.Headers["Content-Security-Policy"] =
+                        "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'";
+                    if (c.Request.Path.StartsWithSegments("/api"))
+                        c.Response.Headers.CacheControl = "no-store";
+                    await next(c);
+                }
+                catch (ApiError e)
+                {
+                    c.Response.StatusCode = e.Status;
+                    await c.Response.WriteAsJsonAsync(new { error = e.Message });
+                }
+                catch (JsonException)
+                {
+                    c.Response.StatusCode = 400;
+                    await c.Response.WriteAsJsonAsync(new { error = "Invalid JSON" });
+                }
+                catch (BadHttpRequestException e)
+                {
+                    c.Response.StatusCode = e.StatusCode;
+                    await c.Response.WriteAsJsonAsync(new { error = "Invalid request" });
+                }
+            }
+        );
+        app.UseRateLimiter();
+        app.Use(
+            async (c, next) =>
+            {
+                var path = c.Request.Path.Value ?? "";
+                if (path.StartsWith("/api/agent/", StringComparison.Ordinal) && path != "/api/agent/enroll")
+                    await AuthenticateAgent(c, service);
+                else if (
+                    path.StartsWith("/api/", StringComparison.Ordinal)
+                    && path is not ("/api/auth/login" or "/api/status" or "/api/agent/enroll")
+                )
+                    await AuthenticateAdmin(c, service);
                 await next(c);
             }
-            catch (ApiError e)
-            {
-                c.Response.StatusCode = e.Status;
-                await c.Response.WriteAsJsonAsync(new { error = e.Message });
-            }
-            catch (JsonException)
-            {
-                c.Response.StatusCode = 400;
-                await c.Response.WriteAsJsonAsync(new { error = "Invalid JSON" });
-            }
-            catch (BadHttpRequestException e)
-            {
-                c.Response.StatusCode = e.StatusCode;
-                await c.Response.WriteAsJsonAsync(new { error = "Invalid request" });
-            }
-        });
-        app.UseRateLimiter();
-        app.Use(async (c, next) =>
-        {
-            var path = c.Request.Path.Value ?? "";
-            if (path.StartsWith("/api/agent/", StringComparison.Ordinal) && path != "/api/agent/enroll")
-                await AuthenticateAgent(c, service);
-            else if (path.StartsWith("/api/", StringComparison.Ordinal) && path is not ("/api/auth/login" or "/api/status" or "/api/agent/enroll"))
-                await AuthenticateAdmin(c, service);
-            await next(c);
-        });
+        );
 
         Endpoints.Map(app, service, settings);
         app.UseDefaultFiles();
@@ -126,7 +156,10 @@ public partial class Program
                 await c.Response.WriteAsJsonAsync(new { error = "Endpoint not found" });
                 return;
             }
-            var index = Path.Combine(app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot"), "index.html");
+            var index = Path.Combine(
+                app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot"),
+                "index.html"
+            );
             if (File.Exists(index))
             {
                 c.Response.ContentType = "text/html";
@@ -143,16 +176,21 @@ public partial class Program
     static async Task AuthenticateAdmin(HttpContext c, ComplianceService s)
     {
         var token = c.Request.Cookies["compliance-session"];
-        if (string.IsNullOrWhiteSpace(token)) throw new ApiError(401, "Login required");
+        if (string.IsNullOrWhiteSpace(token))
+            throw new ApiError(401, "Login required");
 
         var user = await s.Tx(async tx =>
         {
             var session = await tx.GetSession(Secrets.Hash(token));
-            if (session == null || session.ExpiresAt <= s.Now) throw new ApiError(401, "Session expired");
-            if (!HttpMethods.IsGet(c.Request.Method)
+            if (session == null || session.ExpiresAt <= s.Now)
+                throw new ApiError(401, "Session expired");
+            if (
+                !HttpMethods.IsGet(c.Request.Method)
                 && !CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(session.CsrfToken),
-                    Encoding.UTF8.GetBytes(c.Request.Headers["X-CSRF-Token"].ToString())))
+                    Encoding.UTF8.GetBytes(c.Request.Headers["X-CSRF-Token"].ToString())
+                )
+            )
                 throw new ApiError(403, "CSRF token required");
             c.Items["session"] = session;
             return await tx.GetUser(session.Username) ?? throw new ApiError(401, "Account unavailable");
@@ -166,23 +204,40 @@ public partial class Program
         string timestamp = c.Request.Headers["X-Timestamp"].ToString();
         string nonce = c.Request.Headers["X-Nonce"].ToString();
         string signature = c.Request.Headers["X-Signature"].ToString();
-        if (device.Length > 100 || !long.TryParse(timestamp, out var seconds)
-            || Math.Abs((double)s.Now.ToUnixTimeSeconds() - seconds) > 300 || !Guid.TryParse(nonce, out _))
+        if (
+            device.Length > 100
+            || !long.TryParse(timestamp, out var seconds)
+            || Math.Abs((double)s.Now.ToUnixTimeSeconds() - seconds) > 300
+            || !Guid.TryParse(nonce, out _)
+        )
             throw new ApiError(401, "Invalid device authentication");
 
         c.Request.EnableBuffering();
         using var bytes = new MemoryStream();
         await c.Request.Body.CopyToAsync(bytes);
         c.Request.Body.Position = 0;
-        if (bytes.Length > 2 * 1024 * 1024) throw new ApiError(413, "Body too large");
+        if (bytes.Length > 2 * 1024 * 1024)
+            throw new ApiError(413, "Body too large");
 
         var raw = bytes.ToArray();
         await s.Tx(async tx =>
         {
             var publicKey = await tx.GetDevicePublicKey(device);
-            if (publicKey == null || !RequestAuthentication.Verify(publicKey,c.Request.Method, c.Request.Path, timestamp, nonce, raw, signature))
+            if (
+                publicKey == null
+                || !RequestAuthentication.Verify(
+                    publicKey,
+                    c.Request.Method,
+                    c.Request.Path,
+                    timestamp,
+                    nonce,
+                    raw,
+                    signature
+                )
+            )
                 throw new ApiError(401, "Invalid device signature");
-            if (!await tx.AcceptNonce(device, nonce, s.Now)) throw new ApiError(401, "Nonce already used");
+            if (!await tx.AcceptNonce(device, nonce, s.Now))
+                throw new ApiError(401, "Nonce already used");
             return true;
         });
         c.Items["device"] = device;
@@ -190,6 +245,9 @@ public partial class Program
 }
 
 public record LoginRequest(string Username, string Password);
+
 public record CodeRequest(int? ExpiresMinutes = null);
+
 public record DraftRequest(PolicyDocument? Document, bool ImpactReviewed = false);
+
 public record CommandRequest(string Type);

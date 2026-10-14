@@ -13,6 +13,6 @@ public class TrialAddressTests
     [InlineData("http://8.8.8.8:5080", true, false)]
     [InlineData("http://0.0.0.0:5080", true, false)]
     [InlineData("https://192.168.1.15:5080", true, false)]
-    public void Trial_listener_is_explicit_and_private(string url, bool lanEnabled, bool expected)
-        => Assert.Equal(expected, TrialNetwork.IsAllowedListener(url, lanEnabled));
+    public void Trial_listener_is_explicit_and_private(string url, bool lanEnabled, bool expected) =>
+        Assert.Equal(expected, TrialNetwork.IsAllowedListener(url, lanEnabled));
 }

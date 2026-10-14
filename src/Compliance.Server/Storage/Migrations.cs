@@ -20,13 +20,19 @@ public static class Migrations
     public static async Task<bool> Apply(Transaction tx)
     {
         await tx.Lock("schema-migrations");
-        await tx.Execute("CREATE TABLE IF NOT EXISTS schema_migrations(version BIGINT PRIMARY KEY, name TEXT NOT NULL, applied_at BIGINT NOT NULL)");
+        await tx.Execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations(version BIGINT PRIMARY KEY, name TEXT NOT NULL, applied_at BIGINT NOT NULL)"
+        );
         foreach (var migration in All)
         {
             var applied = await tx.Execute(
                 "INSERT INTO schema_migrations(version, name, applied_at) VALUES(@version, @name, @at) ON CONFLICT(version) DO NOTHING",
-                ("version", migration.Version), ("name", migration.Name), ("at", DateTimeOffset.UtcNow));
-            if (applied == 1) await migration.Apply(tx);
+                ("version", migration.Version),
+                ("name", migration.Name),
+                ("at", DateTimeOffset.UtcNow)
+            );
+            if (applied == 1)
+                await migration.Apply(tx);
         }
         return true;
     }
@@ -34,81 +40,70 @@ public static class Migrations
     static readonly string[] Schema =
     [
         "CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, roles TEXT NOT NULL)",
-
         "CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, username TEXT NOT NULL, csrf_token TEXT NOT NULL, expires_at BIGINT NOT NULL)",
         "CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at)",
-
         "CREATE TABLE IF NOT EXISTS enrollment_codes(code_hash TEXT PRIMARY KEY, expires_at BIGINT NOT NULL, used BIGINT NOT NULL)",
-
         """
-        CREATE TABLE IF NOT EXISTS devices(
-            id TEXT PRIMARY KEY,
-            host_name TEXT NOT NULL,
-            public_key_pem TEXT NOT NULL UNIQUE,
-            last_heartbeat BIGINT NULL,
-            applied_policy_version BIGINT NOT NULL,
-            controls TEXT NULL,
-            snapshot TEXT NULL,
-            snapshot_sequence BIGINT NOT NULL,
-            target_policy_version BIGINT NOT NULL)
-        """,
+            CREATE TABLE IF NOT EXISTS devices(
+                id TEXT PRIMARY KEY,
+                host_name TEXT NOT NULL,
+                public_key_pem TEXT NOT NULL UNIQUE,
+                last_heartbeat BIGINT NULL,
+                applied_policy_version BIGINT NOT NULL,
+                controls TEXT NULL,
+                snapshot TEXT NULL,
+                snapshot_sequence BIGINT NOT NULL,
+                target_policy_version BIGINT NOT NULL)
+            """,
         "CREATE INDEX IF NOT EXISTS devices_last_heartbeat ON devices(last_heartbeat)",
-
         """
-        CREATE TABLE IF NOT EXISTS events(
-            device_id TEXT NOT NULL,
-            event_id TEXT NOT NULL,
-            sequence BIGINT NOT NULL,
-            type TEXT NOT NULL,
-            object_key TEXT NOT NULL,
-            source_time BIGINT NOT NULL,
-            received_at BIGINT NOT NULL,
-            fingerprint TEXT NOT NULL,
-            body TEXT NOT NULL,
-            PRIMARY KEY(device_id, event_id),
-            UNIQUE(device_id, sequence))
-        """,
+            CREATE TABLE IF NOT EXISTS events(
+                device_id TEXT NOT NULL,
+                event_id TEXT NOT NULL,
+                sequence BIGINT NOT NULL,
+                type TEXT NOT NULL,
+                object_key TEXT NOT NULL,
+                source_time BIGINT NOT NULL,
+                received_at BIGINT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                body TEXT NOT NULL,
+                PRIMARY KEY(device_id, event_id),
+                UNIQUE(device_id, sequence))
+            """,
         "CREATE INDEX IF NOT EXISTS events_received ON events(received_at)",
-
         """
-        CREATE TABLE IF NOT EXISTS alerts(
-            id TEXT PRIMARY KEY,
-            device_id TEXT NOT NULL,
-            host_name TEXT NOT NULL,
-            type TEXT NOT NULL,
-            object_key TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            state TEXT NOT NULL,
-            last_sequence BIGINT NOT NULL,
-            first_seen BIGINT NOT NULL,
-            last_seen BIGINT NOT NULL,
-            acknowledged BIGINT NOT NULL)
-        """,
+            CREATE TABLE IF NOT EXISTS alerts(
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                host_name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                object_key TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                state TEXT NOT NULL,
+                last_sequence BIGINT NOT NULL,
+                first_seen BIGINT NOT NULL,
+                last_seen BIGINT NOT NULL,
+                acknowledged BIGINT NOT NULL)
+            """,
         "CREATE INDEX IF NOT EXISTS alerts_device ON alerts(device_id)",
         "CREATE INDEX IF NOT EXISTS alerts_last_seen ON alerts(last_seen)",
-
         "CREATE TABLE IF NOT EXISTS snapshot_incidents(id TEXT PRIMARY KEY, device_id TEXT NOT NULL, scope TEXT NOT NULL, modules TEXT NOT NULL)",
         "CREATE INDEX IF NOT EXISTS snapshot_incidents_device ON snapshot_incidents(device_id)",
-
         "CREATE TABLE IF NOT EXISTS policy_releases(version BIGINT PRIMARY KEY, payload TEXT NOT NULL, signature TEXT NOT NULL, key_id TEXT NOT NULL, published_at BIGINT NOT NULL)",
-
         """
-        CREATE TABLE IF NOT EXISTS policy_drafts(
-            id TEXT PRIMARY KEY,
-            document TEXT NOT NULL,
-            created_by TEXT NOT NULL,
-            approved_by TEXT NULL,
-            published BIGINT NOT NULL,
-            impact_reviewed BIGINT NOT NULL,
-            created_at BIGINT NOT NULL)
-        """,
-
+            CREATE TABLE IF NOT EXISTS policy_drafts(
+                id TEXT PRIMARY KEY,
+                document TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                approved_by TEXT NULL,
+                published BIGINT NOT NULL,
+                impact_reviewed BIGINT NOT NULL,
+                created_at BIGINT NOT NULL)
+            """,
         "CREATE TABLE IF NOT EXISTS commands(id TEXT PRIMARY KEY, device_id TEXT NOT NULL, type TEXT NOT NULL, expires_at BIGINT NOT NULL, reply TEXT NULL)",
         "CREATE INDEX IF NOT EXISTS commands_device ON commands(device_id, expires_at)",
-
         "CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY, at BIGINT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL)",
         "CREATE INDEX IF NOT EXISTS audit_at ON audit(at)",
-
         // Same shape as the 0.1.0 table, so existing databases keep it as is.
         "CREATE TABLE IF NOT EXISTS nonces(device TEXT NOT NULL, nonce TEXT NOT NULL, expires BIGINT NOT NULL, PRIMARY KEY(device, nonce))",
         "CREATE INDEX IF NOT EXISTS nonces_expiry ON nonces(expires)",
@@ -116,7 +111,8 @@ public static class Migrations
 
     static async Task CreateSchema(Transaction tx)
     {
-        foreach (var statement in Schema) await tx.Execute(statement);
+        foreach (var statement in Schema)
+            await tx.Execute(statement);
     }
 
     /// <summary>
@@ -125,7 +121,8 @@ public static class Migrations
     /// </summary>
     static async Task ImportLegacyRecords(Transaction tx)
     {
-        if (!await tx.TableExists("records")) return;
+        if (!await tx.TableExists("records"))
+            return;
 
         foreach (var (kind, id, json) in await tx.LegacyRecords())
         {
@@ -166,11 +163,13 @@ public static class Migrations
                 case "audit":
                     await tx.InsertAudit(Wire.Read<AuditRecord>(json));
                     break;
-                case "policy":   // "current" is now derived from the newest release
+                case "policy": // "current" is now derived from the newest release
                 case "sequence": // now a UNIQUE(device_id, sequence) constraint on events
                     break;
                 default:
-                    throw new InvalidOperationException($"Unknown legacy record kind '{kind}'; refusing a partial import");
+                    throw new InvalidOperationException(
+                        $"Unknown legacy record kind '{kind}'; refusing a partial import"
+                    );
             }
         }
 

@@ -27,18 +27,22 @@ public sealed class Store(Settings settings)
         await Transaction(tx => Migrations.Apply(tx));
     }
 
-    DbConnection Connection() => IsSqlite
-        ? new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = settings.Database,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            DefaultTimeout = 30,
-        }.ToString())
-        : new NpgsqlConnection(settings.Database);
+    DbConnection Connection() =>
+        IsSqlite
+            ? new SqliteConnection(
+                new SqliteConnectionStringBuilder
+                {
+                    DataSource = settings.Database,
+                    Mode = SqliteOpenMode.ReadWriteCreate,
+                    DefaultTimeout = 30,
+                }.ToString()
+            )
+            : new NpgsqlConnection(settings.Database);
 
     public async Task<T> Transaction<T>(Func<Transaction, Task<T>> action)
     {
-        if (IsSqlite) await sqliteGate.WaitAsync();
+        if (IsSqlite)
+            await sqliteGate.WaitAsync();
         try
         {
             await using var connection = Connection();
@@ -50,7 +54,8 @@ public sealed class Store(Settings settings)
         }
         finally
         {
-            if (IsSqlite) sqliteGate.Release();
+            if (IsSqlite)
+                sqliteGate.Release();
         }
     }
 }

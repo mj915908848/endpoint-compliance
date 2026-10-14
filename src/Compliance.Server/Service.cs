@@ -12,6 +12,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     public DateTimeOffset Now => clock.GetUtcNow();
 
     public static string DeviceLock(string deviceId) => "device:" + deviceId;
+
     public const string PolicyLock = "policy";
     public const string EnrollmentLock = "enrollment";
 
@@ -27,7 +28,8 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         {
             using var created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
-            if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            if (!OperatingSystem.IsWindows())
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             using var stream = new FileStream(keyPath, options);
             using var writer = new StreamWriter(stream);
             writer.Write(created.ExportECPrivateKeyPem());
@@ -39,9 +41,16 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             await tx.Lock("bootstrap");
             foreach (var user in Wire.Read<BootstrapUser[]>(settings.BootstrapUsers))
             {
-                if (string.IsNullOrWhiteSpace(user.Username) || user.Username.Length > 100 || user.Password.Length < 16 || user.Roles.Length == 0
-                    || user.Roles.Any(r => r is not ("Reader" or "Operator" or "Publisher" or "Reviewer")))
-                    throw new InvalidOperationException("Bootstrap users need names, >=16 character passwords and defined roles");
+                if (
+                    string.IsNullOrWhiteSpace(user.Username)
+                    || user.Username.Length > 100
+                    || user.Password.Length < 16
+                    || user.Roles.Length == 0
+                    || user.Roles.Any(r => r is not ("Reader" or "Operator" or "Publisher" or "Reviewer"))
+                )
+                    throw new InvalidOperationException(
+                        "Bootstrap users need names, >=16 character passwords and defined roles"
+                    );
                 if (await tx.GetUser(user.Username) == null)
                 {
                     await tx.InsertUser(new UserRecord(user.Username, Secrets.Password(user.Password), user.Roles));
@@ -51,10 +60,18 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
 
             var current = await tx.CurrentRelease();
             if (current != null && current.KeyId != KeyId)
-                throw new InvalidOperationException("Configured signing key does not match persisted policy; restore original key");
+                throw new InvalidOperationException(
+                    "Configured signing key does not match persisted policy; restore original key"
+                );
             if (current == null)
             {
-                var doc = PolicySeed.Create() with { Mode = "Audit", Version = 1, IssuedAt = Now, ExpiresAt = Now.AddDays(30) };
+                var doc = PolicySeed.Create() with
+                {
+                    Mode = "Audit",
+                    Version = 1,
+                    IssuedAt = Now,
+                    ExpiresAt = Now.AddDays(30),
+                };
                 await tx.InsertRelease(1, PolicyCrypto.Sign(doc, signer, KeyId), Now);
                 await tx.Audit("bootstrap", "SeedAuditPolicy", "1", Now);
             }
@@ -69,23 +86,32 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
 
     public string Online(DeviceRecord device)
     {
-        if (device.LastHeartbeat is null || Now - device.LastHeartbeat >= TimeSpan.FromMinutes(5)) return "Offline";
+        if (device.LastHeartbeat is null || Now - device.LastHeartbeat >= TimeSpan.FromMinutes(5))
+            return "Offline";
         return Now - device.LastHeartbeat >= TimeSpan.FromMinutes(3) ? "SuspectedOffline" : "Online";
     }
 
     public async Task<SignedPolicy> CurrentRelease(Transaction tx) =>
-        await tx.CurrentRelease() ?? throw new InvalidOperationException("No policy release; database was not initialized");
+        await tx.CurrentRelease()
+        ?? throw new InvalidOperationException("No policy release; database was not initialized");
 
-    public async Task<PolicyDocument> Current(Transaction tx) => Wire.Read<PolicyDocument>((await CurrentRelease(tx)).Payload);
+    public async Task<PolicyDocument> Current(Transaction tx) =>
+        Wire.Read<PolicyDocument>((await CurrentRelease(tx)).Payload);
 
     public async Task<SignedPolicy> AssignedPolicy(Transaction tx, DeviceRecord device) =>
         await tx.GetRelease(device.TargetPolicyVersion) ?? throw new ApiError(409, "Assigned policy unavailable");
 
     public async Task<ComplianceReport> Report(Transaction tx, DeviceRecord device)
     {
-        if (device.Snapshot == null) throw new ApiError(404, "No scan available");
-        var report = ReportEngine.Evaluate(Wire.Read<PolicyDocument>((await AssignedPolicy(tx, device)).Payload), device.Snapshot, Now);
-        if (Online(device) == "Online") return report;
+        if (device.Snapshot == null)
+            throw new ApiError(404, "No scan available");
+        var report = ReportEngine.Evaluate(
+            Wire.Read<PolicyDocument>((await AssignedPolicy(tx, device)).Payload),
+            device.Snapshot,
+            Now
+        );
+        if (Online(device) == "Online")
+            return report;
         return report with
         {
             Verdict = Verdict.UNKNOWN,
@@ -99,15 +125,29 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         var policy = Wire.Read<PolicyDocument>((await AssignedPolicy(tx, d)).Payload);
         var report = d.Snapshot == null ? null : ReportEngine.Evaluate(policy, d.Snapshot, Now);
         var historicalPolicy = d.Snapshot == null ? null : await tx.GetRelease(d.Snapshot.PolicyVersion);
-        var last = d.Snapshot == null || historicalPolicy == null
-            ? null
-            : ReportEngine.Evaluate(Wire.Read<PolicyDocument>(historicalPolicy.Payload), d.Snapshot, d.Snapshot.CollectedAt);
+        var last =
+            d.Snapshot == null || historicalPolicy == null
+                ? null
+                : ReportEngine.Evaluate(
+                    Wire.Read<PolicyDocument>(historicalPolicy.Payload),
+                    d.Snapshot,
+                    d.Snapshot.CollectedAt
+                );
         var online = Online(d);
         return new(
-            d.Id, d.HostName, d.LastHeartbeat, online,
+            d.Id,
+            d.HostName,
+            d.LastHeartbeat,
+            online,
             online == "Online" ? report?.Verdict ?? Verdict.UNKNOWN : Verdict.UNKNOWN,
-            last?.Verdict, d.Snapshot?.CollectedAt, policy.Version, d.AppliedPolicyVersion,
-            report?.ProtectionStatus ?? "未取得检查结果", report?.ViolationCount ?? 0, d.Snapshot?.Simulated ?? false);
+            last?.Verdict,
+            d.Snapshot?.CollectedAt,
+            policy.Version,
+            d.AppliedPolicyVersion,
+            report?.ProtectionStatus ?? "未取得检查结果",
+            report?.ViolationCount ?? 0,
+            d.Snapshot?.Simulated ?? false
+        );
     }
 
     /// <summary>
@@ -119,7 +159,21 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         await tx.Lock("offline");
         foreach (var (id, hostName) in await tx.DevicesGoingOffline(Now - TimeSpan.FromMinutes(5)))
         {
-            await tx.UpsertAlert(new AlertSummary("offline:" + id, id, hostName, "Offline", "heartbeat", "设备心跳缺失，原因未确认", "Active", 0, Now, Now, false));
+            await tx.UpsertAlert(
+                new AlertSummary(
+                    "offline:" + id,
+                    id,
+                    hostName,
+                    "Offline",
+                    "heartbeat",
+                    "设备心跳缺失，原因未确认",
+                    "Active",
+                    0,
+                    Now,
+                    Now,
+                    false
+                )
+            );
             await tx.Audit("system", "Offline", id, Now);
         }
         foreach (var id in await tx.DevicesBackOnline(Now - TimeSpan.FromMinutes(3)))
@@ -147,7 +201,8 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             var existing = await tx.GetEventFingerprint(deviceId, e.EventId);
             if (existing != null)
             {
-                if (existing != fingerprint) throw new ApiError(409, "Event id already has different content");
+                if (existing != fingerprint)
+                    throw new ApiError(409, "Event id already has different content");
                 accepted.Add(e.EventId);
                 continue;
             }
@@ -164,7 +219,13 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             accepted.Add(e.EventId);
 
             // Current snapshot follows original collection time (sequence breaks ties), never arrival time.
-            if (e.Snapshot is { } snapshot && (d.Snapshot == null || snapshot.CollectedAt >= d.Snapshot.CollectedAt && e.Sequence > d.SnapshotSequence))
+            if (
+                e.Snapshot is { } snapshot
+                && (
+                    d.Snapshot == null
+                    || snapshot.CollectedAt >= d.Snapshot.CollectedAt && e.Sequence > d.SnapshotSequence
+                )
+            )
             {
                 d = d with { Snapshot = EvidenceSanitizer.Sanitize(snapshot), SnapshotSequence = e.Sequence };
                 snapshotChanged = true;
@@ -178,29 +239,62 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 if (alert == null || e.Sequence > alert.LastSequence)
                 {
                     var type = e.Type == "Recovered" ? alert?.Type ?? "Violation" : e.Type;
-                    await tx.UpsertAlert(new AlertSummary(
-                        incidentId, deviceId, d.HostName, type, safe.ObjectKey, safe.Detail ?? e.Type,
-                        e.Type == "Recovered" ? "Resolved" : "Active", e.Sequence, alert?.FirstSeen ?? e.SourceTime, e.SourceTime, false));
+                    await tx.UpsertAlert(
+                        new AlertSummary(
+                            incidentId,
+                            deviceId,
+                            d.HostName,
+                            type,
+                            safe.ObjectKey,
+                            safe.Detail ?? e.Type,
+                            e.Type == "Recovered" ? "Resolved" : "Active",
+                            e.Sequence,
+                            alert?.FirstSeen ?? e.SourceTime,
+                            e.SourceTime,
+                            false
+                        )
+                    );
                 }
             }
         }
 
-        if (snapshotChanged) await tx.UpdateSnapshot(deviceId, d.Snapshot!, d.SnapshotSequence);
+        if (snapshotChanged)
+            await tx.UpdateSnapshot(deviceId, d.Snapshot!, d.SnapshotSequence);
         return new(accepted.ToArray());
     }
 
     void Validate(string deviceId, AgentEvent e)
     {
-        if (string.IsNullOrWhiteSpace(e.EventId) || e.EventId.Length > 128 || string.IsNullOrWhiteSpace(e.ObjectKey) || e.ObjectKey.Length > 256
-            || e.Sequence <= 0 || e.SourceTime > Now.AddMinutes(5) || (e.Detail?.Length ?? 0) > 2048
-            || e.Type is not ("Snapshot" or "Violation" or "Recovered" or "Health" or "BlockedAttempt"))
+        if (
+            string.IsNullOrWhiteSpace(e.EventId)
+            || e.EventId.Length > 128
+            || string.IsNullOrWhiteSpace(e.ObjectKey)
+            || e.ObjectKey.Length > 256
+            || e.Sequence <= 0
+            || e.SourceTime > Now.AddMinutes(5)
+            || (e.Detail?.Length ?? 0) > 2048
+            || e.Type is not ("Snapshot" or "Violation" or "Recovered" or "Health" or "BlockedAttempt")
+        )
             throw new ApiError(400, "Invalid event");
         if (e.Type == "Snapshot" && e.Snapshot == null)
             throw new ApiError(400, "Snapshot event needs snapshot");
-        if (e.Snapshot is { } s && (s.SchemaVersion != 1 || s.DeviceId != deviceId || s.CollectedAt > Now.AddMinutes(5)
-            || s.Evidence == null || s.Modules == null || s.Controls == null
-            || s.Evidence.Length > 5000 || s.Modules.Length > 1000 || s.Controls.Length > 100
-            || s.Evidence.Any(x => x is null) || s.Modules.Any(m => m is null) || s.Controls.Any(c => c is null)))
+        if (
+            e.Snapshot is { } s
+            && (
+                s.SchemaVersion != 1
+                || s.DeviceId != deviceId
+                || s.CollectedAt > Now.AddMinutes(5)
+                || s.Evidence == null
+                || s.Modules == null
+                || s.Controls == null
+                || s.Evidence.Length > 5000
+                || s.Modules.Length > 1000
+                || s.Controls.Length > 100
+                || s.Evidence.Any(x => x is null)
+                || s.Modules.Any(m => m is null)
+                || s.Controls.Any(c => c is null)
+            )
+        )
             throw new ApiError(400, "Invalid snapshot");
     }
 
@@ -209,18 +303,25 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         var snapshot = device.Snapshot!;
         var policy = Wire.Read<PolicyDocument>((await AssignedPolicy(tx, device)).Payload);
         var report = ReportEngine.Evaluate(policy, snapshot, Now);
-        var confirmed = report.Verdict == Verdict.FAIL
-            ? snapshot.Evidence.Where(e => ReportEngine.Evaluate(policy, snapshot with { Evidence = [e] }, Now).Verdict == Verdict.FAIL).ToArray()
-            : [];
+        var confirmed =
+            report.Verdict == Verdict.FAIL
+                ? snapshot
+                    .Evidence.Where(e =>
+                        ReportEngine.Evaluate(policy, snapshot with { Evidence = [e] }, Now).Verdict == Verdict.FAIL
+                    )
+                    .ToArray()
+                : [];
 
-        string ObjectId(Evidence e) => e.ProductId + "|" + (e.UserSid ?? "machine") + (e.Kind == EvidenceKind.Proxy ? "|" + e.ObjectKey : "");
-        string Module(Evidence e) => e.Kind switch
-        {
-            EvidenceKind.Installation => e.Source == "Appx" ? "appx" : "installed",
-            EvidenceKind.Extension => "extensions",
-            EvidenceKind.Proxy => "proxy",
-            _ => "processes",
-        };
+        string ObjectId(Evidence e) =>
+            e.ProductId + "|" + (e.UserSid ?? "machine") + (e.Kind == EvidenceKind.Proxy ? "|" + e.ObjectKey : "");
+        string Module(Evidence e) =>
+            e.Kind switch
+            {
+                EvidenceKind.Installation => e.Source == "Appx" ? "appx" : "installed",
+                EvidenceKind.Extension => "extensions",
+                EvidenceKind.Proxy => "proxy",
+                _ => "processes",
+            };
 
         var present = new HashSet<string>();
         foreach (var group in confirmed.GroupBy(ObjectId))
@@ -228,32 +329,67 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             var id = "snapshot:" + device.Id + ":" + Secrets.Hash(group.Key);
             present.Add(id);
             var previous = await tx.GetAlert(id);
-            if (previous != null && previous.LastSequence >= sequence) continue;
+            if (previous != null && previous.LastSequence >= sequence)
+                continue;
 
             var oldMetadata = await tx.GetSnapshotIncident(id);
             var modules = group.Select(Module).Concat(oldMetadata?.Modules ?? []).Distinct().ToArray();
-            await tx.PutSnapshotIncident(new SnapshotIncident(id, device.Id, group.First().UserSid ?? "machine", modules));
-            await tx.UpsertAlert(new AlertSummary(
-                id, device.Id, device.HostName, "Violation", group.Key,
-                string.Join("；", group.Select(e => e.ProductName + ": " + e.Summary).Distinct()),
-                "Active", sequence, previous?.FirstSeen ?? snapshot.CollectedAt, snapshot.CollectedAt,
-                previous?.State == "Active" && previous.Acknowledged));
+            await tx.PutSnapshotIncident(
+                new SnapshotIncident(id, device.Id, group.First().UserSid ?? "machine", modules)
+            );
+            await tx.UpsertAlert(
+                new AlertSummary(
+                    id,
+                    device.Id,
+                    device.HostName,
+                    "Violation",
+                    group.Key,
+                    string.Join("；", group.Select(e => e.ProductName + ": " + e.Summary).Distinct()),
+                    "Active",
+                    sequence,
+                    previous?.FirstSeen ?? snapshot.CollectedAt,
+                    snapshot.CollectedAt,
+                    previous?.State == "Active" && previous.Acknowledged
+                )
+            );
         }
 
         // Recovery needs full, fresh coverage of the incident's original scope; acknowledgment never resolves.
-        if (report.CoverageGaps.Length != 0) return;
+        if (report.CoverageGaps.Length != 0)
+            return;
         foreach (var metadata in (await tx.SnapshotIncidents(device.Id)).Where(x => !present.Contains(x.Id)))
         {
             var previous = await tx.GetAlert(metadata.Id);
-            if (previous == null || previous.LastSequence >= sequence) continue;
-            var complete = metadata.Modules.All(module => snapshot.Modules.Any(m =>
-                m.Module == module && m.Scope == metadata.Scope && m.Status == "Complete"
-                && m.CollectedAt >= Now.AddMinutes(-(module is "installed" or "appx" or "extensions" ? policy.InventoryFreshMinutes : policy.LightweightFreshMinutes))
-                && m.CollectedAt <= Now.AddMinutes(2)));
+            if (previous == null || previous.LastSequence >= sequence)
+                continue;
+            var complete = metadata.Modules.All(module =>
+                snapshot.Modules.Any(m =>
+                    m.Module == module
+                    && m.Scope == metadata.Scope
+                    && m.Status == "Complete"
+                    && m.CollectedAt
+                        >= Now.AddMinutes(
+                            -(
+                                module is "installed" or "appx" or "extensions"
+                                    ? policy.InventoryFreshMinutes
+                                    : policy.LightweightFreshMinutes
+                            )
+                        )
+                    && m.CollectedAt <= Now.AddMinutes(2)
+                )
+            );
             if (complete)
             {
-                await tx.UpsertAlert(previous with { State = "Resolved", LastSeen = snapshot.CollectedAt, LastSequence = sequence });
-                if (previous.State == "Active") await tx.Audit(device.Id, "SnapshotRecovered", metadata.Id, Now);
+                await tx.UpsertAlert(
+                    previous with
+                    {
+                        State = "Resolved",
+                        LastSeen = snapshot.CollectedAt,
+                        LastSequence = sequence,
+                    }
+                );
+                if (previous.State == "Active")
+                    await tx.Audit(device.Id, "SnapshotRecovered", metadata.Id, Now);
             }
         }
     }
@@ -262,22 +398,41 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     {
         var doc = draft.Document;
         var current = await Current(tx);
-        if (draft.Published || draft.ApprovedBy == null || draft.ApprovedBy == draft.CreatedBy || !draft.ImpactReviewed
-            || doc.Version <= current.Version || doc.ExpiresAt <= Now || doc.IssuedAt > Now.AddMinutes(2))
+        if (
+            draft.Published
+            || draft.ApprovedBy == null
+            || draft.ApprovedBy == draft.CreatedBy
+            || !draft.ImpactReviewed
+            || doc.Version <= current.Version
+            || doc.ExpiresAt <= Now
+            || doc.IssuedAt > Now.AddMinutes(2)
+        )
             throw new ApiError(409, "Independent review, impact review and increasing valid version required");
-        if (doc.Mode != "Enforce") return;
+        if (doc.Mode != "Enforce")
+            return;
 
         if (doc.TargetDeviceIds.Length == 0 || doc.RequiredControls.Length == 0)
             throw new ApiError(409, "Enforcement requires explicit pilot targets and declared controls");
         foreach (var id in doc.TargetDeviceIds)
         {
             var d = await Device(tx, id);
-            if (Online(d) != "Online" || d.Snapshot == null || d.Snapshot.Simulated || d.Snapshot.CollectedAt < Now.AddMinutes(-10))
+            if (
+                Online(d) != "Online"
+                || d.Snapshot == null
+                || d.Snapshot.Simulated
+                || d.Snapshot.CollectedAt < Now.AddMinutes(-10)
+            )
                 throw new ApiError(409, "Pilot capabilities are stale or unverified");
             foreach (var control in doc.RequiredControls)
             {
                 var c = d.Controls?.FirstOrDefault(x => x.Id == control);
-                if (c == null || !c.Verified || c.RebootRequired || c.Version != current.Version || c.State is not ("Applied" or "Verified"))
+                if (
+                    c == null
+                    || !c.Verified
+                    || c.RebootRequired
+                    || c.Version != current.Version
+                    || c.State is not ("Applied" or "Verified")
+                )
                     throw new ApiError(409, "Required control capability not verified");
             }
         }
