@@ -35,6 +35,17 @@ python3 integration/e2e.py --dotnet dotnet
 
 Windows 构建可在非 Windows 上跨编译；这不能证明原生运行正确。WPF 发布用 win-x64。源码不含服务器密码、设备私钥或登记码。
 
+### 代码格式
+
+C# 和项目文件统一用 CSharpier 排版（版本固定在 `dotnet-tools.json`，行宽见 `.editorconfig`）。提交前运行：
+
+```sh
+dotnet tool restore
+dotnet csharpier format src tests
+```
+
+`dotnet csharpier check src tests` 只检查不修改。批量格式化的提交记录在 `.git-blame-ignore-revs`，本地执行一次 `git config blame.ignoreRevsFile .git-blame-ignore-revs`，`git blame` 就会跳过它。
+
 ## 先在本机看平台
 
 Windows 自包含包解压后双击根目录的 `启动演示.bat`，或运行 `deploy/server/Start-Demo.ps1`；启动时输入服务器本机的内网 IPv4 地址（直接回车则仅本机），端口可用 `-Port` 指定，启动成功会打开浏览器。脚本首次生成独立随机管理/审核密码并保护本地状态目录。页面使用 SQLite 演示。内网 HTTP 试用传输不加密，只能在可信隔离网络使用。

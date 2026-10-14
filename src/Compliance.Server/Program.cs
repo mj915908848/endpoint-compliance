@@ -1,12 +1,8 @@
 using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
-using Compliance.Core;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace Compliance.Server;
 
@@ -135,12 +131,12 @@ public partial class Program
             {
                 var path = c.Request.Path.Value ?? "";
                 if (path.StartsWith("/api/agent/", StringComparison.Ordinal) && path != "/api/agent/enroll")
-                    await AuthenticateAgent(c, service);
+                    await Authentication.Agent(c, service);
                 else if (
                     path.StartsWith("/api/", StringComparison.Ordinal)
                     && path is not ("/api/auth/login" or "/api/status" or "/api/agent/enroll")
                 )
-                    await AuthenticateAdmin(c, service);
+                    await Authentication.Admin(c, service);
                 await next(c);
             }
         );
@@ -172,82 +168,4 @@ public partial class Program
         });
         await app.RunAsync();
     }
-
-    static async Task AuthenticateAdmin(HttpContext c, ComplianceService s)
-    {
-        var token = c.Request.Cookies["compliance-session"];
-        if (string.IsNullOrWhiteSpace(token))
-            throw new ApiError(401, "Login required");
-
-        var user = await s.Tx(async tx =>
-        {
-            var session = await tx.GetSession(Secrets.Hash(token));
-            if (session == null || session.ExpiresAt <= s.Now)
-                throw new ApiError(401, "Session expired");
-            if (
-                !HttpMethods.IsGet(c.Request.Method)
-                && !CryptographicOperations.FixedTimeEquals(
-                    Encoding.UTF8.GetBytes(session.CsrfToken),
-                    Encoding.UTF8.GetBytes(c.Request.Headers["X-CSRF-Token"].ToString())
-                )
-            )
-                throw new ApiError(403, "CSRF token required");
-            c.Items["session"] = session;
-            return await tx.GetUser(session.Username) ?? throw new ApiError(401, "Account unavailable");
-        });
-        c.Items["user"] = user;
-    }
-
-    static async Task AuthenticateAgent(HttpContext c, ComplianceService s)
-    {
-        string device = c.Request.Headers["X-Device-Id"].ToString();
-        string timestamp = c.Request.Headers["X-Timestamp"].ToString();
-        string nonce = c.Request.Headers["X-Nonce"].ToString();
-        string signature = c.Request.Headers["X-Signature"].ToString();
-        if (
-            device.Length > 100
-            || !long.TryParse(timestamp, out var seconds)
-            || Math.Abs((double)s.Now.ToUnixTimeSeconds() - seconds) > 300
-            || !Guid.TryParse(nonce, out _)
-        )
-            throw new ApiError(401, "Invalid device authentication");
-
-        c.Request.EnableBuffering();
-        using var bytes = new MemoryStream();
-        await c.Request.Body.CopyToAsync(bytes);
-        c.Request.Body.Position = 0;
-        if (bytes.Length > 2 * 1024 * 1024)
-            throw new ApiError(413, "Body too large");
-
-        var raw = bytes.ToArray();
-        await s.Tx(async tx =>
-        {
-            var publicKey = await tx.GetDevicePublicKey(device);
-            if (
-                publicKey == null
-                || !RequestAuthentication.Verify(
-                    publicKey,
-                    c.Request.Method,
-                    c.Request.Path,
-                    timestamp,
-                    nonce,
-                    raw,
-                    signature
-                )
-            )
-                throw new ApiError(401, "Invalid device signature");
-            if (!await tx.AcceptNonce(device, nonce, s.Now))
-                throw new ApiError(401, "Nonce already used");
-            return true;
-        });
-        c.Items["device"] = device;
-    }
 }
-
-public record LoginRequest(string Username, string Password);
-
-public record CodeRequest(int? ExpiresMinutes = null);
-
-public record DraftRequest(PolicyDocument? Document, bool ImpactReviewed = false);
-
-public record CommandRequest(string Type);
