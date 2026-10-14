@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import type { Alert, DeviceSummary, ModuleResult, Verdict } from "./types";
+import type { Alert, DeviceSummary, ModuleResult, Verdict } from "../types";
 export const verdictLabels: Record<Verdict, string> = {
   PASS: "范围内通过",
   FAIL: "不通过",
