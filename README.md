@@ -50,6 +50,14 @@ dotnet csharpier format src tests
 
 ## 先在本机看平台
 
+macOS / Linux 开发机可以直接运行：
+
+```sh
+python3 scripts/demo.py
+```
+
+脚本会构建前端、服务端和 Agent，在 http://127.0.0.1:5080 启动演示模式（SQLite），并登记两台模拟终端：DEMO-PC-01 有确认违规，DEMO-PC-02 没有发现，但因为是模拟数据，结论显示"无法判断"。账号 `demo-admin`（操作、发布）和 `demo-reviewer`（审核），密码写在 `data/demo/login.txt`。按 Ctrl+C 停止，数据保留在 `data/demo/`，加 `--reset` 从头开始。
+
 Windows 自包含包解压后双击根目录的 `启动演示.bat`，或运行 `deploy/server/Start-Demo.ps1`；启动时输入服务器本机的内网 IPv4 地址（直接回车则仅本机），端口可用 `-Port` 指定，启动成功会打开浏览器。脚本首次生成独立随机管理/审核密码并保护本地状态目录。页面使用 SQLite 演示。内网 HTTP 试用传输不加密，只能在可信隔离网络使用。
 
 若要在 Windows 机器试一次真实采集，保持试用服务运行，在管理页面生成新的登记码，双击包根目录的 `本机采集试用.bat`，在管理员窗口输入管理端显示的完整 HTTP 地址。它使用独立受保护目录和 `--local-demo --once` 上报一次；再次运行可复用已登记身份。同机或另一台内网 Windows 均可试用，地址须为回环或私有 IPv4。此入口不安装服务。当前 `install.ps1` 只用于客户内网 HTTPS 常驻服务部署。

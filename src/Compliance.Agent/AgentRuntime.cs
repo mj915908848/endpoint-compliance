@@ -153,6 +153,14 @@ public sealed class AgentRuntime(
     private DateTimeOffset lastLight = DateTimeOffset.MinValue;
     private ScanSnapshot? latest;
 
+    // A fixture stands in for another machine, so report its host name rather than this one's.
+    private string HostName =>
+        simulated
+        && fixturePath is not null
+        && Wire.Read<ScanSnapshot>(File.ReadAllText(fixturePath)).HostName is { Length: > 0 } name
+            ? name
+            : Environment.MachineName;
+
     public static Uri ValidateServer(string url, bool simulation, bool localDemo = false)
     {
         var uri = new Uri(url, UriKind.Absolute);
@@ -234,7 +242,7 @@ public sealed class AgentRuntime(
         var response = await api.SendAsync<EnrollmentResponse>(
             HttpMethod.Post,
             "/api/agent/enroll",
-            new EnrollmentRequest(code, Environment.MachineName, key.ExportSubjectPublicKeyInfoPem()),
+            new EnrollmentRequest(code, HostName, key.ExportSubjectPublicKeyInfoPem()),
             ct
         );
         config = config with
@@ -348,7 +356,7 @@ public sealed class AgentRuntime(
         try
         {
             var heartbeat = new HeartbeatRequest(
-                Environment.MachineName,
+                HostName,
                 "0.1.0",
                 DateTimeOffset.UtcNow,
                 signedPolicy is null ? 0 : policy?.Version ?? 0,

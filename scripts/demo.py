@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Local demo on macOS/Linux: loopback server (SQLite) plus two simulated endpoints.
+
+Builds the UI, server and agent, starts the server at http://127.0.0.1:5080, enrolls one
+endpoint with a confirmed violation and one without findings, then keeps running until Ctrl+C.
+Simulated endpoints never count as native verification, so the clean one shows UNKNOWN.
+State lives in data/demo/ (gitignored); the admin login is written to data/demo/login.txt.
+"""
+import argparse, http.cookiejar, json, os, pathlib, secrets, shutil, subprocess, sys, time, urllib.request
+from datetime import datetime, timezone
+
+root = pathlib.Path(__file__).resolve().parents[1]
+ap = argparse.ArgumentParser()
+ap.add_argument("--dotnet", default=shutil.which("dotnet") or str(pathlib.Path.home() / ".dotnet/dotnet"))
+ap.add_argument("--port", type=int, default=5080)
+ap.add_argument("--reset", action="store_true", help="discard data/demo and start fresh")
+ap.add_argument("--skip-build", action="store_true")
+args = ap.parse_args()
+
+data = root / "data" / "demo"
+if args.reset and data.exists():
+    shutil.rmtree(data)
+data.mkdir(parents=True, exist_ok=True)
+base = f"http://127.0.0.1:{args.port}"
+
+
+def run(cmd, cwd=root):
+    print("$", " ".join(map(str, cmd)), flush=True)
+    subprocess.run(cmd, cwd=cwd, check=True)
+
+
+if not args.skip_build:
+    npm = shutil.which("npm") or sys.exit("npm not found")
+    if not (root / "ui/node_modules").exists():
+        run([npm, "ci", "--no-audit", "--no-fund"], cwd=root / "ui")
+    run([npm, "run", "build"], cwd=root / "ui")
+    run([args.dotnet, "build", "src/Compliance.Server", "-c", "Release", "-v", "q", "-nologo"])
+    run([args.dotnet, "build", "src/Compliance.Agent", "-c", "Release", "-v", "q", "-nologo"])
+
+login_file = data / "login.txt"
+if login_file.exists():
+    password = json.loads(login_file.read_text())["password"]
+else:
+    password = secrets.token_urlsafe(18)
+    login_file.write_text(json.dumps({"url": base, "username": "demo-admin", "password": password}, indent=2))
+    login_file.chmod(0o600)
+
+env = os.environ.copy()
+env.update({
+    "ASPNETCORE_URLS": base,
+    "Compliance__DemoMode": "true",
+    "Compliance__Storage": "Sqlite",
+    "Compliance__Database": str(data / "server.sqlite"),
+    "Compliance__SigningKeyPath": str(data / "signing.pem"),
+    # Publisher and Reviewer are separate accounts so the two-person policy flow can be tried.
+    "Compliance__BootstrapUsers": json.dumps([
+        {"username": "demo-admin", "password": password, "roles": ["Reader", "Operator", "Publisher"]},
+        {"username": "demo-reviewer", "password": password, "roles": ["Reader", "Reviewer"]},
+    ]),
+})
+log = (data / "server.log").open("a")
+server = subprocess.Popen(
+    [args.dotnet, str(root / "src/Compliance.Server/bin/Release/net10.0/Compliance.Server.dll")],
+    cwd=root / "src/Compliance.Server", env=env, stdout=log, stderr=subprocess.STDOUT,
+)
+
+client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+csrf = ""
+
+
+def api(path, body=None):
+    req = urllib.request.Request(
+        base + path,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Content-Type": "application/json", "X-CSRF-Token": csrf},
+    )
+    with client.open(req, timeout=15) as r:
+        return json.loads(r.read().decode())
+
+
+try:
+    deadline = time.monotonic() + 30
+    while True:
+        if server.poll() is not None:
+            sys.exit(f"Server exited; see {data / 'server.log'}")
+        try:
+            api("/api/status")
+            break
+        except Exception:
+            if time.monotonic() > deadline:
+                sys.exit("Server startup timeout")
+            time.sleep(0.2)
+
+    csrf = api("/api/auth/login", {"username": "demo-admin", "password": password})["csrfToken"]
+
+    def endpoint(name, host, evidence):
+        folder = data / "agents" / name
+        folder.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc).isoformat()
+        modules = ["installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli"]
+        (folder / "snapshot.json").write_text(json.dumps({
+            "deviceId": "fixture", "hostName": host, "platform": "Windows", "simulated": True,
+            "collectedAt": now, "policyVersion": 1, "evidence": evidence, "controls": [],
+            "modules": [{"module": m, "scope": "machine", "status": "Complete", "collectedAt": now} for m in modules],
+        }))
+        cmd = [args.dotnet, str(root / "src/Compliance.Agent/bin/Release/net10.0/Compliance.Agent.dll"),
+               "--fixture", str(folder / "snapshot.json"), "--data-dir", str(folder / "state"),
+               "--server", base, "--once"]
+        if not (folder / "state").exists():
+            cmd += ["--enroll", "--code", api("/api/enrollment-codes", {"expiresMinutes": 15})["code"]]
+        with (folder / "agent.log").open("a") as out:
+            subprocess.run(cmd, cwd=root, stdout=out, stderr=subprocess.STDOUT, timeout=60, check=True)
+
+    endpoint("violating", "DEMO-PC-01", [
+        {"productId": "cursor", "productName": "Cursor", "kind": "Installation", "objectKey": "cursor-install",
+         "source": "demo registry", "summary": "Cursor 已安装（模拟数据）", "userSid": "S-1-5-21-1-2-3-1001",
+         "confirmed": True},
+        {"productId": "cursor", "productName": "Cursor", "kind": "Process", "objectKey": "pid:4242",
+         "source": "demo process", "summary": "Cursor.exe 正在运行（模拟数据）", "userSid": "S-1-5-21-1-2-3-1001",
+         "confirmed": True},
+    ])
+    endpoint("clean", "DEMO-PC-02", [])
+
+    print(f"""
+Demo running at {base}
+  Admin (operate/publish):  demo-admin
+  Reviewer (approve):       demo-reviewer
+  Password for both:        see {login_file}
+Two simulated endpoints are enrolled. Press Ctrl+C to stop; data stays in {data}
+(run with --reset to start over).""", flush=True)
+    server.wait()
+except KeyboardInterrupt:
+    pass
+finally:
+    if server.poll() is None:
+        server.terminate()
+        server.wait(timeout=10)
