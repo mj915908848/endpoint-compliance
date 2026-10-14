@@ -201,6 +201,104 @@ await Check("advanced WinHTTP proxy and PAC are interpreted without retaining ad
     Assert(bad,"unparsed advanced output was accepted");
     await Task.CompletedTask;
 });
+await Check("one malformed VS Code extension does not hide a later forbidden extension", async () =>
+{
+    var root=Path.Combine(Path.GetTempPath(),"compliance-extensions-"+Guid.NewGuid());
+    try
+    {
+        var broken=Path.Combine(root,"a-broken");
+        var forbidden=Path.Combine(root,"z-gemini");
+        Directory.CreateDirectory(broken);
+        Directory.CreateDirectory(forbidden);
+        await File.WriteAllTextAsync(Path.Combine(broken,"package.json"),"{not valid json");
+        await File.WriteAllTextAsync(Path.Combine(forbidden,"package.json"),"{\"publisher\":\"google\",\"name\":\"geminicodeassist\"}");
+        var result=WindowsCollector.ScanVsCodeExtensions(root,"S-1-5-21-1-2-3-1001",PolicySeed.Create());
+        Assert(result.Evidence.Any(e=>e.ProductId=="gemini-code-assist" && e.UserSid=="S-1-5-21-1-2-3-1001"),"valid forbidden extension was hidden after malformed manifest");
+        Assert(result.Errors==1,"malformed manifest did not mark coverage incomplete");
+    }
+    finally { Directory.Delete(root,true); }
+});
+await Check("obsolete extension directory is not reported as installed", async () =>
+{
+    var root=Path.Combine(Path.GetTempPath(),"compliance-obsolete-"+Guid.NewGuid());
+    try
+    {
+        var stale=Path.Combine(root,"google.geminicodeassist-2.0");
+        Directory.CreateDirectory(stale);
+        await File.WriteAllTextAsync(Path.Combine(stale,"package.json"),"{\"publisher\":\"google\",\"name\":\"geminicodeassist\"}");
+        await File.WriteAllTextAsync(Path.Combine(root,".obsolete"),"{\"google.geminicodeassist-2.0\":true}");
+        var result=WindowsCollector.ScanVsCodeExtensions(root,"S-1-5-21-1-2-3-1001",PolicySeed.Create());
+        Assert(result.Evidence.Length==0 && result.Errors==0,"obsolete extension was treated as installed");
+    }
+    finally { Directory.Delete(root,true); }
+});
+await Check("Cursor and Windsurf user extension roots are included", async () =>
+{
+    var profile=Path.Combine(Path.GetTempPath(),"compliance-profile-"+Guid.NewGuid());
+    try
+    {
+        foreach(var host in new[]{".cursor",".windsurf"})
+        {
+            var extension=Path.Combine(profile,host,"extensions","google.geminicodeassist-2.0");
+            Directory.CreateDirectory(extension);
+            await File.WriteAllTextAsync(Path.Combine(extension,"package.json"),"{\"publisher\":\"google\",\"name\":\"geminicodeassist\"}");
+        }
+        var result=WindowsCollector.ScanKnownExtensionRoots(profile,"S-1-5-21-1-2-3-1001",PolicySeed.Create());
+        Assert(result.Evidence.Length==2 && result.Errors==0,"AI extensions in Cursor or Windsurf were missed");
+        Assert(result.Evidence.Select(e=>e.ObjectKey).Distinct().Count()==2,"two IDE hosts shared one evidence identity");
+    }
+    finally { Directory.Delete(profile,true); }
+});
+await Check("known service key identifies Codex without misclassifying its ChatGPT display name", async () =>
+{
+    var policy=PolicySeed.Create();
+    var codex=WindowsCollector.MatchServiceRegistration("CodexSandboxService.OpenAI.Codex","ChatGPT",policy);
+    Assert(codex is {ProductId:"codex",Kind:EvidenceKind.Installation},"Codex service was not identified");
+    Assert(WindowsCollector.MatchServiceRegistration("UnrelatedService","ChatGPT",policy) is null,"service display name caused false ChatGPT detection");
+    Assert(WindowsCollector.MatchServiceRegistration("clash_verge_service","Clash Verge Service",policy)?.ProductId=="clash","Clash service was missed");
+    await Task.CompletedTask;
+});
+await Check("known installation folder requires matching executable", async () =>
+{
+    var root=Path.Combine(Path.GetTempPath(),"compliance-install-"+Guid.NewGuid());
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root,"Cursor"));
+        Directory.CreateDirectory(Path.Combine(root,"Claude"));
+        Directory.CreateDirectory(Path.Combine(root,"Unrelated"));
+        await File.WriteAllTextAsync(Path.Combine(root,"Cursor","Cursor.exe"),"");
+        await File.WriteAllTextAsync(Path.Combine(root,"Unrelated","Claude.exe"),"");
+        var matches=WindowsCollector.ScanKnownInstallRoot(root,"S-1-5-21-1-2-3-1001",PolicySeed.Create());
+        Assert(matches.Length==1 && matches[0].ProductId=="cursor" && matches[0].UserSid=="S-1-5-21-1-2-3-1001","common install root either missed product or accepted weak name");
+    }
+    finally { Directory.Delete(root,true); }
+});
+await Check("installed Claude CLI in known user bin is a violation, not a clue", async () =>
+{
+    var root=Path.Combine(Path.GetTempPath(),"compliance-cli-"+Guid.NewGuid());
+    try
+    {
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root,"claude.exe"),"");
+        var matches=WindowsCollector.ScanKnownCliBin(root,"S-1-5-21-1-2-3-1001",PolicySeed.Create());
+        Assert(matches.Length==1 && matches[0].ProductId=="claude" && matches[0].Kind==EvidenceKind.Installation && matches[0].Confirmed,"known Claude CLI was not a confirmed installation");
+    }
+    finally { Directory.Delete(root,true); }
+});
+await Check("persistent machine proxy variable is detected without recording its value", async () =>
+{
+    var hit=WindowsCollector.ProxyEnvironmentEvidence("HTTPS_PROXY","http://127.0.0.1:7890",null);
+    Assert(hit is {Kind:EvidenceKind.Proxy,Confirmed:true,UserSid:null} && !hit.Summary.Contains("7890"),"machine proxy setting was missed or leaked");
+    Assert(WindowsCollector.ProxyEnvironmentEvidence("HTTPS_PROXY","",null) is null,"empty proxy setting was reported");
+    Assert(WindowsCollector.ProxyEnvironmentEvidence("UNRELATED","x",null) is null,"unrelated variable was reported");
+    await Task.CompletedTask;
+});
+await Check("scan-process proxy variable is only a clue", async () =>
+{
+    var clue=WindowsCollector.ProcessProxyEnvironmentClue("HTTP_PROXY","http://127.0.0.1:36005");
+    Assert(clue is {Kind:EvidenceKind.Clue,Confirmed:false} && !clue.Summary.Contains("36005"),"scan-process proxy was treated as machine violation or leaked");
+    await Task.CompletedTask;
+});
 foreach (var error in failures) Console.Error.WriteLine(error);
 return failures.Count == 0 ? 0 : 1;
 sealed class DelayedHandler : HttpMessageHandler

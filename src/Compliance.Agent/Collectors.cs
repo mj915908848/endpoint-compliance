@@ -24,6 +24,116 @@ public static class FixtureCollector
 public sealed class WindowsCollector
 {
     private sealed record Profile(string Sid, string Path, bool HiveLoaded, bool PathAvailable);
+    public static (Evidence[] Evidence, int Errors) ScanVsCodeExtensions(string root, string sid, PolicyDocument policy)
+    {
+        if(!DirectoryPresent(root)) return ([],0);
+        var found=new List<Evidence>();
+        var errors=0;
+        var host=Path.GetFileName(Path.GetDirectoryName(root));
+        var obsolete=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var obsoleteFile=Path.Combine(root,".obsolete");
+        if(FilePresent(obsoleteFile))
+        {
+            try
+            {
+                using var state=JsonDocument.Parse(File.ReadAllText(obsoleteFile));
+                if(state.RootElement.ValueKind!=JsonValueKind.Object) throw new JsonException("Invalid extension removal state");
+                foreach(var item in state.RootElement.EnumerateObject())
+                {
+                    if(item.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new JsonException("Invalid extension removal entry");
+                    if(item.Value.GetBoolean()) obsolete.Add(item.Name);
+                }
+            }
+            catch(Exception ex) when(ex is JsonException or IOException or UnauthorizedAccessException) { return ([],1); }
+        }
+        foreach(var dir in Directory.EnumerateDirectories(root))
+        {
+            if(dir.EndsWith(".obsolete",StringComparison.OrdinalIgnoreCase) || obsolete.Contains(Path.GetFileName(dir))) continue;
+            var manifest=Path.Combine(dir,"package.json");
+            try
+            {
+                if((File.GetAttributes(dir)&FileAttributes.ReparsePoint)!=0 || !FilePresent(manifest)) continue;
+                using var doc=JsonDocument.Parse(File.ReadAllText(manifest));
+                var publisher=doc.RootElement.TryGetProperty("publisher",out var publisherProperty)?publisherProperty.GetString():null;
+                var name=doc.RootElement.TryGetProperty("name",out var nameProperty)?nameProperty.GetString():null;
+                if(publisher is null || name is null) continue;
+                var id=publisher+"."+name;
+                foreach(var rule in policy.Products.Where(r=>r.ExtensionIds.Any(x=>string.Equals(x,id,StringComparison.OrdinalIgnoreCase))))
+                    found.Add(new(rule.Id,rule.Name,EvidenceKind.Extension,"ide:"+sid+":"+host+":"+id,"IDE package.json","Exact extension ID: "+id+" in "+host,sid));
+            }
+            catch(JsonException) { errors++; }
+            catch(InvalidOperationException) { errors++; }
+            catch(IOException) { errors++; }
+            catch(UnauthorizedAccessException) { errors++; }
+        }
+        return (found.ToArray(),errors);
+    }
+    public static (Evidence[] Evidence, int Errors) ScanKnownExtensionRoots(string profilePath, string sid, PolicyDocument policy)
+    {
+        var found=new List<Evidence>();
+        var errors=0;
+        foreach(var host in new[]{".vscode",".vscode-insiders",".vscode-oss",".cursor",".windsurf",".windsurf-next"})
+        {
+            var result=ScanVsCodeExtensions(Path.Combine(profilePath,host,"extensions"),sid,policy);
+            found.AddRange(result.Evidence);
+            errors+=result.Errors;
+        }
+        return (found.ToArray(),errors);
+    }
+    public static Evidence? MatchServiceRegistration(string serviceName, string? displayName, PolicyDocument policy)
+    {
+        var productId=serviceName.ToLowerInvariant() switch
+        {
+            "clash_verge_service"=>"clash",
+            "codexsandboxservice.openai.codex"=>"codex",
+            _=>null
+        };
+        if(productId is null) return null;
+        var rule=policy.Products.FirstOrDefault(r=>r.Id==productId);
+        return rule is null?null:new Evidence(rule.Id,rule.Name,EvidenceKind.Installation,"service:"+serviceName,"Windows service registry","Registered service name: "+serviceName);
+    }
+    public static Evidence[] ScanKnownInstallRoot(string root, string? sid, PolicyDocument policy)
+    {
+        if(!DirectoryPresent(root)) return [];
+        var found=new List<Evidence>();
+        foreach(var dir in Directory.EnumerateDirectories(root))
+        {
+            if((File.GetAttributes(dir)&FileAttributes.ReparsePoint)!=0) continue;
+            var folder=Path.GetFileName(dir);
+            var matching=policy.Products.Where(r=>r.DisplayNames.Any(n=>string.Equals(n,folder,StringComparison.OrdinalIgnoreCase))).ToArray();
+            if(matching.Length==0) continue;
+            var executables=Directory.EnumerateFiles(dir).Select(Path.GetFileName).Where(n=>n is not null).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach(var rule in matching)
+            {
+                var executable=rule.ExecutableNames.FirstOrDefault(executables.Contains);
+                if(executable is not null)
+                    found.Add(new(rule.Id,rule.Name,EvidenceKind.Installation,"install-dir:"+(sid??"machine")+":"+folder,"Known install directory","Folder "+folder+" contains "+executable,sid));
+            }
+        }
+        return found.ToArray();
+    }
+    public static Evidence[] ScanKnownCliBin(string root, string sid, PolicyDocument policy)
+    {
+        var found=new List<Evidence>();
+        foreach(var (file,id) in new[]{("claude.exe","claude"),("codex.exe","codex"),("gemini.exe","gemini")})
+        {
+            if(!FilePresent(Path.Combine(root,file))) continue;
+            var rule=policy.Products.FirstOrDefault(r=>r.Id==id);
+            if(rule is not null) found.Add(new(rule.Id,rule.Name,EvidenceKind.Installation,"cli-file:"+sid+":"+file,"Known user CLI bin","Known CLI executable: "+file,sid) { CollectedAt=DateTimeOffset.UtcNow });
+        }
+        return found.ToArray();
+    }
+    public static Evidence? ProxyEnvironmentEvidence(string name, string? value, string? sid)
+    {
+        if(name.ToUpperInvariant() is not ("HTTP_PROXY" or "HTTPS_PROXY" or "ALL_PROXY") || string.IsNullOrWhiteSpace(value)) return null;
+        var scope=sid??"machine";
+        return new("proxy","Proxy environment",EvidenceKind.Proxy,"env:"+scope+":"+name.ToUpperInvariant(),"Persistent environment",name.ToUpperInvariant()+" configured (value withheld)",sid);
+    }
+    public static Evidence? ProcessProxyEnvironmentClue(string name, string? value)
+    {
+        if(name.ToUpperInvariant() is not ("HTTP_PROXY" or "HTTPS_PROXY" or "ALL_PROXY") || string.IsNullOrWhiteSpace(value)) return null;
+        return new("proxy-process-clue","Scan process proxy environment",EvidenceKind.Clue,"env:process:"+name.ToUpperInvariant(),"Agent process environment",name.ToUpperInvariant()+" present in scan process; machine ownership unverified (value withheld)",null,false);
+    }
     public async Task<ScanSnapshot> CollectAsync(string deviceId, PolicyDocument policy, CancellationToken ct, ScanSnapshot? previousInventory = null)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Native collection requires Windows");
@@ -35,19 +145,30 @@ public sealed class WindowsCollector
         var currentUsers=profiles.Select(p=>p.Sid+":"+(p.HiveLoaded&&p.PathAvailable?"Complete":"Unknown")).Order().ToArray();
         bool full=previousInventory is null || !priorUsers!.SequenceEqual(currentUsers);
         if(full) await Module("installed", "machine", () => { InstallEntries(RegistryHive.LocalMachine, RegistryView.Registry64, null); InstallEntries(RegistryHive.LocalMachine, RegistryView.Registry32, null); return Task.CompletedTask; });
+        if(full) await Module("services","machine",()=>{ Services(); return Task.CompletedTask; });
+        if(full) await Module("installed-paths","machine",()=>
+        {
+            foreach(var root in new[]{Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)}.Where(x=>!string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
+                evidence.AddRange(ScanKnownInstallRoot(root,null,policy));
+            return Task.CompletedTask;
+        });
         else
         {
-            modules.AddRange(previousInventory!.Modules.Where(m=>m.Module is "installed" or "extensions" or "appx" or "cli"));
+            modules.AddRange(previousInventory!.Modules.Where(m=>m.Module is "installed" or "installed-paths" or "services" or "extensions" or "appx" or "cli"));
             evidence.AddRange(previousInventory.Evidence.Where(e=>e.Kind is EvidenceKind.Installation or EvidenceKind.Extension));
         }
         foreach (var p in profiles)
         {
+            if(full && p.PathAvailable) await Module("installed-paths",p.Sid,()=>{ evidence.AddRange(ScanKnownInstallRoot(Path.Combine(p.Path,"AppData","Local","Programs"),p.Sid,policy)); return Task.CompletedTask; });
+            else if(full) modules.Add(new("installed-paths",p.Sid,"Unknown",now,"Profile path unavailable"));
             if (!p.HiveLoaded)
             {
                 if(full) modules.Add(new("installed", p.Sid, "Unknown", now, "User hive not loaded"));
                 modules.Add(new("proxy", p.Sid, "Unknown", now, "User hive not loaded"));
-                if(full) modules.Add(new("extensions", p.Sid, "Unknown", now, "User hive not loaded"));
-                if(full) modules.Add(new("cli", p.Sid, "Unknown", now, "User hive not loaded"));
+                if(full && p.PathAvailable) await Module("extensions",p.Sid,()=>{ ExtensionsForUser(p); return Task.CompletedTask; });
+                else if(full) modules.Add(new("extensions", p.Sid, "Unknown", now, "Profile path unavailable"));
+                if(full && p.PathAvailable) await Module("cli",p.Sid,()=>{ CliForUser(p); return Task.CompletedTask; });
+                else if(full) modules.Add(new("cli", p.Sid, "Unknown", now, "Profile path unavailable"));
                 continue;
             }
             if(full) await Module("installed", p.Sid, () => { InstallEntries(RegistryHive.Users, RegistryView.Registry64, p.Sid); InstallEntries(RegistryHive.Users, RegistryView.Registry32, p.Sid); return Task.CompletedTask; });
@@ -58,6 +179,21 @@ public sealed class WindowsCollector
             else if(full) modules.Add(new("cli",p.Sid,"Unknown",now,"Profile path unavailable"));
         }
         if(profiles.Length==0) modules.Add(new("users", "machine", "Unknown", now, "No eligible user profiles identified"));
+        await Module("proxy-env","machine",()=>
+        {
+            using var env=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager\Environment") ?? throw new IOException("Machine environment registry unreadable");
+            foreach(var name in env.GetValueNames())
+            {
+                var hit=ProxyEnvironmentEvidence(name,env.GetValue(name) as string,null);
+                if(hit is not null) evidence.Add(hit);
+            }
+            foreach(var name in new[]{"HTTP_PROXY","HTTPS_PROXY","ALL_PROXY"})
+            {
+                var clue=ProcessProxyEnvironmentClue(name,Environment.GetEnvironmentVariable(name));
+                if(clue is not null) evidence.Add(clue);
+            }
+            return Task.CompletedTask;
+        });
         await Module("proxy", "machine", () =>
         {
             if(!WinHttpGetDefaultProxyConfiguration(out var info)) throw new IOException("WinHTTP proxy inspection failed: "+Marshal.GetLastWin32Error());
@@ -114,6 +250,17 @@ public sealed class WindowsCollector
                     evidence.Add(new(rule.Id,rule.Name,EvidenceKind.Installation,$"uninstall:{hive}:{view}:{sid}:{sub}","Uninstall registry",$"Exact display name: {name}",sid));
             }
         }
+        void Services()
+        {
+            using var root=Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services") ?? throw new IOException("Service registry unreadable");
+            foreach(var name in new[]{"clash_verge_service","CodexSandboxService.OpenAI.Codex"})
+            {
+                using var service=root.OpenSubKey(name);
+                if(service is null) continue;
+                var match=MatchServiceRegistration(name,service.GetValue("DisplayName") as string,policy);
+                if(match is not null) evidence.Add(match);
+            }
+        }
         void ProxyForUser(string sid)
         {
             using var settings=Registry.Users.OpenSubKey(sid+@"\Software\Microsoft\Windows\CurrentVersion\Internet Settings");
@@ -125,8 +272,11 @@ public sealed class WindowsCollector
             if(!string.IsNullOrWhiteSpace(pac)) evidence.Add(new("proxy","PAC configuration",EvidenceKind.Proxy,"pac:"+sid,"HKU proxy","PAC configured (URL withheld)",sid));
             using var env=Registry.Users.OpenSubKey(sid+@"\Environment");
             if(env is null) return;
-            foreach(var variable in new[]{"HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","http_proxy","https_proxy","all_proxy"})
-                if(env.GetValue(variable) is string v && !string.IsNullOrWhiteSpace(v)) evidence.Add(new("proxy","Proxy environment",EvidenceKind.Proxy,"env:"+sid+":"+variable,"HKU Environment",$"{variable} configured (value withheld)",sid));
+            foreach(var name in env.GetValueNames())
+            {
+                var hit=ProxyEnvironmentEvidence(name,env.GetValue(name) as string,sid);
+                if(hit is not null) evidence.Add(hit);
+            }
         }
         void Processes()
         {
@@ -158,38 +308,26 @@ public sealed class WindowsCollector
         }
         void ExtensionsForUser(Profile p)
         {
-            var paths=new[]{Path.Combine(p.Path,".vscode","extensions"),Path.Combine(p.Path,".vscode-insiders","extensions")};
-            foreach(var root in paths)
+            var extensions=ScanKnownExtensionRoots(p.Path,p.Sid,policy);
+            evidence.AddRange(extensions.Evidence);
+            var jetBrains=Path.Combine(p.Path,"AppData","Roaming","JetBrains");
+            if(DirectoryPresent(jetBrains))
             {
-                if(!DirectoryPresent(root)) continue;
-                foreach(var dir in Directory.EnumerateDirectories(root))
+                var options=new EnumerationOptions { RecurseSubdirectories=true,AttributesToSkip=FileAttributes.ReparsePoint,IgnoreInaccessible=false };
+                foreach(var manifest in Directory.EnumerateFiles(jetBrains,"plugin.xml",options))
                 {
-                    var manifest=Path.Combine(dir,"package.json");
-                    if(!FilePresent(manifest)) continue;
-                    using var doc=JsonDocument.Parse(File.ReadAllText(manifest));
-                    var publisher=doc.RootElement.TryGetProperty("publisher",out var publisherProperty)?publisherProperty.GetString():null;
-                    var name=doc.RootElement.TryGetProperty("name",out var nameProperty)?nameProperty.GetString():null;
-                    if(publisher is null || name is null) continue;
-                    var id=publisher+"."+name;
-                    foreach(var rule in policy.Products.Where(r=>r.ExtensionIds.Any(x=>string.Equals(x,id,StringComparison.OrdinalIgnoreCase))))
-                        evidence.Add(new(rule.Id,rule.Name,EvidenceKind.Extension,"vscode:"+p.Sid+":"+id,"VS Code package.json","Exact extension ID: "+id,p.Sid));
+                    using var stream=File.OpenRead(manifest); AddJetBrainsPlugin(stream,p.Sid);
+                }
+                foreach(var jar in Directory.EnumerateFiles(jetBrains,"*.jar",options))
+                {
+                    using var archive=ZipFile.OpenRead(jar);
+                    var entry=archive.GetEntry("META-INF/plugin.xml");
+                    if(entry is null) continue;
+                    if(entry.Length>1024*1024) throw new InvalidDataException("JetBrains plugin manifest too large");
+                    using var stream=entry.Open(); AddJetBrainsPlugin(stream,p.Sid);
                 }
             }
-            var jetBrains=Path.Combine(p.Path,"AppData","Roaming","JetBrains");
-            if(!DirectoryPresent(jetBrains)) return;
-            var options=new EnumerationOptions { RecurseSubdirectories=true,AttributesToSkip=FileAttributes.ReparsePoint,IgnoreInaccessible=false };
-            foreach(var manifest in Directory.EnumerateFiles(jetBrains,"plugin.xml",options))
-            {
-                using var stream=File.OpenRead(manifest); AddJetBrainsPlugin(stream,p.Sid);
-            }
-            foreach(var jar in Directory.EnumerateFiles(jetBrains,"*.jar",options))
-            {
-                using var archive=ZipFile.OpenRead(jar);
-                var entry=archive.GetEntry("META-INF/plugin.xml");
-                if(entry is null) continue;
-                if(entry.Length>1024*1024) throw new InvalidDataException("JetBrains plugin manifest too large");
-                using var stream=entry.Open(); AddJetBrainsPlugin(stream,p.Sid);
-            }
+            if(extensions.Errors>0) throw new InvalidDataException($"{extensions.Errors} IDE extension manifest(s) unreadable");
         }
         void AddJetBrainsPlugin(Stream stream,string sid)
         {
@@ -208,8 +346,7 @@ public sealed class WindowsCollector
             foreach(var name in new[]{"claude.cmd","codex.cmd","gemini.cmd"})
                 if(FilePresent(Path.Combine(npm,name))) evidence.Add(new("cli-clue","CLI shim",EvidenceKind.Clue,"cli-shim:"+p.Sid+":"+name,"npm shim","Filename clue only: "+name,p.Sid,false));
             var localBin=Path.Combine(p.Path,".local","bin");
-            foreach(var name in new[]{"claude.exe","codex.exe","gemini.exe"})
-                if(FilePresent(Path.Combine(localBin,name))) evidence.Add(new("cli-clue","CLI executable",EvidenceKind.Clue,"cli-file:"+p.Sid+":"+name,"user local bin","Filename clue only: "+name,p.Sid,false));
+            evidence.AddRange(ScanKnownCliBin(localBin,p.Sid,policy));
         }
         void CliForMachine()
         {

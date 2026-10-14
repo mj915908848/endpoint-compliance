@@ -18,6 +18,13 @@ Test("inventory stale cannot be refreshed by recent proxy scan", () => Eq(Verdic
 Test("old confirmed evidence no longer asserts current FAIL", () => Eq(Verdict.UNKNOWN,ReportEngine.Evaluate(p,clean with { CollectedAt = now.AddHours(-3), Evidence = [violation] },now).Verdict));
 Test("confirmed violation wins over missing coverage", () => Eq(Verdict.FAIL,ReportEngine.Evaluate(p,clean with { Evidence = [violation], Modules = [] },now).Verdict));
 Test("multiple PID evidence is one violated product per user", () => { var r=ReportEngine.Evaluate(p,clean with { Evidence=[violation,violation with {Kind=EvidenceKind.Process,ObjectKey="pid12"}] },now); Eq(1,r.ViolationCount); Eq(2,r.EvidenceCount); });
+Test("one product with installation and process evidence has one readable reason", () =>
+{
+    var r=ReportEngine.Evaluate(p,clean with {Evidence=[violation,violation with {Kind=EvidenceKind.Process,ObjectKey="pid12",Summary="Running PID 12"}]},now);
+    Eq(1,r.Reasons.Length);
+    Yes(r.Reasons[0].Contains("Cursor") && r.Reasons[0].Contains("2 条证据"));
+    Eq(2,r.EvidenceCount);
+});
 Test("unknown filename port and TUN clues never confirm violation", () => Eq(Verdict.PASS,ReportEngine.Evaluate(p,clean with { Evidence=[violation with {Kind=EvidenceKind.Clue,Confirmed=false}] },now).Verdict));
 Test("confirmed enabled proxy rejected even without installed software", () => Eq(Verdict.FAIL,ReportEngine.Evaluate(p,clean with { Evidence=[new("system-proxy","Proxy",EvidenceKind.Proxy,"HKU","WinINET","Enabled")] },now).Verdict));
 Test("blocked attempt is not successful use or installation violation", () => Eq(Verdict.PASS,ReportEngine.Evaluate(p,clean with { Evidence=[violation with {Kind=EvidenceKind.BlockedAttempt}] },now).Verdict));
@@ -39,6 +46,12 @@ Test("invalid domain path and wildcard rejected", () => { Throws(()=>DomainRules
 Test("Edge policy rejects rather than truncates over limit", () => Throws(()=>DomainRules.CompileEdge(Enumerable.Range(0,1001).Select(x=>$"host{x}.example.com"))));
 Test("report redacts credentials and URL query in JSON too", () => { var r=ReportEngine.Evaluate(p,clean with {Evidence=[violation with {Summary="https://alice:pw@proxy.example.com/pac?token=secret Authorization: Bearer abc123",Source="TOKEN=secret"}]},now); var json=Wire.Serialize(r); Yes(!json.Contains("pw@")&&!json.Contains("secret")&&!json.Contains("abc123")); });
 Test("fixed report has nine sections and includes missing coverage", () => { var r=ReportEngine.Evaluate(p,clean with {Modules=[]},now); var md=ReportRenderer.Markdown(r); Eq(9,md.Split('\n').Count(x=>x.StartsWith("## "))); Yes(md.Contains("无法判断")&&md.Contains("installed")&&md.Contains("未启用")); });
+Test("report explains raw evidence count and translates coverage status", () =>
+{
+    var r=ReportEngine.Evaluate(p,clean with {Evidence=[violation,violation with {Kind=EvidenceKind.Process,ObjectKey="pid12"}],Modules=[..clean.Modules,new("extensions","S-1-5-21-123","Error",now,"JsonException; inspection incomplete")]},now);
+    var md=ReportRenderer.Markdown(r);
+    Yes(md.Contains("同一对象的多条证据合并计数") && md.Contains("扩展检查") && md.Contains("读取失败"));
+});
 Test("Markdown evidence cannot inject hidden headings", () => { var r=ReportEngine.Evaluate(p,clean with {Evidence=[violation with {Summary="oops\n## fake <script>alert(1)</script>"}]},now); var md=ReportRenderer.Markdown(r); Eq(9,md.Split('\n').Count(x=>x.StartsWith("## "))); Yes(!md.Contains("<script>")); });
 Test("old inventory evidence cannot become fresh through new light scan", () => Eq(Verdict.UNKNOWN,ReportEngine.Evaluate(p,clean with {Evidence=[violation], Modules=[new("installed","machine","Complete",now.AddHours(-3)),..clean.Modules[1..]]},now).Verdict));
 Test("unknown confirmed product is unresolved rather than PASS", () => Eq(Verdict.UNKNOWN,ReportEngine.Evaluate(p,clean with {Evidence=[violation with {ProductId="unlisted"}]},now).Verdict));

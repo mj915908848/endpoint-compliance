@@ -52,8 +52,21 @@ public static class ReportEngine
         var confirmed = snapshot.Evidence.Where(e=>current && EvidenceFresh(e) && e.Confirmed &&
             e.Kind is EvidenceKind.Installation or EvidenceKind.Process or EvidenceKind.Extension or EvidenceKind.Proxy &&
             (e.Kind==EvidenceKind.Proxy || knownIds.Contains(e.ProductId))).ToArray();
-        var reasons = confirmed.Select(e=>$"{e.ProductName}：{e.Kind}，{e.Summary}").Distinct().ToArray();
-        int count = confirmed.Select(e=>e.ProductId+"|"+(e.UserSid??"machine")+(e.Kind==EvidenceKind.Proxy?"|"+e.ObjectKey:"")).Distinct().Count();
+        var objects=confirmed.GroupBy(e=>(e.ProductId,Scope:e.UserSid??"machine")).ToArray();
+        var reasons=objects.Select(group=>
+        {
+            var kinds=group.Select(e=>e.Kind switch
+            {
+                EvidenceKind.Installation=>"已安装",
+                EvidenceKind.Process=>"运行中",
+                EvidenceKind.Extension=>"扩展已安装",
+                EvidenceKind.Proxy=>"代理已配置",
+                _=>"确认违规"
+            }).Distinct();
+            var scope=group.Key.Scope=="machine"?"本机":"用户 "+group.Key.Scope;
+            return $"{group.First().ProductName}（{scope}）：{string.Join("、",kinds)}；{group.Count()} 条证据";
+        }).ToArray();
+        int count=objects.Length;
         var verdict = confirmed.Length>0 ? Verdict.FAIL : gaps.Count>0 ? Verdict.UNKNOWN : Verdict.PASS;
         string summary = verdict switch { Verdict.FAIL=>$"不通过：发现 {count} 个违规对象", Verdict.UNKNOWN=>"无法判断：检查或防护覆盖不完整", _=>"范围内通过：必需采集新鲜且无确认违规" };
         return new(verdict,summary,reasons,gaps.Distinct().ToArray(),count,confirmed.Length,protection, EvidenceSanitizer.Sanitize(snapshot));

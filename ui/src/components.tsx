@@ -102,7 +102,7 @@ export function OverviewGuide({ devices }: { devices: DeviceSummary[] }) {
         <>
           <p>
             {failed.length > 0
-              ? `${failed.length} 台在线终端当前不通过，发现 ${failed.reduce((count, d) => count + d.violationCount, 0)} 项已确认违规。下方“未恢复告警”列出原因。`
+              ? `${failed.length} 台在线终端当前不通过，发现 ${failed.reduce((count, d) => count + d.violationCount, 0)} 个违规对象。下方“未恢复告警”列出原因。`
               : online.length === 0
                 ? "当前没有在线检查结论，不能把页面上的 0 理解为通过。"
                 : online.some((d) => d.currentVerdict === "UNKNOWN")
@@ -136,7 +136,7 @@ export function DeviceGuide({ device }: { device: DeviceSummary }) {
   if (device.currentVerdict === "FAIL")
     return (
       <div className="result-guide danger" aria-label="设备结果说明">
-        <strong>本次检查不通过：发现 {device.violationCount} 项已确认违规</strong>
+        <strong>本次检查不通过：发现 {device.violationCount} 个违规对象</strong>
         <p>客户规则是“安装也不允许”。请查看下方证据，移除禁用软件、扩展或代理配置后重新采集。其他项目读取失败不会抵消已确认的违规。</p>
       </div>
     );
