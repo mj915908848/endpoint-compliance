@@ -20,6 +20,12 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Contains(LogWindow.Argument))
+        {
+            ShutdownMode = ShutdownMode.OnLastWindowClose;
+            new LogWindow().Show();
+            return;
+        }
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         icon = new Forms.NotifyIcon
         {
@@ -29,6 +35,7 @@ public partial class App : System.Windows.Application
         };
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("查看通知", null, (_, _) => ShowHistory());
+        menu.Items.Add("运行日志（需管理员）", null, (_, _) => LogWindow.OpenElevated());
         menu.Items.Add("退出托盘", null, (_, _) => Shutdown());
         icon.ContextMenuStrip = menu;
         icon.DoubleClick += (_, _) => ShowHistory();

@@ -427,7 +427,10 @@ public sealed class AgentRuntime(
             )
                 throw new CryptographicException("Immutable policy version changed content");
             if (policy?.Version != verified.Version)
+            {
                 forceFull = true;
+                Console.WriteLine($"收到新策略 v{verified.Version}（原 v{policy?.Version ?? 0}），立即完整检查");
+            }
             policy = verified;
             signedPolicy = fetched;
             var temp = statePath + ".tmp";
@@ -463,6 +466,8 @@ public sealed class AgentRuntime(
         }
         catch (HttpRequestException) { }
         var scanCommands = commands.Where(x => x.Type == "ScanNow" && x.ExpiresAt > DateTimeOffset.UtcNow).ToArray();
+        if (scanCommands.Length > 0)
+            Console.WriteLine("管理端请求重新检查，开始完整检查");
         foreach (var unsupported in commands.Except(scanCommands))
             await api.SendAsync<JsonElement>(
                 HttpMethod.Post,
@@ -525,7 +530,12 @@ public sealed class AgentRuntime(
                     ct
                 );
             }
-            Console.WriteLine(ReportRenderer.Markdown(report));
+            if (AgentLog.Active)
+                Console.WriteLine(
+                    $"{(full ? "完整检查" : "快速检查")}完成：{report.Summary}；证据 {report.EvidenceCount} 条，检查缺口 {report.CoverageGaps.Length} 项，策略 v{policy.Version}"
+                );
+            else
+                Console.WriteLine(ReportRenderer.Markdown(report));
             lastLight = DateTimeOffset.UtcNow;
             if (full)
                 lastFull = lastLight;
@@ -568,6 +578,10 @@ public sealed class AgentRuntime(
                 );
                 await queue.AcknowledgeAsync(receipt.AcceptedEventIds.Intersect(pending.Select(x => x.EventId)), ct);
                 var refused = pending.Select(x => x.EventId).Except(receipt.AcceptedEventIds).ToArray();
+                Console.WriteLine(
+                    $"已上报 {pending.Length - refused.Length} 条记录"
+                        + (refused.Length > 0 ? $"，{refused.Length} 条未被接收，稍后重试" : "")
+                );
                 if (refused.Length > 0)
                     await queue.RetryAsync(refused, TimeSpan.FromMinutes(1), "Server did not accept event", false, ct);
             }
@@ -584,6 +598,7 @@ public sealed class AgentRuntime(
                     && serverDelay > TimeSpan.Zero
                         ? serverDelay
                         : TimeSpan.FromSeconds(30 + Random.Shared.Next(30));
+                Console.WriteLine($"上报失败（{ex.Message}），{pending.Length} 条记录保存在本地，稍后重试");
                 await queue.RetryAsync(pending.Select(x => x.EventId), retry, ex.Message, permanent, ct);
             }
         }

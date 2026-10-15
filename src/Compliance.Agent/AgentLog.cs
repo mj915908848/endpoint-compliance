@@ -12,8 +12,12 @@ public sealed class AgentLog(string path, long maxBytes = 1 << 20) : TextWriter
 
     public override Encoding Encoding => Encoding.UTF8;
 
+    /// <summary>Output goes to the log file, so each check is summarized in one line instead of a full report.</summary>
+    public static bool Active { get; private set; }
+
     public static void Attach(string dataDirectory)
     {
+        Active = true;
         var log = Synchronized(new AgentLog(Path.Combine(dataDirectory, "agent.log")));
         Console.SetOut(log);
         Console.SetError(log);

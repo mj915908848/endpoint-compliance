@@ -225,6 +225,17 @@ try:
     assert report["verdict"] == "FAIL", f"An enabled proxy must fail the check, got {report['verdict']}"
     assert sum(line.startswith("## ") for line in md.splitlines()) == 9
     print("PASS native report: FAIL with nine Markdown sections")
+
+    # The tray's log window (opened elevated from the tray menu) must start and stay up.
+    tray = root / "src/Compliance.Tray/bin/Release/net10.0-windows/Compliance.Tray.exe"
+    viewer = subprocess.Popen([str(tray), "--log"])
+    try:
+        time.sleep(5)
+        assert viewer.poll() is None, f"Tray log window exited with {viewer.returncode}"
+    finally:
+        viewer.kill()
+        viewer.wait(timeout=10)
+    print("PASS tray log window starts")
     print("Evidence: " + str(data))
 finally:
     write_proxy(saved_proxy)
