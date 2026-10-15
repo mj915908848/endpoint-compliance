@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   workflow_dispatch:
 
 concurrency:
@@ -14,6 +20,54 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  # Decides which jobs this change needs. A change to this workflow, or a manual run, runs everything.
+  changes:
+    name: 判断改动范围
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ui: ${{ steps.f.outputs.ui == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
+      dotnet: ${{ steps.f.outputs.dotnet == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
+      e2e: ${{ steps.f.outputs.e2e == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
+      windows: ${{ steps.f.outputs.windows == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
+      docker: ${{ steps.f.outputs.docker == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            all:
+              - .github/**
+              - global.json
+              - Directory.Build.props
+              - dotnet-tools.json
+            ui:
+              - ui/**
+            dotnet:
+              - src/**
+              - tests/**
+            e2e:
+              - ui/**
+              - src/Compliance.Core/**
+              - src/Compliance.Server/**
+              - src/Compliance.Agent/**
+              - integration/e2e.py
+            windows:
+              - src/Compliance.Core/**
+              - src/Compliance.Server/**
+              - src/Compliance.Agent/**
+              - src/Compliance.Tray/**
+              - tests/Compliance.Agent.Tests/**
+              - deploy/windows/**
+              - integration/windows_smoke.py
+            docker:
+              - deploy/docker/**
+              - .dockerignore
+              - src/Compliance.Core/**
+              - src/Compliance.Server/**
+              - ui/package*.json
+
   format:
     name: 格式检查
     runs-on: ubuntu-latest
@@ -23,6 +77,8 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -39,6 +95,8 @@ jobs:
 
   ui:
     name: 前端构建与测试
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -56,6 +114,8 @@ jobs:
 
   server:
     name: 服务端与 Core 测试（SQLite + PostgreSQL）
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -72,6 +132,8 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
       - name: Build
         run: |
           dotnet build src/Compliance.Server -c Release
@@ -87,6 +149,8 @@ jobs:
 
   e2e:
     name: 端到端测试
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -94,6 +158,8 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -118,6 +184,8 @@ jobs:
 
   windows:
     name: Windows 实机采集
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     defaults:
@@ -129,6 +197,8 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -175,6 +245,8 @@ jobs:
 
   docker:
     name: Docker 部署
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
