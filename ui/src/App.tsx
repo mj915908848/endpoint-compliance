@@ -21,7 +21,7 @@ import {
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { HttpError, request } from "./api";
-import { ErrorNotice, errorText, Loading, Login } from "./components";
+import { ErrorNotice, errorText, Loading, Login, PasswordDialog } from "./components";
 import { Alerts } from "./pages/Alerts";
 import { AuditPage } from "./pages/Audit";
 import { DeviceDetailPage } from "./pages/DeviceDetail";
@@ -39,7 +39,7 @@ const pages: { path: string; label: string; icon: ReactNode }[] = [
   { path: "/policies", label: "策略管理", icon: <FileProtectOutlined /> },
   { path: "/registration", label: "终端登记", icon: <KeyOutlined /> },
   { path: "/audit", label: "审计记录", icon: <AuditOutlined /> },
-  { path: "/system", label: "系统状态", icon: <InfoCircleOutlined /> },
+  { path: "/system", label: "系统设置", icon: <InfoCircleOutlined /> },
 ];
 
 const roleLabels: Record<string, string> = {
@@ -67,7 +67,8 @@ export function App() {
   const [session, setSession] = useState<Session | null>(null),
     [authLoading, setAuthLoading] = useState(true),
     [authError, setAuthError] = useState<string | null>(null),
-    [logoutBusy, setLogoutBusy] = useState(false);
+    [logoutBusy, setLogoutBusy] = useState(false),
+    [passwordOpen, setPasswordOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const queries = useQueryClient();
@@ -168,10 +169,18 @@ export function App() {
                 {session.roles.map((r) => roleLabels[r] ?? r).join(" · ")}
               </Typography.Text>
             </Space>
+            <Button type="text" onClick={() => setPasswordOpen(true)}>
+              修改密码
+            </Button>
             <Button type="text" loading={logoutBusy} onClick={logout}>
               退出
             </Button>
           </Space>
+          <PasswordDialog
+            session={session}
+            open={passwordOpen}
+            onClose={() => setPasswordOpen(false)}
+          />
         </Layout.Header>
         <Layout.Content className="content">
           <ErrorNotice error={authError} />
@@ -197,7 +206,7 @@ export function App() {
             <Route path="/policies" element={<Policies session={session} />} />
             <Route path="/registration" element={<Registration session={session} />} />
             <Route path="/audit" element={<AuditPage />} />
-            <Route path="/system" element={<SystemPage />} />
+            <Route path="/system" element={<SystemPage session={session} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout.Content>

@@ -19,6 +19,9 @@ public partial class Program
         b.Services.AddSingleton<ComplianceService>();
         b.Services.AddHostedService<OfflineMonitor>();
         b.Services.AddHostedService<MaintenanceService>();
+        b.Services.AddHttpClient(AlertNotifier.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
+        b.Services.AddSingleton<AlertNotifier>();
+        b.Services.AddHostedService<NotificationService>();
         b.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         b.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 2 * 1024 * 1024);
         b.Services.AddRateLimiter(o =>
@@ -144,7 +147,7 @@ public partial class Program
             }
         );
 
-        Endpoints.Map(app, service, settings);
+        Endpoints.Map(app, service, settings, app.Services.GetRequiredService<AlertNotifier>());
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.MapFallback(async c =>

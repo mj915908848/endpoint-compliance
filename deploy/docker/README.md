@@ -129,6 +129,24 @@ server {
 
 **真实客户端 IP**：登录和终端登记按来源 IP 限速，每个 IP 每分钟 20 次。不配置 `Compliance__TrustedProxies__0` 时，所有请求都算作网关的 IP；平时没有影响，但一分钟内集中登记超过 20 台终端会被限速。方式一也可以加上这一行，并让网关带 `X-Forwarded-For`。网关与管理端在同一台机器、经 `localhost` 转发时，容器看到的来源是 Docker 网络的网关地址（查看方法见方式二），应填这个地址。
 
+## 管理员密码与系统设置
+
+**管理员密码**：`.env` 里的 `ADMIN_PASSWORD` 只在第一次启动时用来创建账号，之后再改 `.env` 不起作用。登录后点右上角「修改密码」修改，修改后其他浏览器上的登录会退出。
+
+忘记密码时，删掉账号和所有登录会话再重启，管理端会按 `.env` 里的 `ADMIN_USER`、`ADMIN_PASSWORD` 重新创建账号。终端、策略、告警和审计记录都不受影响。下面的 `admin` 换成实际的账号名：
+
+```bash
+docker compose exec db psql -U compliance -d compliance -c "DELETE FROM sessions; DELETE FROM users WHERE username = 'admin'"
+```
+
+```bash
+docker compose restart server
+```
+
+**告警推送**：在「系统设置」里填企业微信、钉钉或飞书的群机器人地址，新告警约 30 秒内推送到群里。管理端需要能访问外网上对应的地址（`qyapi.weixin.qq.com`、`oapi.dingtalk.com` 或 `open.feishu.cn`）。服务器只能经代理上网时，在 `compose.yml` 的 `server` 环境变量里加 `HTTPS_PROXY: http://代理地址:端口`。
+
+**审计记录**：默认永久保留，可在「系统设置」中改为保留 180 天到 3 年，超期的记录每小时清理一次。
+
 ## 备份与恢复
 
 ```bash

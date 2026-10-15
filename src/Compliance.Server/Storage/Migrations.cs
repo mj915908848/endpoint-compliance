@@ -23,6 +23,7 @@ public static class Migrations
             "client versions",
             tx => tx.Execute("ALTER TABLE devices ADD COLUMN agent_version TEXT NOT NULL DEFAULT ''")
         ),
+        new(7, "settings and alert notifications", SettingsAndNotifications),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -138,6 +139,17 @@ public static class Migrations
             await tx.Execute("ALTER TABLE enrollment_codes ADD COLUMN " + column);
     }
 
+    /// <summary>
+    /// Settings changed in the management UI, and which alerts were pushed. Alerts that exist already count as
+    /// notified, so turning notifications on does not send the whole backlog.
+    /// </summary>
+    static async Task SettingsAndNotifications(Transaction tx)
+    {
+        await tx.Execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+        await tx.Execute("ALTER TABLE alerts ADD COLUMN notified BIGINT NOT NULL DEFAULT 1");
+        await tx.Execute("CREATE INDEX IF NOT EXISTS alerts_pending ON alerts(notified, state)");
+    }
+
     static async Task MultiplePolicies(Transaction tx)
     {
         await tx.Execute("ALTER TABLE policy_releases ADD COLUMN policy_key TEXT NOT NULL DEFAULT 'default'");
@@ -183,7 +195,7 @@ public static class Migrations
                     await tx.InsertEvent(id[..id.IndexOf(':')], Wire.Read<StoredEvent>(json));
                     break;
                 case "alert":
-                    await tx.UpsertAlert(Wire.Read<AlertSummary>(json));
+                    await tx.InsertLegacyAlert(Wire.Read<AlertSummary>(json));
                     break;
                 case "snapshot-incident":
                     await tx.PutSnapshotIncident(Wire.Read<SnapshotIncident>(json));

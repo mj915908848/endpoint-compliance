@@ -1201,6 +1201,9 @@ public sealed class Fixture : WebApplicationFactory<Program>
     public HttpClient Client;
     public string Device = "";
 
+    /// <summary>Answers the alert notifier instead of a real group robot.</summary>
+    public WebhookStub Webhook { get; } = new();
+
     public Fixture(string? directory = null, ManualClock? clock = null)
     {
         Directory = directory ?? Path.Combine(Path.GetTempPath(), "compliance-test-" + Guid.NewGuid());
@@ -1251,6 +1254,9 @@ public sealed class Fixture : WebApplicationFactory<Program>
         {
             s.RemoveAll<TimeProvider>();
             s.AddSingleton<TimeProvider>(Clock);
+            s.AddHttpClient(AlertNotifier.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => Webhook)
+                .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
         });
     }
 
@@ -1369,4 +1375,18 @@ public sealed class Fixture : WebApplicationFactory<Program>
             gzip.Write(plain);
         return output.ToArray();
     }
+}
+
+public sealed class WebhookStub : HttpMessageHandler
+{
+    public readonly List<(Uri Url, string Body)> Requests = [];
+    public string Reply = """{"errcode":0,"errmsg":"ok"}""";
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        Requests.Add((request.RequestUri!, await request.Content!.ReadAsStringAsync(ct)));
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Reply) };
+    }
+
+    protected override void Dispose(bool disposing) { }
 }

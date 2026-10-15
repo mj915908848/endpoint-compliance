@@ -72,6 +72,33 @@ public sealed class Transaction
     public Task DeleteSession(string tokenHash) =>
         Execute("DELETE FROM sessions WHERE token_hash = @hash", ("hash", tokenHash));
 
+    /// <summary>Signs the user out everywhere except the session <paramref name="keepTokenHash"/>.</summary>
+    public Task<int> DeleteOtherSessions(string username, string keepTokenHash) =>
+        Execute(
+            "DELETE FROM sessions WHERE username = @username AND token_hash <> @keep",
+            ("username", username),
+            ("keep", keepTokenHash)
+        );
+
+    public Task SetPassword(string username, string passwordHash) =>
+        Execute(
+            "UPDATE users SET password_hash = @hash WHERE username = @username",
+            ("hash", passwordHash),
+            ("username", username)
+        );
+
+    // ---- settings ------------------------------------------------------------------------
+
+    public Task<string?> GetSetting(string key) =>
+        Single("SELECT value FROM settings WHERE key = @key", r => r.GetString(0), ("key", key));
+
+    public Task PutSetting(string key, string value) =>
+        Execute(
+            "INSERT INTO settings(key, value) VALUES(@key, @value) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("key", key),
+            ("value", value)
+        );
+
     // ---- enrollment codes ----------------------------------------------------------------
 
     const string CodeColumns = "id, label, expires_at, max_uses, used, created_at, created_by, revoked";
@@ -341,29 +368,73 @@ public sealed class Transaction
     public Task<List<AlertSummary>> AlertsNewestFirst() =>
         Query($"SELECT {AlertColumns} FROM alerts ORDER BY last_seen DESC", ReadAlert);
 
+    /// <summary>
+    /// An alert that becomes active, newly or again, waits to be pushed (see <see cref="PendingNotifications"/>).
+    /// </summary>
     public Task UpsertAlert(AlertSummary a) =>
+        WriteAlert(
+            a,
+            """
+            , notified) VALUES(@id, @device, @host, @type, @key, @summary, @state, @sequence, @first, @last, @ack, @notified)
+            ON CONFLICT(id) DO UPDATE SET
+                notified = CASE WHEN excluded.state = 'Active' AND alerts.state <> 'Active' THEN 0 ELSE alerts.notified END,
+            """,
+            ("notified", a.State != "Active")
+        );
+
+    /// <summary>Migration 2 imports 0.1.0 alerts before migration 7 adds <c>notified</c>.</summary>
+    public Task InsertLegacyAlert(AlertSummary a) =>
+        WriteAlert(
+            a,
+            """
+            ) VALUES(@id, @device, @host, @type, @key, @summary, @state, @sequence, @first, @last, @ack)
+            ON CONFLICT(id) DO UPDATE SET
+            """
+        );
+
+    Task WriteAlert(AlertSummary a, string insertTail, params (string Name, object? Value)[] extra) =>
         Execute(
             $"""
-            INSERT INTO alerts({AlertColumns})
-            VALUES(@id, @device, @host, @type, @key, @summary, @state, @sequence, @first, @last, @ack)
-            ON CONFLICT(id) DO UPDATE SET
+            INSERT INTO alerts({AlertColumns}{insertTail}
                 device_id = excluded.device_id, host_name = excluded.host_name, type = excluded.type,
                 object_key = excluded.object_key, summary = excluded.summary, state = excluded.state,
                 last_sequence = excluded.last_sequence, first_seen = excluded.first_seen,
                 last_seen = excluded.last_seen, acknowledged = excluded.acknowledged
             """,
-            ("id", a.Id),
-            ("device", a.DeviceId),
-            ("host", a.HostName),
-            ("type", a.Type),
-            ("key", a.ObjectKey),
-            ("summary", a.Summary),
-            ("state", a.State),
-            ("sequence", a.LastSequence),
-            ("first", a.FirstSeen),
-            ("last", a.LastSeen),
-            ("ack", a.Acknowledged)
+            [
+                ("id", a.Id),
+                ("device", a.DeviceId),
+                ("host", a.HostName),
+                ("type", a.Type),
+                ("key", a.ObjectKey),
+                ("summary", a.Summary),
+                ("state", a.State),
+                ("sequence", a.LastSequence),
+                ("first", a.FirstSeen),
+                ("last", a.LastSeen),
+                ("ack", a.Acknowledged),
+                .. extra,
+            ]
         );
+
+    /// <summary>Active alerts not pushed yet, oldest first, with the note of their device.</summary>
+    public Task<List<(AlertSummary Alert, string Note)>> PendingNotifications(int limit) =>
+        Query(
+            $"""
+            SELECT {string.Join(", ", AlertColumns.Split(", ").Select(c => "a." + c))}, COALESCE(d.note, '')
+            FROM alerts a LEFT JOIN devices d ON d.id = a.device_id
+            WHERE a.notified = 0 AND a.state = 'Active'
+            ORDER BY a.first_seen, a.id LIMIT @limit
+            """,
+            r => (ReadAlert(r), r.GetString(11)),
+            ("limit", (long)limit)
+        );
+
+    public async Task MarkNotified(IEnumerable<string> ids)
+    {
+        foreach (var id in ids)
+            await Execute("UPDATE alerts SET notified = 1 WHERE id = @id", ("id", id));
+    }
 
     public Task AcknowledgeAlert(string id) => Execute("UPDATE alerts SET acknowledged = 1 WHERE id = @id", ("id", id));
 
@@ -521,6 +592,14 @@ public sealed class Transaction
             ("actor", a.Actor),
             ("action", a.Action),
             ("target", a.Target)
+        );
+
+    /// <summary>Deletes at most <paramref name="limit"/> audit records from before <paramref name="cutoff"/>.</summary>
+    public Task<int> PruneAudit(DateTimeOffset cutoff, int limit) =>
+        Execute(
+            "DELETE FROM audit WHERE id IN (SELECT id FROM audit WHERE at < @cutoff LIMIT @limit)",
+            ("cutoff", cutoff),
+            ("limit", (long)limit)
         );
 
     public Task<List<AuditRecord>> RecentAudit(int limit) =>

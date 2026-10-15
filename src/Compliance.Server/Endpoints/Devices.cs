@@ -1,3 +1,4 @@
+using System.Text;
 using Compliance.Core;
 
 namespace Compliance.Server;
@@ -20,6 +21,22 @@ static partial class Endpoints
                     await s.UpdateOffline(tx);
                     return (await s.Summaries(tx)).OrderBy(d => d.HostName).ToArray();
                 });
+            }
+        );
+
+        group.MapGet(
+            "/export.csv",
+            async (HttpContext c) =>
+            {
+                var u = Require(c, "Reader");
+                var rows = await s.Tx(async tx =>
+                {
+                    await s.UpdateOffline(tx);
+                    var list = await s.Export(tx);
+                    await tx.Audit(u.Username, "ExportDevices", $"{list.Count} 台", s.Now);
+                    return list;
+                });
+                return Results.Text(DeviceCsv(rows), "text/csv; charset=utf-8");
             }
         );
 
@@ -117,5 +134,63 @@ static partial class Endpoints
                 });
             }
         );
+    }
+
+    /// <summary>
+    /// The device list for Excel: UTF-8 with a byte order mark, every field quoted, and fields that start like a
+    /// formula prefixed with an apostrophe so a host name or note cannot run as one.
+    /// </summary>
+    static string DeviceCsv(List<(DeviceSummary Device, string[] Reasons)> rows)
+    {
+        static string Field(string value)
+        {
+            if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
+                value = "'" + value;
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        }
+        static string Time(DateTimeOffset? t) => t is { } v ? v.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "";
+
+        var b = new StringBuilder("\uFEFF");
+        void Line(IEnumerable<string> fields) => b.Append(string.Join(",", fields.Select(Field))).Append("\r\n");
+        Line([
+            "计算机名",
+            "备注",
+            "在线状态",
+            "当前结论",
+            "违规对象数",
+            "检查说明",
+            "防护状态",
+            "策略",
+            "目标策略版本",
+            "已应用策略版本",
+            "客户端版本",
+            "客户端需升级",
+            "最近心跳",
+            "最近检查",
+            "数据来源",
+            "设备 ID",
+        ]);
+        foreach (var (d, reasons) in rows.OrderBy(r => r.Device.HostName, StringComparer.CurrentCultureIgnoreCase))
+            Line([
+                d.HostName,
+                d.Note,
+                Labels.Online(d.OnlineState),
+                Labels.Verdict(d.CurrentVerdict),
+                d.ViolationCount.ToString(),
+                string.Join("；", reasons),
+                d.ProtectionStatus,
+                d.PolicyName,
+                "v" + d.TargetPolicyVersion,
+                d.AppliedPolicyVersion > 0 ? "v" + d.AppliedPolicyVersion : "",
+                d.AgentVersion,
+                Labels.YesNo(d.AgentOutdated),
+                Time(d.LastHeartbeat),
+                Time(d.LastScan),
+                d.LastScan == null ? ""
+                : d.Simulated ? "模拟数据"
+                : "实机采集",
+                d.Id,
+            ]);
+        return b.ToString();
     }
 }

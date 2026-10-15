@@ -79,6 +79,12 @@ export const auditActionLabel = lookup({
   Offline: "终端失联",
   OnlineRecovered: "终端恢复在线",
   SnapshotRecovered: "检查结果恢复",
+  ChangePassword: "修改密码",
+  SetNotifications: "修改告警推送设置",
+  TestNotification: "发送测试推送",
+  SetAuditRetention: "修改审计记录保留期限",
+  PruneAudit: "清理过期审计记录",
+  ExportDevices: "导出终端列表",
 });
 
 export const categoryLabel = lookup({

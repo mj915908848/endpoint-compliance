@@ -79,4 +79,33 @@ public static class Labels
         };
 
     public static string YesNo(bool value) => value ? "是" : "否";
+
+    public static string Verdict(Verdict verdict) =>
+        verdict switch
+        {
+            Core.Verdict.PASS => "通过",
+            Core.Verdict.FAIL => "不通过",
+            _ => "无法判断",
+        };
+
+    public static string Online(string state) =>
+        state switch
+        {
+            "Online" => "在线",
+            "SuspectedOffline" => "疑似失联",
+            "Offline" => "失联",
+            _ => state,
+        };
+
+    public static string AlertType(string type) =>
+        type switch
+        {
+            "Violation" => "确认违规",
+            "BlockedAttempt" => "已拦截",
+            "Health" => "设备健康",
+            "Offline" => "设备失联",
+            "Clue" => "待核查线索",
+            "SensitiveFile" => "敏感文件",
+            _ => type,
+        };
 }

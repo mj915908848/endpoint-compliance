@@ -2,6 +2,10 @@ namespace Compliance.Server;
 
 static partial class Endpoints
 {
+    const int MinPasswordLength = 12;
+
+    sealed record PasswordRequest(string? CurrentPassword, string? NewPassword);
+
     static void MapAuth(IEndpointRouteBuilder routes, ComplianceService s, Settings settings)
     {
         var group = routes.MapGroup("/api");
@@ -91,6 +95,38 @@ static partial class Endpoints
                 };
             }
         );
+
+        group
+            .MapPost(
+                "/auth/password",
+                async (HttpContext c) =>
+                {
+                    var user = (UserRecord)c.Items["user"]!;
+                    var r = await Body<PasswordRequest>(c);
+                    if (r.CurrentPassword == null || r.NewPassword == null || r.NewPassword.Length > 1024)
+                        throw new ApiError(400, "Invalid request");
+                    if (r.NewPassword.Length < MinPasswordLength)
+                        throw new ApiError(400, $"新密码至少 {MinPasswordLength} 位");
+                    if (r.NewPassword == r.CurrentPassword)
+                        throw new ApiError(400, "新密码不能与当前密码相同");
+                    var signedOut = await s.Tx(async tx =>
+                    {
+                        // 400 rather than 401, which would sign the administrator out of the page.
+                        var stored = await tx.GetUser(user.Username);
+                        if (stored == null || !Secrets.Check(r.CurrentPassword, stored.PasswordHash))
+                            throw new ApiError(400, "当前密码不正确");
+                        await tx.SetPassword(user.Username, Secrets.Password(r.NewPassword));
+                        var others = await tx.DeleteOtherSessions(
+                            user.Username,
+                            Secrets.Hash(c.Request.Cookies["compliance-session"]!)
+                        );
+                        await tx.Audit(user.Username, "ChangePassword", user.Username, s.Now);
+                        return others;
+                    });
+                    return new { ok = true, signedOut };
+                }
+            )
+            .RequireRateLimiting("login");
 
         group.MapPost(
             "/auth/logout",

@@ -51,18 +51,26 @@ export async function request<T>(
   }
   return payload as T;
 }
-export async function downloadReport(deviceId: string): Promise<void> {
-  const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/report.md`, {
+export function downloadReport(deviceId: string): Promise<void> {
+  return downloadFile(
+    `/api/devices/${encodeURIComponent(deviceId)}/report.md`,
+    `终端报告-${deviceId.replace(/[^a-zA-Z0-9_-]/g, "_")}.md`,
+    "报告",
+  );
+}
+export async function downloadFile(path: string, name: string, what = "文件"): Promise<void> {
+  const response = await fetch(path, {
     credentials: "same-origin",
   }).catch(() => {
     throw new Error("无法连接管理端，请检查内网服务状态");
   });
-  if (!response.ok) throw new HttpError(`报告下载失败（HTTP ${response.status}）`, response.status);
+  if (!response.ok)
+    throw new HttpError(`${what}下载失败（HTTP ${response.status}）`, response.status);
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `终端报告-${deviceId.replace(/[^a-zA-Z0-9_-]/g, "_")}.md`;
+  anchor.download = name;
   document.body.append(anchor);
   anchor.click();
   anchor.remove();

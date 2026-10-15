@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { Button, Input, Select, Space } from "antd";
+import { App, Button, Input, Select, Space } from "antd";
+import { DownloadOutlined } from "@ant-design/icons";
+import { downloadFile } from "../api";
 import { useResource, useRefresh } from "../useResource";
-import { DeviceTable, Fresh, PageHeading, Panel, UpdatedAt } from "../components";
+import { DeviceTable, errorText, Fresh, PageHeading, Panel, UpdatedAt } from "../components";
 import type { DeviceSummary } from "../types";
 
 export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
   const refresh = useRefresh();
+  const { message } = App.useApp();
   const [query, setQuery] = useState(""),
-    [filter, setFilter] = useState("all");
+    [filter, setFilter] = useState("all"),
+    [exporting, setExporting] = useState(false);
   const data = useResource<DeviceSummary[]>("/api/devices");
   const visible = (data.data ?? []).filter(
     (d) =>
@@ -17,13 +21,32 @@ export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
           : d.onlineState === "Online" && d.currentVerdict === filter)) &&
       `${d.hostName} ${d.note ?? ""} ${d.id}`.toLowerCase().includes(query.toLowerCase()),
   );
+  async function exportList() {
+    setExporting(true);
+    try {
+      const d = new Date();
+      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+      await downloadFile("/api/devices/export.csv", `终端列表-${stamp}.csv`, "终端列表");
+    } catch (e) {
+      void message.error(errorText(e));
+    } finally {
+      setExporting(false);
+    }
+  }
   return (
     <>
       <PageHeading
         title="终端设备"
         description="查看每台终端的当前结论、在线状态、证据和检查报告。"
         extra={<UpdatedAt at={data.updatedAt} refreshing={data.refreshing} />}
-        action={<Button onClick={refresh}>刷新</Button>}
+        action={
+          <Space>
+            <Button icon={<DownloadOutlined />} loading={exporting} onClick={exportList}>
+              导出 Excel
+            </Button>
+            <Button onClick={refresh}>刷新</Button>
+          </Space>
+        }
       />
       <Panel
         title={`设备清单（${visible.length}）`}

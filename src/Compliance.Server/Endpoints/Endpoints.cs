@@ -5,7 +5,7 @@ namespace Compliance.Server;
 /// <summary>HTTP endpoints, one file per area under <c>Endpoints/</c>.</summary>
 static partial class Endpoints
 {
-    public static void Map(WebApplication app, ComplianceService s, Settings settings)
+    public static void Map(WebApplication app, ComplianceService s, Settings settings, AlertNotifier notifier)
     {
         MapAuth(app, s, settings);
         MapAudit(app, s);
@@ -14,6 +14,7 @@ static partial class Endpoints
         MapEnrollment(app, s);
         MapPolicies(app, s);
         MapAgent(app, s);
+        MapSettings(app, s, notifier);
     }
 
     static UserRecord Require(HttpContext c, string role)

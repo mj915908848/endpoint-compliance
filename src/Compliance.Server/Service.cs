@@ -322,6 +322,19 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         return list;
     }
 
+    /// <summary>Every device evaluated now, with the reasons behind its verdict, for the exported device list.</summary>
+    public async Task<List<(DeviceSummary Device, string[] Reasons)>> Export(Transaction tx)
+    {
+        var rows = new List<(DeviceSummary, string[])>();
+        foreach (var head in await tx.AllDeviceHeads())
+            if (await tx.GetDevice(head.Id) is { } d)
+            {
+                var v = await Evaluate(tx, d);
+                rows.Add((Summary(d, v), v.Report?.Reasons ?? []));
+            }
+        return rows;
+    }
+
     public static readonly TimeSpan SnapshotEventRetention = TimeSpan.FromDays(1);
     public static readonly TimeSpan ExpiredCommandRetention = TimeSpan.FromDays(30);
     const int PruneBatch = 2000;
@@ -329,7 +342,8 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     /// <summary>
     /// Removes what nothing reads any more, in short batches: snapshot events after a day (their rows only answer
     /// retries, which come within minutes), other events after <see cref="Settings.EventRetentionDays"/>, expired
-    /// sessions, and commands expired for 30 days. Returns how many rows went.
+    /// sessions, commands expired for 30 days, and audit records older than the period chosen in the settings
+    /// page (kept forever by default; the removal itself is audited). Returns how many rows went.
     /// </summary>
     public async Task<int> Maintain(CancellationToken ct = default)
     {
@@ -350,8 +364,34 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         );
         total += await Tx(tx => tx.PruneSessions(Now));
         total += await Tx(tx => tx.PruneCommands(Now - ExpiredCommandRetention));
+        var days = await Tx(AuditRetentionDays);
+        if (days > 0)
+        {
+            var before = total;
+            var cutoff = Now - TimeSpan.FromDays(days);
+            await Repeat(tx => tx.PruneAudit(cutoff, PruneBatch));
+            if (total > before)
+                await Tx(async tx =>
+                {
+                    await tx.Audit(
+                        "system",
+                        "PruneAudit",
+                        $"{total - before} 条，{cutoff.ToLocalTime():yyyy-MM-dd HH:mm} 之前",
+                        Now
+                    );
+                    return true;
+                });
+        }
         return total;
     }
+
+    public const string AuditRetentionKey = "audit-retention-days";
+
+    /// <summary>Kept forever (0) unless an administrator chose a period; at least 180 days, as logs must be kept.</summary>
+    public static readonly int[] AuditRetentionChoices = [0, 180, 365, 730, 1095];
+
+    public static async Task<int> AuditRetentionDays(Transaction tx) =>
+        int.TryParse(await tx.GetSetting(AuditRetentionKey), out var days) ? days : 0;
 
     /// <summary>
     /// Opens an offline alert for devices silent for 5 minutes and resolves it once they are Online again.

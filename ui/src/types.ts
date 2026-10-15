@@ -165,6 +165,21 @@ export interface Audit {
   target: string;
   at: string;
 }
+export interface NotificationSettings {
+  enabled: boolean;
+  channel: string;
+  webhookUrl: string;
+  hasSecret: boolean;
+  types: string[];
+  consoleUrl: string;
+}
+export interface AppSettings {
+  notifications: NotificationSettings;
+  /** The last push attempt since the server started. */
+  lastNotification: { at: string; ok: boolean; error: string; sent: number } | null;
+  /** 0 keeps audit records forever. */
+  auditRetentionDays: number;
+}
 export interface Status {
   version?: string;
   mode: string;
