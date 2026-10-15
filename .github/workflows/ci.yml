@@ -33,9 +33,18 @@ jobs:
       docker: ${{ steps.f.outputs.docker == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # On main every push may be released, and a newer push cancels this run: compare with the last
+      # release, not the previous push, so a release is never cut from changes whose jobs were skipped.
+      - name: 上次发布
+        id: base
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: echo "ref=$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null)" >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@v3
         id: f
         with:
+          base: ${{ steps.base.outputs.ref }}
           filters: |
             all:
               - .github/**
