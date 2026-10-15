@@ -16,3 +16,4 @@ artifacts/
 *.tsbuildinfo
 /deploy/docker/certs/
 /deploy/docker/backups/
+__pycache__/
