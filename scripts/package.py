@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build the Windows packages: a client package for production installs and, with --trial, the full trial package.
 
-The version is VERSION plus the number of commits, e.g. 0.1.152, so every build of a commit gets the same number.
-Writes artifacts/终端合规-<version>-Windows客户端.zip (and -Windows试用包.zip) and prints the version.
+Releases pass --version; without it the build is the next release number with a -dev suffix.
+Writes artifacts/compliance-client-<version>-windows.zip (and compliance-trial-<version>-windows.zip).
 """
 from __future__ import annotations
 
@@ -18,9 +18,12 @@ ARTIFACTS = ROOT / "artifacts"
 DOTNET = os.environ.get("DOTNET", shutil.which("dotnet") or str(Path.home() / ".dotnet" / "dotnet"))
 
 
-def version() -> str:
-    count = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], cwd=ROOT, text=True).strip()
-    return f"{(ROOT / 'VERSION').read_text().strip()}.{count}"
+def next_version() -> str:
+    """VERSION plus one more than the highest released patch number: 0.2.0, 0.2.1, ..."""
+    base = (ROOT / "VERSION").read_text().strip()
+    tags = subprocess.check_output(["git", "tag", "--list", f"v{base}.*"], cwd=ROOT, text=True).split()
+    patches = [int(t.rsplit(".", 1)[1]) for t in tags if t.rsplit(".", 1)[1].isdigit()]
+    return f"{base}.{max(patches, default=-1) + 1}"
 
 
 def publish(project: str, output: Path, ver: str, single_file: bool) -> None:
@@ -60,9 +63,10 @@ def stage_client(stage: Path, published: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--version", help="release version; defaults to the next one with a -dev suffix")
     parser.add_argument("--trial", action="store_true", help="also build the full trial package with the Windows server")
     args = parser.parse_args()
-    ver = version()
+    ver = args.version or next_version() + "-dev"
     published = ARTIFACTS / "publish"
     shutil.rmtree(published, ignore_errors=True)
     publish("Compliance.Agent", published / "agent", ver, True)
@@ -74,7 +78,7 @@ def main() -> None:
     for name in ("安装客户端（正式环境）.bat", "卸载常驻客户端.bat"):
         copy(ROOT / "deploy" / "windows" / name, stage / name)
     copy(ROOT / "deploy" / "windows" / "客户端安装说明.md", stage / "安装说明.md")
-    make_zip(stage, ARTIFACTS / f"终端合规-{ver}-Windows客户端.zip")
+    make_zip(stage, ARTIFACTS / f"compliance-client-{ver}-windows.zip")
 
     if args.trial:
         subprocess.run(["npm", "run", "build"], cwd=ROOT / "ui", check=True, stdout=subprocess.DEVNULL)
@@ -89,10 +93,9 @@ def main() -> None:
         for name in ("README.md", "docs/capabilities.md", "docs/server-api.md"):
             copy(ROOT / name, stage / name)
         copy(ROOT / "deploy" / "server" / "试用说明.md", stage / "使用说明.md")
-        make_zip(stage, ARTIFACTS / f"终端合规-{ver}-Windows试用包.zip")
+        make_zip(stage, ARTIFACTS / f"compliance-trial-{ver}-windows.zip")
 
     shutil.rmtree(stage)
-    print(ver)
 
 
 if __name__ == "__main__":

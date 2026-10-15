@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <!-- Release builds pass -p:Version=<VERSION>.<commit count>; see scripts/package.py. -->
+    <!-- Release builds pass -p:Version; see scripts/package.py. -->
     <Version>0.0.0-dev</Version>
   </PropertyGroup>
 </Project>

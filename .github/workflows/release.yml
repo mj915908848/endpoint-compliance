@@ -1,6 +1,6 @@
 name: Release
 
-# After CI passes on main, publishes a GitHub release v<VERSION>.<commit count> with the Windows client
+# After CI passes on main, publishes a GitHub release v<VERSION>.<n> (n counts up from 0) with the Windows client
 # package and the management server's Docker image (docker load -i).
 on:
   workflow_run:
@@ -36,9 +36,9 @@ jobs:
       - name: 版本号
         id: v
         run: |
-          v="$(cat VERSION).$(git rev-list --count HEAD)"
+          if [ -n "$(git tag --points-at HEAD --list 'v*')" ]; then echo "exists=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          v=$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import package; print(package.next_version())')
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          if git rev-parse -q --verify "refs/tags/v$v" > /dev/null; then echo "exists=true" >> "$GITHUB_OUTPUT"; fi
           echo "版本 $v"
       - uses: actions/setup-dotnet@v5
         if: steps.v.outputs.exists != 'true'
@@ -48,7 +48,7 @@ jobs:
           cache-dependency-path: "**/packages.lock.json"
       - name: Windows 客户端包
         if: steps.v.outputs.exists != 'true'
-        run: python3 scripts/package.py
+        run: python3 scripts/package.py --version ${{ steps.v.outputs.version }}
       - name: Docker 镜像
         if: steps.v.outputs.exists != 'true'
         run: |
@@ -70,8 +70,5 @@ jobs:
             echo "- 管理端：下载 \`compliance-server-$v.tar.gz\`，在服务器上先 \`./backup.sh\`，再 \`docker load -i compliance-server-$v.tar.gz && docker compose up -d\`。"
             echo "- 客户端：解压 \`compliance-client-$v-windows.zip\`，在已安装的电脑上双击“安装客户端（正式环境）.bat”，选“1 仅更新程序”。"
           } > notes.md
-          # GitHub drops non-ASCII characters from asset file names, so the client package gets an ASCII name.
-          cp "artifacts/终端合规-$v-Windows客户端.zip" "artifacts/compliance-client-$v-windows.zip"
           gh release create "v$v" --target "$(git rev-parse HEAD)" --title "$v" --notes-file notes.md \
-            "artifacts/compliance-client-$v-windows.zip#Windows 客户端 $v" \
-            "artifacts/compliance-server-$v.tar.gz#管理端 Docker 镜像 $v"
+            "artifacts/compliance-client-$v-windows.zip" "artifacts/compliance-server-$v.tar.gz"
