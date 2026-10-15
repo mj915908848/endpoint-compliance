@@ -65,7 +65,7 @@ export const defaultSensitiveFiles: SensitiveFilePolicy = {
 const sensitiveOf = (p: Policy) => p.sensitiveFiles ?? defaultSensitiveFiles;
 export const sensitiveActionLabel = (action: string) =>
   action === "Violation" ? "判定违规" : "只告警";
-const categories = ["proxy", "ai", "ide_ai"];
+const categories = ["proxy", "vpn", "ai", "ide_ai"];
 
 /** The part of a policy an administrator edits; the server assigns version and validity on publish. */
 const content = ({ schemaVersion, version, issuedAt, expiresAt, ...rest }: Policy) => rest;

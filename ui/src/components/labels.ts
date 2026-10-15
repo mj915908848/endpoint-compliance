@@ -90,6 +90,7 @@ export const auditActionLabel = lookup({
 
 export const categoryLabel = lookup({
   proxy: "代理工具",
+  vpn: "VPN",
   ai: "AI 应用",
   ide_ai: "编程助手",
 });

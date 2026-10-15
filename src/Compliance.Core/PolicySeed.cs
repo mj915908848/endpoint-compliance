@@ -28,6 +28,8 @@ public static class PolicySeed
                     "Clash Meta",
                     "FlClash",
                     "Clash Nyanpasu",
+                    "Mihomo Party",
+                    "GUI.for.Clash",
                 ],
                 [
                     "clash.exe",
@@ -38,17 +40,31 @@ public static class PolicySeed
                     "Clash for Windows.exe",
                     "FlClash.exe",
                     "clash-nyanpasu.exe",
+                    "mihomo-party.exe",
+                    "GUI.for.Clash.exe",
                 ]
             ) with
             {
                 AdapterNames = ["Mihomo", "Meta Tunnel", "Clash"],
             },
             R("surge", "Surge", "proxy", ["Surge"], ["surge.exe"]),
-            R("sing-box", "sing-box", "proxy", ["sing-box"], ["sing-box.exe"]) with
+            R(
+                "sing-box",
+                "sing-box / Karing",
+                "proxy",
+                ["sing-box", "Karing", "GUI.for.SingBox"],
+                ["sing-box.exe", "karing.exe", "GUI.for.SingBox.exe"]
+            ) with
             {
                 AdapterNames = ["sing-tun", "singbox"],
             },
-            R("shadowsocks", "Shadowsocks", "proxy", ["Shadowsocks"], ["Shadowsocks.exe"]),
+            R(
+                "shadowsocks",
+                "Shadowsocks / ShadowsocksR",
+                "proxy",
+                ["Shadowsocks", "ShadowsocksR"],
+                ["Shadowsocks.exe", "ShadowsocksR.exe", "ShadowsocksR-dotnet4.0.exe", "ShadowsocksR-dotnet2.0.exe"]
+            ),
             R("hiddify", "Hiddify", "proxy", ["Hiddify"], ["Hiddify.exe", "HiddifyCli.exe"]) with
             {
                 AdapterNames = ["Hiddify"],
@@ -57,8 +73,137 @@ public static class PolicySeed
                 "v2ray",
                 "V2Ray / Xray / v2rayN",
                 "proxy",
-                ["v2rayN", "V2Ray", "Xray", "Nekoray", "Nekobox"],
-                ["v2ray.exe", "xray.exe", "v2rayN.exe", "nekoray.exe", "nekobox.exe"]
+                ["v2rayN", "V2Ray", "Xray", "Nekoray", "Nekobox", "Throne", "Qv2ray", "v2rayA"],
+                [
+                    "v2ray.exe",
+                    "xray.exe",
+                    "v2rayN.exe",
+                    "nekoray.exe",
+                    "nekobox.exe",
+                    "Throne.exe",
+                    "qv2ray.exe",
+                    "v2raya.exe",
+                ]
+            ),
+            R("trojan", "Trojan", "proxy", ["Trojan-Qt5", "Trojan"], ["trojan.exe", "trojan-qt5.exe"]),
+            R("netch", "Netch", "proxy", ["Netch"], ["Netch.exe"]),
+            R(
+                "psiphon",
+                "Psiphon",
+                "proxy",
+                ["Psiphon", "Psiphon 3"],
+                ["psiphon3.exe"],
+                domains: ["psiphon.ca", "psiphon3.com"]
+            ),
+            R("lantern", "Lantern", "proxy", ["Lantern"], ["lantern.exe"], domains: ["getlantern.org"]),
+            R("tor", "Tor Browser", "proxy", ["Tor Browser"], ["tor.exe"], domains: ["torproject.org"]),
+            R(
+                "outline",
+                "Outline",
+                "proxy",
+                ["Outline", "Outline Client"],
+                ["Outline.exe"],
+                domains: ["getoutline.org"]
+            ),
+            R("letsvpn", "快连 LetsVPN", "vpn", ["LetsVPN", "快连", "快连VPN"], ["LetsPRO.exe", "LetsVPN.exe"]),
+            R("astrill", "Astrill VPN", "vpn", ["Astrill", "Astrill VPN"], ["astrill.exe"], domains: ["astrill.com"]),
+            R(
+                "expressvpn",
+                "ExpressVPN",
+                "vpn",
+                ["ExpressVPN"],
+                ["ExpressVPN.exe", "expressvpnd.exe", "ExpressVpnService.exe"],
+                domains: ["expressvpn.com"]
+            ) with
+            {
+                AdapterNames = ["ExpressVPN"],
+            },
+            R(
+                "nordvpn",
+                "NordVPN",
+                "vpn",
+                ["NordVPN"],
+                ["NordVPN.exe", "nordvpn-service.exe"],
+                domains: ["nordvpn.com"]
+            ) with
+            {
+                AdapterNames = ["NordLynx", "NordVPN"],
+            },
+            R(
+                "surfshark",
+                "Surfshark",
+                "vpn",
+                ["Surfshark"],
+                ["Surfshark.exe", "Surfshark.Service.exe"],
+                domains: ["surfshark.com"]
+            ) with
+            {
+                AdapterNames = ["Surfshark"],
+            },
+            R(
+                "protonvpn",
+                "Proton VPN",
+                "vpn",
+                ["Proton VPN", "ProtonVPN"],
+                ["ProtonVPN.exe", "ProtonVPN.Client.exe", "ProtonVPNService.exe"],
+                domains: ["protonvpn.com"]
+            ) with
+            {
+                AdapterNames = ["ProtonVPN"],
+            },
+            R(
+                "windscribe",
+                "Windscribe",
+                "vpn",
+                ["Windscribe"],
+                ["Windscribe.exe", "WindscribeService.exe"],
+                domains: ["windscribe.com"]
+            ) with
+            {
+                AdapterNames = ["Windscribe"],
+            },
+            R(
+                "pia",
+                "Private Internet Access",
+                "vpn",
+                ["Private Internet Access"],
+                ["pia-client.exe", "pia-service.exe"],
+                domains: ["privateinternetaccess.com"]
+            ),
+            R(
+                "cyberghost",
+                "CyberGhost VPN",
+                "vpn",
+                ["CyberGhost", "CyberGhost VPN"],
+                ["CyberGhost.exe", "CyberGhost.Service.exe"],
+                domains: ["cyberghostvpn.com"]
+            ),
+            R(
+                "mullvad",
+                "Mullvad VPN",
+                "vpn",
+                ["Mullvad VPN"],
+                ["Mullvad VPN.exe", "mullvad-daemon.exe"],
+                domains: ["mullvad.net"]
+            ) with
+            {
+                AdapterNames = ["Mullvad"],
+            },
+            R(
+                "hotspot-shield",
+                "Hotspot Shield",
+                "vpn",
+                ["Hotspot Shield"],
+                ["hsscp.exe", "hsssrv.exe"],
+                domains: ["hotspotshield.com"]
+            ),
+            R(
+                "tunnelbear",
+                "TunnelBear",
+                "vpn",
+                ["TunnelBear"],
+                ["TunnelBear.exe", "TunnelBear.Maintenance.exe"],
+                domains: ["tunnelbear.com"]
             ),
             R(
                 "chatgpt",
