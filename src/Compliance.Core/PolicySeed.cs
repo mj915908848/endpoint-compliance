@@ -68,7 +68,10 @@ public static class PolicySeed
                 ["ChatGPT.exe"],
                 ["OpenAI.ChatGPT", "OpenAI.ChatGPT-Desktop"],
                 domains: ["chatgpt.com", "openai.com"]
-            ),
+            ) with
+            {
+                BrowserExtensions = ["ChatGPT search"],
+            },
             R(
                 "claude",
                 "Claude / Claude Code",
@@ -77,7 +80,11 @@ public static class PolicySeed
                 ["Claude.exe", "claude.exe"],
                 ["Anthropic.Claude"],
                 domains: ["claude.ai", "anthropic.com"]
-            ),
+            ) with
+            {
+                BrowserExtensions = ["Claude"],
+                NpmPackages = ["@anthropic-ai/claude-code"],
+            },
             R(
                 "codex",
                 "OpenAI Codex",
@@ -86,7 +93,10 @@ public static class PolicySeed
                 ["Codex.exe", "codex.exe"],
                 ["OpenAI.Codex"],
                 ["openai.chatgpt"]
-            ),
+            ) with
+            {
+                NpmPackages = ["@openai/codex"],
+            },
             R(
                 "cursor",
                 "Cursor",
@@ -120,7 +130,10 @@ public static class PolicySeed
                 ["Gemini"],
                 ["gemini.exe"],
                 domains: ["gemini.google.com", "aistudio.google.com"]
-            ),
+            ) with
+            {
+                NpmPackages = ["@google/gemini-cli"],
+            },
             R("perplexity", "Perplexity", "ai", ["Perplexity"], ["Perplexity.exe"], domains: ["perplexity.ai"]),
             R("grok", "Grok", "ai", ["Grok"], ["grok.exe"], domains: ["grok.com", "x.ai"]),
             R("poe", "Poe", "ai", ["Poe"], ["poe.exe"], domains: ["poe.com"]),

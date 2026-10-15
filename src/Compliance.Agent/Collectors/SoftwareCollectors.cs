@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -37,7 +38,7 @@ internal sealed class InstalledCollector : ICollector
                     continue;
                 foreach (
                     var rule in context.Policy.Products.Where(r =>
-                        r.DisplayNames.Any(d => string.Equals(d, name, StringComparison.OrdinalIgnoreCase))
+                        r.DisplayNames.Any(d => WindowsCollector.NameMatches(name, d))
                     )
                 )
                     evidence.Add(
@@ -125,7 +126,72 @@ internal sealed class InstallPathsCollector : ICollector
     }
 }
 
-/// <summary>VS Code family and JetBrains extensions in each user's profile.</summary>
+/// <summary>
+/// Program files of known products anywhere on each fixed NTFS drive, found by name in the drive's file table: catches
+/// portable and unzipped copies that never registered an install. Drives that are not NTFS are left out.
+/// </summary>
+[SupportedOSPlatform("windows")]
+internal sealed class ProgramFilesCollector : ICollector
+{
+    private const int Limit = 50;
+
+    public string Module => "programs";
+    public bool Inventory => true;
+    public TimeSpan Timeout => TimeSpan.FromMinutes(2);
+
+    public IEnumerable<CollectorScope> Scopes(ScanContext context)
+    {
+        if (!context.Policy.Products.Any(r => r.ExecutableNames.Length > 0))
+            return [];
+        var scopes = new List<CollectorScope>();
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            try
+            {
+                if (drive.DriveType == DriveType.Fixed && drive.IsReady && drive.DriveFormat == "NTFS")
+                    scopes.Add(new(SensitiveFiles.DriveScope(drive.Name[0])));
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return scopes;
+    }
+
+    public Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct)
+    {
+        var names = context
+            .Policy.Products.SelectMany(r => r.ExecutableNames)
+            .Where(n => n.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        using var index =
+            NtfsVolume.TryOpen(scope.Scope[^1] + @":\") ?? throw new IOException("无法读取该分区的文件表");
+        var found = new List<Evidence>();
+        foreach (var path in WindowsCollector.FindProgramFiles(index, names, Limit, ct))
+        {
+            ct.ThrowIfCancellationRequested();
+            string? product = null,
+                description = null;
+            try
+            {
+                var info = FileVersionInfo.GetVersionInfo(path);
+                (product, description) = (info.ProductName, info.FileDescription);
+            }
+            // Unreadable version information leaves the file judged by its name alone; a deleted one is dropped.
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (!File.Exists(path))
+                    continue;
+            }
+            found.AddRange(
+                WindowsCollector.ProgramFileEvidence(path, product, description, context.Policy, context.Profiles)
+            );
+        }
+        evidence.AddRange(found.DistinctBy(e => e.ProductId + "\n" + e.ObjectKey));
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>VS Code family and JetBrains extensions, and Chromium and Firefox browser extensions, in each user's profile.</summary>
 [SupportedOSPlatform("windows")]
 internal sealed class ExtensionsCollector : ICollector
 {
@@ -186,12 +252,49 @@ internal sealed class ExtensionsCollector : ICollector
                 }
             }
         }
-        var total = extensions.Errors + failed.Count;
+        var browsers = new List<string>();
+        var local = Path.Combine(p.Path, "AppData", "Local");
+        var roaming = Path.Combine(p.Path, "AppData", "Roaming");
+        foreach (
+            var (userData, browser) in WindowsCollector
+                .ChromiumUserData.Select(b => (Path.Combine(local, b.Path), b.Browser))
+                .Append((Path.Combine(roaming, "Opera Software", "Opera Stable"), "Opera"))
+        )
+        {
+            ct.ThrowIfCancellationRequested();
+            var result = WindowsCollector.ScanChromiumExtensions(userData, browser, p.Sid, context.Policy);
+            evidence.AddRange(result.Evidence);
+            browsers.AddRange(result.Failed);
+        }
+        var firefox = Path.Combine(roaming, "Mozilla", "Firefox", "Profiles");
+        if (WindowsCollector.DirectoryPresent(firefox))
+            foreach (var profile in Directory.EnumerateDirectories(firefox))
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    evidence.AddRange(
+                        WindowsCollector.ScanFirefoxExtensions(
+                            Path.Combine(profile, "extensions.json"),
+                            p.Sid,
+                            context.Policy
+                        )
+                    );
+                }
+                catch (Exception ex)
+                    when (ex is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException
+                    )
+                {
+                    browsers.Add("Firefox/" + Path.GetFileName(profile));
+                }
+            }
+        var total = extensions.Errors + failed.Count + browsers.Count;
         if (total > 0)
             throw new InvalidDataException(
                 $"{total} 个扩展清单无法读取"
                     + (extensions.Errors > 0 ? "，编辑器扩展：" + string.Join("、", extensions.Failed.Take(3)) : "")
                     + (failed.Count > 0 ? "，JetBrains 插件：" + string.Join("、", failed.Take(3)) : "")
+                    + (browsers.Count > 0 ? "，浏览器扩展：" + string.Join("、", browsers.Take(3)) : "")
             );
         return Task.CompletedTask;
     }
@@ -227,17 +330,13 @@ internal sealed class ExtensionsCollector : ICollector
     }
 }
 
-/// <summary>AI command-line tools installed through npm or as standalone binaries.</summary>
+/// <summary>
+/// Command-line tools installed through npm, pip, pipx or uv, or as standalone programs. Package names come from the
+/// policy's rules, so a new tool needs a rule rather than a new agent.
+/// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class CliCollector : ICollector
 {
-    private static readonly (string Folder, string Package, string ProductId)[] Packages =
-    [
-        (@"@anthropic-ai\claude-code", "@anthropic-ai/claude-code", "claude"),
-        (@"@openai\codex", "@openai/codex", "codex"),
-        (@"@google\gemini-cli", "@google/gemini-cli", "gemini"),
-    ];
-
     public string Module => "cli";
     public bool Inventory => true;
 
@@ -246,16 +345,16 @@ internal sealed class CliCollector : ICollector
 
     public Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct)
     {
+        var policy = context.Policy;
+        var found = new List<Evidence>();
         if (scope.Profile is not { } p)
         {
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var systemDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? @"C:\";
             foreach (
                 var root in new[]
                 {
-                    Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                        "nodejs",
-                        "node_modules"
-                    ),
+                    Path.Combine(programFiles, "nodejs", "node_modules"),
                     Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                         "npm",
@@ -263,62 +362,54 @@ internal sealed class CliCollector : ICollector
                     ),
                 }
             )
-                NpmPackages(root, null, context.Policy, evidence);
-            return Task.CompletedTask;
+                found.AddRange(WindowsCollector.ScanNpmRoot(root, null, policy));
+            if (policy.Products.Any(r => r.PipPackages.Length > 0))
+                foreach (
+                    var site in WindowsCollector
+                        .ExpandFolders(programFiles, "Python3*", "Lib", "site-packages")
+                        .Concat(WindowsCollector.ExpandFolders(systemDrive, "Python3*", "Lib", "site-packages"))
+                )
+                    found.AddRange(WindowsCollector.ScanSitePackages(site, null, policy));
         }
-        var npm = Path.Combine(p.Path, "AppData", "Roaming", "npm");
-        NpmPackages(Path.Combine(npm, "node_modules"), p.Sid, context.Policy, evidence);
-        foreach (var name in new[] { "claude.cmd", "codex.cmd", "gemini.cmd" })
-            if (WindowsCollector.FilePresent(Path.Combine(npm, name)))
-                evidence.Add(
-                    new(
-                        "cli-clue",
-                        "命令行启动脚本",
-                        EvidenceKind.Clue,
-                        "cli-shim:" + p.Sid + ":" + name,
-                        "npm 启动脚本",
-                        "仅文件名匹配：" + name,
-                        p.Sid,
-                        false
-                    )
-                );
-        evidence.AddRange(
-            WindowsCollector.ScanKnownCliBin(Path.Combine(p.Path, ".local", "bin"), p.Sid, context.Policy)
-        );
-        return Task.CompletedTask;
-    }
-
-    private static void NpmPackages(string root, string? sid, PolicyDocument policy, List<Evidence> evidence)
-    {
-        foreach (var (folder, package, productId) in Packages)
+        else
         {
-            var manifest = Path.Combine(root, folder, "package.json");
-            if (!WindowsCollector.FilePresent(manifest))
-                continue;
-            using var doc = JsonDocument.Parse(File.ReadAllText(manifest));
-            if (
-                !doc.RootElement.TryGetProperty("name", out var name)
-                || !string.Equals(name.GetString(), package, StringComparison.Ordinal)
-            )
-                continue;
-            var rule = policy.Products.FirstOrDefault(r => r.Id == productId);
-            if (rule is not null)
-                evidence.Add(
-                    new(
-                        rule.Id,
-                        rule.Name,
-                        EvidenceKind.Installation,
-                        "npm:" + (sid ?? "machine") + ":" + package,
-                        "npm 包清单",
-                        "npm 包名：" + package,
-                        sid,
-                        true
-                    )
+            var roaming = Path.Combine(p.Path, "AppData", "Roaming");
+            var local = Path.Combine(p.Path, "AppData", "Local");
+            var npm = Path.Combine(roaming, "npm");
+            found.AddRange(WindowsCollector.ScanNpmRoot(Path.Combine(npm, "node_modules"), p.Sid, policy));
+            foreach (var name in WindowsCollector.NpmShimNames(policy))
+                if (WindowsCollector.FilePresent(Path.Combine(npm, name)))
+                    found.Add(
+                        new(
+                            "cli-clue",
+                            "命令行启动脚本",
+                            EvidenceKind.Clue,
+                            "cli-shim:" + p.Sid + ":" + name,
+                            "npm 启动脚本",
+                            "仅文件名匹配：" + name,
+                            p.Sid,
+                            false
+                        )
+                    );
+            found.AddRange(WindowsCollector.ScanKnownCliBin(Path.Combine(p.Path, ".local", "bin"), p.Sid, policy));
+            if (policy.Products.Any(r => r.PipPackages.Length > 0))
+                foreach (
+                    var site in new[]
                     {
-                        CollectedAt = DateTimeOffset.UtcNow,
-                    }
-                );
+                        WindowsCollector.ExpandFolders(roaming, "Python", "Python3*", "site-packages"),
+                        WindowsCollector.ExpandFolders(local, "Programs", "Python", "Python3*", "Lib", "site-packages"),
+                        // pipx keeps one virtual environment per tool; its home moved between versions.
+                        WindowsCollector.ExpandFolders(p.Path, "pipx", "venvs", "*", "Lib", "site-packages"),
+                        WindowsCollector.ExpandFolders(p.Path, ".local", "pipx", "venvs", "*", "Lib", "site-packages"),
+                        WindowsCollector.ExpandFolders(local, "pipx", "pipx", "venvs", "*", "Lib", "site-packages"),
+                        WindowsCollector.ExpandFolders(roaming, "uv", "tools", "*", "Lib", "site-packages"),
+                    }.SelectMany(x => x)
+                )
+                    found.AddRange(WindowsCollector.ScanSitePackages(site, p.Sid, policy));
         }
+        // The same package can sit in several environments; one finding per package is enough.
+        evidence.AddRange(found.DistinctBy(e => e.ProductId + "\n" + e.ObjectKey));
+        return Task.CompletedTask;
     }
 }
 

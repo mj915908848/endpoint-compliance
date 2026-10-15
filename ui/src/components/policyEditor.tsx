@@ -43,6 +43,7 @@ export const modules = [
   "ports",
   "users",
   "cli",
+  "programs",
 ];
 const controls = ["process", "browser"];
 /** Earlier policies named measures that were never implemented; show them as the ones that replaced them. */
@@ -824,6 +825,9 @@ const emptyProduct: Product = {
   domains: [],
   displayNames: [],
   adapterNames: [],
+  browserExtensions: [],
+  npmPackages: [],
+  pipPackages: [],
 };
 
 function ProductTable({
@@ -851,7 +855,9 @@ function ProductTable({
       ["安装名称", p.displayNames?.length ?? 0],
       ["程序", p.executableNames.length],
       ["应用包", p.packageIds.length],
-      ["扩展", p.extensionIds.length],
+      ["编辑器扩展", p.extensionIds.length],
+      ["浏览器扩展", p.browserExtensions?.length ?? 0],
+      ["命令行包", (p.npmPackages?.length ?? 0) + (p.pipPackages?.length ?? 0)],
       ["网卡", p.adapterNames?.length ?? 0],
       ["域名", p.domains.length],
     ].filter(([, n]) => n) as [string, number][];
@@ -985,13 +991,13 @@ const listFields: { name: keyof Product; label: string; hint: string; placeholde
   {
     name: "displayNames",
     label: "安装名称",
-    hint: "“应用和功能”里显示的名称，完全一致才算命中。",
+    hint: "“应用和功能”里显示的名称或安装目录名，不区分大小写；名称后面带版本号或 x64 等架构字样也算命中。",
     placeholder: "例如 Clash Verge",
   },
   {
     name: "executableNames",
     label: "程序文件名",
-    hint: "安装目录或运行进程中的 exe 文件名，不区分大小写。",
+    hint: "安装目录、运行进程或全盘搜索到的 exe 文件名，不区分大小写。全盘搜到的文件需要文件信息里的产品名与安装名称一致才确认，否则作为线索。",
     placeholder: "例如 clash-verge.exe",
   },
   {
@@ -1005,6 +1011,24 @@ const listFields: { name: keyof Product; label: string; hint: string; placeholde
     label: "编辑器扩展",
     hint: "VS Code 扩展 ID（发布者.名称）或 JetBrains 插件 ID。",
     placeholder: "例如 github.copilot",
+  },
+  {
+    name: "browserExtensions",
+    label: "浏览器扩展",
+    hint: "Chrome、Edge 等浏览器扩展的 ID（32 位字母），Firefox 扩展 ID，或浏览器里显示的扩展名称。",
+    placeholder: "例如 Claude",
+  },
+  {
+    name: "npmPackages",
+    label: "npm 包名",
+    hint: "全局安装的 npm 包名。",
+    placeholder: "例如 @openai/codex",
+  },
+  {
+    name: "pipPackages",
+    label: "Python 包名",
+    hint: "用 pip、pipx 或 uv 安装的 Python 包名。",
+    placeholder: "例如 aider-chat",
   },
   {
     name: "adapterNames",

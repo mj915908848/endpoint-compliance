@@ -95,6 +95,9 @@ public static class PolicyCrypto
                 || r.Domains is null
                 || r.DisplayNames is null
                 || r.AdapterNames is null
+                || r.BrowserExtensions is null
+                || r.NpmPackages is null
+                || r.PipPackages is null
                 || r.AdapterNames.Any(n => string.IsNullOrWhiteSpace(n) || n.Length > 64)
             )
             || doc.Products.Select(r => r.Id).Distinct().Count() != doc.Products.Length

@@ -13,11 +13,12 @@ public static class Labels
             "proxy" => "系统代理",
             "proxy-env" => "代理环境变量",
             "proxy-advanced" => "代理高级设置",
-            "extensions" => "编辑器扩展",
+            "extensions" => "编辑器与浏览器扩展",
             "appx" => "应用商店应用",
             "ports" => "端口与网络接口",
             "users" => "用户账户",
             "cli" => "命令行工具",
+            "programs" => "全盘程序文件",
             SensitiveFiles.Module => "敏感文件",
             _ => module,
         };
@@ -46,7 +47,7 @@ public static class Labels
         {
             EvidenceKind.Installation => "安装记录",
             EvidenceKind.Process => "运行进程",
-            EvidenceKind.Extension => "编辑器扩展",
+            EvidenceKind.Extension => "扩展",
             EvidenceKind.Proxy => "代理设置",
             EvidenceKind.Clue => "待核查线索",
             EvidenceKind.BlockedAttempt => "拦截记录",

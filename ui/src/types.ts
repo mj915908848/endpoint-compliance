@@ -107,6 +107,9 @@ export interface Product {
   domains: string[];
   displayNames?: string[];
   adapterNames?: string[];
+  browserExtensions?: string[];
+  npmPackages?: string[];
+  pipPackages?: string[];
 }
 export interface Policy {
   schemaVersion: number;

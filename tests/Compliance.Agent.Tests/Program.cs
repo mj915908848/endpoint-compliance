@@ -842,6 +842,264 @@ await Check(
     }
 );
 await Check(
+    "installed names may carry versions and architectures but not other words",
+    () =>
+    {
+        foreach (
+            var name in new[]
+            {
+                "Clash Verge",
+                "clash verge 2.0.3 (x64)",
+                "Clash Verge_2.0.3_x64",
+                "Clash Verge v1.7.7 64-bit",
+                "Clash Verge (User)",
+                "Clash Verge 2.0.0-beta.2",
+            }
+        )
+            Assert(WindowsCollector.NameMatches(name, "Clash Verge"), name + " did not match");
+        foreach (
+            var (name, rule) in new[]
+            {
+                ("Zed Attack Proxy", "Zed"),
+                ("Clash Verge Rev", "Clash Verge"),
+                ("Cursors", "Cursor"),
+            }
+        )
+            Assert(!WindowsCollector.NameMatches(name, rule), name + " matched " + rule);
+        return Task.CompletedTask;
+    }
+);
+await Check(
+    "install folders with a version suffix are recognised",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-install-" + Guid.NewGuid());
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "v2rayN-6.42-windows-64"));
+            await File.WriteAllTextAsync(Path.Combine(root, "v2rayN-6.42-windows-64", "v2rayN.exe"), "");
+            var matches = WindowsCollector.ScanKnownInstallRoot(root, null, PolicySeed.Create());
+            Assert(matches.Length == 1 && matches[0].ProductId == "v2ray", "versioned install folder was missed");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+await Check(
+    "npm and Python packages come from the rules, with the old built-in npm list for older policies",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-pkg-" + Guid.NewGuid());
+        try
+        {
+            void Package(string name)
+            {
+                var dir = Path.Combine([root, "node_modules", .. name.Split('/')]);
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "package.json"), $$"""{"name": "{{name}}", "version": "1.0.0"}""");
+            }
+            Package("@openai/codex");
+            Package("opencode-ai");
+            var seed = PolicySeed.Create();
+            var policy = seed with
+            {
+                Products =
+                [
+                    .. seed.Products.Select(r => r.Id == "codex" ? r with { NpmPackages = [] } : r),
+                    new ProductRule("opencode", "OpenCode", "ai", [], ["opencode.exe"], [], [])
+                    {
+                        NpmPackages = ["opencode-ai"],
+                        PipPackages = ["Aider_Chat"],
+                    },
+                ],
+            };
+            var npm = WindowsCollector.ScanNpmRoot(Path.Combine(root, "node_modules"), "S-1-5-21-1-2-3-1001", policy);
+            Assert(
+                npm.Select(e => e.ProductId).Order().SequenceEqual(["codex", "opencode"]) && npm.All(e => e.Confirmed),
+                "npm packages: " + string.Join(",", npm.Select(e => e.ProductId))
+            );
+            Assert(
+                WindowsCollector.NpmShimNames(policy).Contains("opencode.cmd")
+                    && WindowsCollector.NpmShimNames(policy).Contains("claude.cmd"),
+                "npm launchers were not derived from the rules"
+            );
+
+            var site = Path.Combine(root, "site-packages");
+            Directory.CreateDirectory(Path.Combine(site, "aider_chat-0.86.1.dist-info"));
+            Directory.CreateDirectory(Path.Combine(site, "requests-2.32.0.dist-info"));
+            var pip = WindowsCollector.ScanSitePackages(site, null, policy);
+            Assert(
+                pip.Length == 1 && pip[0].ProductId == "opencode",
+                "Python package was not matched by normalized name"
+            );
+            Assert(
+                WindowsCollector.ScanSitePackages(site, null, seed).Length == 0,
+                "seed rules name no Python packages"
+            );
+
+            Directory.CreateDirectory(Path.Combine(root, "Python", "Python312", "site-packages"));
+            Directory.CreateDirectory(Path.Combine(root, "Python", "Other", "site-packages"));
+            var found = WindowsCollector.ExpandFolders(root, "Python", "Python3*", "site-packages").ToArray();
+            Assert(found.Length == 1 && found[0].Contains("Python312"), "wildcard folders were not expanded");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+await Check(
+    "browser extensions match rules by id or translated name, and unknown proxy extensions are clues",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-browser-" + Guid.NewGuid());
+        try
+        {
+            void Extension(string profile, string id, string manifest, string? messages = null)
+            {
+                var dir = Path.Combine(root, profile, "Extensions", id, "1.0.0_0");
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "manifest.json"), manifest);
+                if (messages is not null)
+                {
+                    Directory.CreateDirectory(Path.Combine(dir, "_locales", "en"));
+                    File.WriteAllText(Path.Combine(dir, "_locales", "en", "messages.json"), messages);
+                }
+            }
+            var claude = new string('a', 32);
+            var proxy = new string('b', 32);
+            var other = new string('c', 32);
+            var byId = new string('d', 32);
+            Extension(
+                "Default",
+                claude,
+                """{"name": "__MSG_appName__", "default_locale": "en", "permissions": ["tabs"]}""",
+                """{"APPNAME": {"message": "Claude"}}"""
+            );
+            Extension("Profile 1", proxy, """{"name": "SwitchyOmega", "permissions": ["proxy", "storage"],}""");
+            Extension("Profile 1", other, """{"name": "uBlock Origin", "permissions": ["storage"]}""");
+            Extension("Profile 1", byId, """{"name": "Something", "permissions": []}""");
+            Extension("Profile 2", "Temp", "{}");
+            var seed = PolicySeed.Create();
+            var policy = seed with
+            {
+                Products =
+                [
+                    .. seed.Products,
+                    new ProductRule("by-id", "By id", "ai", [], [], [], [])
+                    {
+                        BrowserExtensions = [byId.ToUpperInvariant()],
+                    },
+                ],
+            };
+            var (found, failed) = WindowsCollector.ScanChromiumExtensions(
+                root,
+                "Chrome",
+                "S-1-5-21-1-2-3-1001",
+                policy
+            );
+            Assert(failed.Length == 0, "failed: " + string.Join(",", failed));
+            Assert(
+                found.Any(e => e.ProductId == "claude" && e.Kind == EvidenceKind.Extension && e.Confirmed)
+                    && found.Any(e => e.ProductId == "by-id" && e.Confirmed)
+                    && found.Any(e =>
+                        e.ProductId == "browser-proxy-clue" && !e.Confirmed && e.Summary.Contains("SwitchyOmega")
+                    )
+                    && found.Length == 3,
+                "browser findings: " + string.Join(",", found.Select(e => e.ProductId))
+            );
+
+            Extension("Default", new string('e', 32), "{ not json");
+            (_, failed) = WindowsCollector.ScanChromiumExtensions(root, "Edge", "S-1-5-21-1-2-3-1001", policy);
+            Assert(failed.Length == 1 && failed[0].StartsWith("Edge/"), "unreadable manifest was not reported");
+
+            var firefox = Path.Combine(root, "extensions.json");
+            await File.WriteAllTextAsync(
+                firefox,
+                """
+                {"addons": [
+                  {"id": "claude@anthropic.com", "type": "extension", "location": "app-profile",
+                   "defaultLocale": {"name": "Claude"}, "userPermissions": {"permissions": ["tabs"]}},
+                  {"id": "foxyproxy@eric.h.jung", "type": "extension", "location": "app-profile",
+                   "defaultLocale": {"name": "FoxyProxy"}, "userPermissions": {"permissions": ["proxy"]}},
+                  {"id": "builtin@mozilla.org", "type": "extension", "location": "app-builtin",
+                   "defaultLocale": {"name": "Claude"}, "userPermissions": {"permissions": ["proxy"]}},
+                  {"id": "zh@dictionaries", "type": "dictionary", "location": "app-profile",
+                   "defaultLocale": {"name": "Claude"}}
+                ]}
+                """
+            );
+            var fox = WindowsCollector.ScanFirefoxExtensions(firefox, "S-1-5-21-1-2-3-1001", policy);
+            Assert(
+                fox.Length == 2
+                    && fox.Any(e => e.ProductId == "claude" && e.ObjectKey.EndsWith("Firefox:claude@anthropic.com"))
+                    && fox.Any(e => e.ProductId == "browser-proxy-clue"),
+                "firefox findings: " + string.Join(",", fox.Select(e => e.ObjectKey))
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+await Check(
+    "program files are found anywhere on a drive and confirmed only by their version information",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-programs-" + Guid.NewGuid());
+        try
+        {
+            var user = Path.Combine(root, "Users", "alice");
+            foreach (
+                var dir in new[]
+                {
+                    Path.Combine(user, "Downloads", "v2rayN-windows-64"),
+                    Path.Combine(root, "$Recycle.Bin", "S-1"),
+                    Path.Combine(root, "Tools"),
+                }
+            )
+                Directory.CreateDirectory(dir);
+            await File.WriteAllTextAsync(Path.Combine(user, "Downloads", "v2rayN-windows-64", "v2rayN.exe"), "");
+            await File.WriteAllTextAsync(Path.Combine(root, "$Recycle.Bin", "S-1", "v2rayN.exe"), "");
+            await File.WriteAllTextAsync(Path.Combine(root, "Tools", "xray.exe"), "");
+            await File.WriteAllTextAsync(Path.Combine(root, "Tools", "notes.txt"), "");
+            var policy = PolicySeed.Create();
+            var names = policy.Products.SelectMany(r => r.ExecutableNames).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var paths = WindowsCollector.FindProgramFiles(new FakeVolume(root), names, 50, CancellationToken.None);
+            Assert(
+                paths.Count == 2 && paths.All(p => !p.Contains("$Recycle.Bin")),
+                "program files: " + string.Join(",", paths)
+            );
+            var downloaded = paths.Single(p => p.EndsWith("v2rayN.exe"));
+            Profile[] profiles = [new("S-1-5-21-1-2-3-1001", user, true, true)];
+            var confirmed = WindowsCollector
+                .ProgramFileEvidence(downloaded, "v2rayN", "v2rayN", policy, profiles)
+                .Single();
+            Assert(
+                confirmed.ProductId == "v2ray"
+                    && confirmed.Confirmed
+                    && confirmed.Kind == EvidenceKind.Installation
+                    && confirmed.UserSid == "S-1-5-21-1-2-3-1001",
+                "named program file was not a confirmed installation of its user"
+            );
+            var clue = WindowsCollector
+                .ProgramFileEvidence(paths.Single(p => p.EndsWith("xray.exe")), null, null, policy, profiles)
+                .Single();
+            Assert(
+                clue.Kind == EvidenceKind.Clue && !clue.Confirmed && clue.UserSid is null,
+                "program file without version information was not a machine clue"
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+await Check(
     "persistent machine proxy variable is detected without recording its value",
     async () =>
     {

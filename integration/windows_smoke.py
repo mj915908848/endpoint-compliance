@@ -6,7 +6,7 @@ real scan, and checks that the registry, PackageManager, socket-table, account l
 produced complete modules and the expected evidence. Runs on Windows only (CI uses windows-latest); it
 changes the current user's proxy setting and restores it, and removes the planted files.
 """
-import argparse, http.cookiejar, json, os, pathlib, secrets, socket, subprocess, sys, time, urllib.request
+import argparse, http.cookiejar, json, os, pathlib, secrets, shutil, socket, subprocess, sys, time, urllib.request
 import winreg
 
 # The runner console is cp1252; agent and server logs are UTF-8 Chinese.
@@ -103,6 +103,11 @@ SECRET_CONTENT = "content-must-not-upload-" + secrets.token_hex(8)
 # One hit in the user's profile and one folder hit on the drive holding the checkout (D: on CI runners).
 profile_hit = pathlib.Path.home() / f"{KEYWORD}-名单.txt"
 drive_hit = data.resolve() / f"{KEYWORD}-资料"
+# A portable proxy program unpacked outside any install folder, and a browser extension that may set the proxy.
+TOKEN = secrets.token_hex(4)
+program_dir = data.resolve() / f"portable-{TOKEN}"
+extension_id = "".join("abcdefghijklmnop"[b % 16] for b in secrets.token_bytes(32))
+extension_profile = pathlib.Path.home() / "AppData/Local/Google/Chrome/User Data" / f"Smoke{TOKEN}"
 planted = []
 
 server_log = (data / "server.log").open("w")
@@ -150,6 +155,17 @@ try:
     drive_hit.mkdir()
     planted.append(drive_hit)
     (drive_hit / f"{KEYWORD}-内部.txt").write_text(SECRET_CONTENT, encoding="utf-8")
+    program_dir.mkdir()
+    planted.append(program_dir)
+    (program_dir / "xray.exe").write_bytes(b"MZ")
+    # Remove the outermost folder this creates, in case the runner has no Chrome profile.
+    created = extension_profile
+    while not created.parent.exists():
+        created = created.parent
+    planted.append(created)
+    manifest = extension_profile / "Extensions" / extension_id / "1.0.0_0" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"name": f"Smoke Proxy {TOKEN}", "permissions": ["proxy"]}), encoding="utf-8")
 
     # Known state for the collectors to find: this process listens on a proxy port, and the user's
     # system proxy points at it.
@@ -188,7 +204,8 @@ try:
     # unloaded hive or missing profile folder. Anything else that is not Complete is a collector failure.
     expected_gaps = ("注册表未加载", "用户目录不可用")
     failures = []
-    for module in ("installed", "services", "processes", "proxy", "ports", "users", "appx", "extensions"):
+    for module in ("installed", "services", "processes", "proxy", "ports", "users", "appx", "extensions", "cli",
+                   "programs"):
         results = by_module.get(module, [])
         if not any(m["status"] == "Complete" for m in results):
             failures.append(f"{module}: no complete result")
@@ -206,6 +223,15 @@ try:
     assert proxy, "User proxy from the registry was not reported"
     assert "python" in proxy[0]["summary"].lower(), f"Proxy not attributed to its listener: {proxy[0]['summary']}"
     print("PASS planted listener and user proxy found and attributed to their owning process")
+
+    program = [e for e in evidence if e["productId"] == "program-clue"
+               and e["objectKey"].endswith(f"portable-{TOKEN}\\xray.exe".lower())]
+    assert program and not program[0]["confirmed"], \
+        f"Portable program without version information was not a clue: {program}"
+    browser = [e for e in evidence if e["productId"] == "browser-proxy-clue" and extension_id in e["objectKey"]]
+    assert browser and f"Smoke Proxy {TOKEN}" in browser[0]["summary"], \
+        f"Chrome extension with the proxy permission was not reported: {browser}"
+    print("PASS portable program found through the file table and proxy browser extension reported as clues")
 
     users = snapshot.get("users") or []
     assert users and all(u["name"] and not u["name"].startswith("S-1-") for u in users), \
@@ -379,9 +405,7 @@ finally:
     for path in planted:
         try:
             if path.is_dir():
-                for child in path.iterdir():
-                    child.unlink()
-                path.rmdir()
+                shutil.rmtree(path)
             else:
                 path.unlink()
         except OSError as e:

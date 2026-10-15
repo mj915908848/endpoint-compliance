@@ -145,6 +145,326 @@ public sealed partial class WindowsCollector
         return (found.ToArray(), failed.Count, failed.ToArray());
     }
 
+    /// <summary>Chromium browsers' "User Data" folders under AppData\Local, with the name shown in findings.</summary>
+    public static readonly (string Path, string Browser)[] ChromiumUserData =
+    [
+        (@"Google\Chrome\User Data", "Chrome"),
+        (@"Google\Chrome Beta\User Data", "Chrome Beta"),
+        (@"Microsoft\Edge\User Data", "Edge"),
+        (@"BraveSoftware\Brave-Browser\User Data", "Brave"),
+        (@"Vivaldi\User Data", "Vivaldi"),
+        (@"Chromium\User Data", "Chromium"),
+        (@"360Chrome\Chrome\User Data", "360 极速浏览器"),
+        (@"360ChromeX\Chrome\User Data", "360 极速浏览器 X"),
+        (@"Tencent\QQBrowser\User Data", "QQ 浏览器"),
+    ];
+
+    private const string BrowserSource = "浏览器扩展清单";
+
+    /// <summary>
+    /// Extensions of every profile in a Chromium "User Data" folder (or a single profile folder, as Opera keeps):
+    /// Extensions\&lt;id&gt;\&lt;version&gt;\manifest.json. A rule matches the id or the extension's name; an
+    /// extension no rule names that may set the browser's proxy is a clue.
+    /// </summary>
+    public static (Evidence[] Evidence, string[] Failed) ScanChromiumExtensions(
+        string userData,
+        string browser,
+        string sid,
+        PolicyDocument policy
+    )
+    {
+        if (!DirectoryPresent(userData))
+            return ([], []);
+        var found = new List<Evidence>();
+        var failed = new List<string>();
+        var profiles = DirectoryPresent(Path.Combine(userData, "Extensions"))
+            ? [userData]
+            : Directory.EnumerateDirectories(userData).Where(d => DirectoryPresent(Path.Combine(d, "Extensions")));
+        foreach (var profile in profiles)
+        foreach (var extension in Directory.EnumerateDirectories(Path.Combine(profile, "Extensions")))
+        {
+            var id = Path.GetFileName(extension);
+            if (!Regex.IsMatch(id, "^[a-p]{32}$"))
+                continue;
+            foreach (var version in Directory.EnumerateDirectories(extension))
+            {
+                var manifest = Path.Combine(version, "manifest.json");
+                if (!FilePresent(manifest))
+                    continue;
+                try
+                {
+                    var (name, permissions) = ReadChromiumManifest(version);
+                    found.AddRange(BrowserExtensionEvidence(browser, sid, id, name, permissions, policy));
+                }
+                catch (Exception ex)
+                    when (ex is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException
+                    )
+                {
+                    failed.Add($"{browser}/{id}（{ManifestFailure(ex, manifest)}）");
+                }
+            }
+        }
+        return (found.DistinctBy(e => e.ProductId + "\n" + e.ObjectKey).ToArray(), failed.ToArray());
+    }
+
+    /// <summary>An extension's name, with "__MSG_x__" looked up in its _locales, and the permissions it asks for.</summary>
+    public static (string Name, string[] Permissions) ReadChromiumManifest(string folder)
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "manifest.json")), ManifestOptions);
+        var root = doc.RootElement;
+        var name = root.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString()! : "";
+        var match = Regex.Match(name, "^__MSG_(.+)__$");
+        if (match.Success)
+        {
+            var locale =
+                root.TryGetProperty("default_locale", out var l) && l.ValueKind == JsonValueKind.String
+                    ? l.GetString()!
+                    : "en";
+            name = LocalizedMessage(folder, [locale, "en", "en_US", "zh_CN"], match.Groups[1].Value) ?? name;
+        }
+        var permissions = new List<string>();
+        foreach (var key in new[] { "permissions", "optional_permissions" })
+            if (root.TryGetProperty(key, out var list) && list.ValueKind == JsonValueKind.Array)
+                permissions.AddRange(
+                    list.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!)
+                );
+        return (name, permissions.ToArray());
+    }
+
+    private static string? LocalizedMessage(string folder, string[] locales, string key)
+    {
+        foreach (var locale in locales.Distinct())
+        {
+            var file = Path.Combine(folder, "_locales", locale, "messages.json");
+            if (!FilePresent(file))
+                continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(file), ManifestOptions);
+                foreach (var entry in doc.RootElement.EnumerateObject())
+                    if (
+                        string.Equals(entry.Name, key, StringComparison.OrdinalIgnoreCase)
+                        && entry.Value.ValueKind == JsonValueKind.Object
+                        && entry.Value.TryGetProperty("message", out var message)
+                        && message.ValueKind == JsonValueKind.String
+                    )
+                        return message.GetString();
+            }
+            // A broken translation leaves the placeholder name; the id still identifies the extension.
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException or IOException) { }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Firefox extensions of one profile from its extensions.json. Add-ons that ship with Firefox ("app-builtin" and
+    /// "app-system-*" locations) are skipped.
+    /// </summary>
+    public static Evidence[] ScanFirefoxExtensions(string extensionsJson, string sid, PolicyDocument policy)
+    {
+        if (!FilePresent(extensionsJson))
+            return [];
+        using var doc = JsonDocument.Parse(File.ReadAllText(extensionsJson), ManifestOptions);
+        if (!doc.RootElement.TryGetProperty("addons", out var addons) || addons.ValueKind != JsonValueKind.Array)
+            throw new JsonException("extensions.json has no add-on list");
+        var found = new List<Evidence>();
+        foreach (var addon in addons.EnumerateArray())
+        {
+            string? Text(JsonElement e, string key) =>
+                e.ValueKind == JsonValueKind.Object
+                && e.TryGetProperty(key, out var v)
+                && v.ValueKind == JsonValueKind.String
+                    ? v.GetString()
+                    : null;
+            var id = Text(addon, "id");
+            var location = Text(addon, "location") ?? "";
+            if (
+                id is null
+                || Text(addon, "type") != "extension"
+                || location == "app-builtin"
+                || location.StartsWith("app-system", StringComparison.Ordinal)
+            )
+                continue;
+            var name = addon.TryGetProperty("defaultLocale", out var locale) ? Text(locale, "name") ?? "" : "";
+            var permissions =
+                addon.TryGetProperty("userPermissions", out var user)
+                && user.ValueKind == JsonValueKind.Object
+                && user.TryGetProperty("permissions", out var list)
+                && list.ValueKind == JsonValueKind.Array
+                    ? list.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String)
+                        .Select(x => x.GetString()!)
+                        .ToArray()
+                    : [];
+            found.AddRange(BrowserExtensionEvidence("Firefox", sid, id, name, permissions, policy));
+        }
+        return found.ToArray();
+    }
+
+    private static IEnumerable<Evidence> BrowserExtensionEvidence(
+        string browser,
+        string sid,
+        string id,
+        string name,
+        string[] permissions,
+        PolicyDocument policy
+    )
+    {
+        var key = "browser:" + sid + ":" + browser + ":" + id;
+        var label = name.Length > 0 ? $"「{(name.Length > 100 ? name[..100] + "…" : name)}」" : "";
+        var matched = policy
+            .Products.Where(r =>
+                r.BrowserExtensions.Any(x =>
+                    string.Equals(x.Trim(), id, StringComparison.OrdinalIgnoreCase)
+                    || name.Length > 0 && NameMatches(name, x)
+                )
+            )
+            .ToArray();
+        foreach (var rule in matched)
+            yield return new(
+                rule.Id,
+                rule.Name,
+                EvidenceKind.Extension,
+                key,
+                BrowserSource,
+                $"{browser} 扩展{label}，ID：{id}",
+                sid
+            );
+        if (matched.Length == 0 && permissions.Contains("proxy", StringComparer.OrdinalIgnoreCase))
+            yield return new(
+                "browser-proxy-clue",
+                "浏览器代理扩展",
+                EvidenceKind.Clue,
+                key,
+                BrowserSource,
+                $"{browser} 扩展{label}可以修改浏览器代理，ID：{id}",
+                sid,
+                false
+            );
+    }
+
+    /// <summary>
+    /// Files anywhere on a volume whose name is one of <paramref name="names"/>, read from the volume's file records
+    /// in one pass. The recycle bin and System Volume Information are skipped. At most <paramref name="limit"/> paths
+    /// are returned, in path order.
+    /// </summary>
+    public static List<string> FindProgramFiles(
+        IVolumeIndex index,
+        IReadOnlySet<string> names,
+        int limit,
+        CancellationToken ct
+    )
+    {
+        var folders = new Dictionary<ulong, (ulong Parent, string Name)>();
+        var candidates = new List<VolumeEntry>();
+        foreach (var entry in index.Entries(ct))
+        {
+            if (entry.Id == index.RootId)
+                continue;
+            if (entry.IsDirectory)
+                folders[entry.Id] = (entry.ParentId, entry.Name);
+            else if (names.Contains(entry.Name))
+                candidates.Add(entry);
+        }
+        var paths = new List<string>();
+        foreach (var candidate in candidates)
+        {
+            var parts = new List<string> { candidate.Name };
+            var id = candidate.ParentId;
+            while (id != index.RootId && folders.TryGetValue(id, out var folder) && parts.Count < 4096)
+            {
+                parts.Add(folder.Name);
+                id = folder.Parent;
+            }
+            // Records still being written leave the name unplaced.
+            if (id != index.RootId)
+                continue;
+            parts.Reverse();
+            if (parts[0] is "$Recycle.Bin" or "System Volume Information")
+                continue;
+            paths.Add(Path.Join([index.Root, .. parts]));
+        }
+        return paths.Order(StringComparer.OrdinalIgnoreCase).Take(limit).ToList();
+    }
+
+    /// <summary>
+    /// A program file found on disk: confirmed when its version information names the product, otherwise a clue,
+    /// since a file name alone can be shared by unrelated programs. The finding belongs to the user whose profile
+    /// holds the file.
+    /// </summary>
+    public static IEnumerable<Evidence> ProgramFileEvidence(
+        string path,
+        string? productName,
+        string? description,
+        PolicyDocument policy,
+        IReadOnlyList<Profile> profiles
+    )
+    {
+        var file = Path.GetFileName(path);
+        // Alert details have a size limit; the end of a very long path says the most.
+        var shown = path.Length > 300 ? "…" + path[^300..] : path;
+        var owner = profiles
+            .Where(p =>
+                p.Path.Length > 0
+                && path.StartsWith(
+                    p.Path.TrimEnd('\\', '/') + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .MaxBy(p => p.Path.Length)
+            ?.Sid;
+        var labels = new[] { productName, description }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!);
+        foreach (
+            var rule in policy.Products.Where(r => r.ExecutableNames.Contains(file, StringComparer.OrdinalIgnoreCase))
+        )
+        {
+            var named = labels.FirstOrDefault(l => rule.DisplayNames.Append(rule.Name).Any(n => NameMatches(l, n)));
+            yield return named is not null
+                ? new Evidence(
+                    rule.Id,
+                    rule.Name,
+                    EvidenceKind.Installation,
+                    "program:" + path.ToLowerInvariant(),
+                    "全盘程序文件",
+                    $"{shown}（文件信息：{named}）",
+                    owner
+                )
+                {
+                    CollectedAt = DateTimeOffset.UtcNow,
+                }
+                : new Evidence(
+                    "program-clue",
+                    "同名程序文件",
+                    EvidenceKind.Clue,
+                    "program:" + path.ToLowerInvariant(),
+                    "全盘程序文件",
+                    $"{shown} 与 {rule.Name} 的程序同名，文件信息未能确认",
+                    owner,
+                    false
+                );
+        }
+    }
+
+    // What installers and archives append to a product's name: versions, architectures and edition markers.
+    private static readonly Regex NameSuffix = new(
+        @"^([\s_-]+\(?(v?\d+(\.\d+)*([-.]?(alpha|beta|rc|preview|stable)\.?\d*)?|x64|x86|amd64|arm64|win64|win32|windows|win|64-?bit|32-?bit|user|machine|portable)\)?)*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
+    );
+
+    /// <summary>
+    /// A name from Apps &amp; Features or an install folder equals a rule's name, ignoring case, or is the rule's name
+    /// followed only by versions or architectures: "Clash Verge 2.0.3 (x64)" and "Clash Verge_x64" match "Clash
+    /// Verge"; "Zed Attack Proxy" does not match "Zed".
+    /// </summary>
+    public static bool NameMatches(string candidate, string ruleName)
+    {
+        candidate = candidate.Trim();
+        ruleName = ruleName.Trim();
+        return ruleName.Length > 0
+            && candidate.StartsWith(ruleName, StringComparison.OrdinalIgnoreCase)
+            && NameSuffix.IsMatch(candidate[ruleName.Length..]);
+    }
+
     public static Evidence? MatchServiceRegistration(string serviceName, string? displayName, PolicyDocument policy)
     {
         var productId = serviceName.ToLowerInvariant() switch
@@ -178,11 +498,7 @@ public sealed partial class WindowsCollector
             if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0)
                 continue;
             var folder = Path.GetFileName(dir);
-            var matching = policy
-                .Products.Where(r =>
-                    r.DisplayNames.Any(n => string.Equals(n, folder, StringComparison.OrdinalIgnoreCase))
-                )
-                .ToArray();
+            var matching = policy.Products.Where(r => r.DisplayNames.Any(n => NameMatches(folder, n))).ToArray();
             if (matching.Length == 0)
                 continue;
             var executables = Directory
@@ -210,29 +526,159 @@ public sealed partial class WindowsCollector
         return found.ToArray();
     }
 
-    public static Evidence[] ScanKnownCliBin(string root, string sid, PolicyDocument policy)
+    // Policies published before rules carried npm package names; their command-line tools are still found.
+    private static readonly Dictionary<string, string> LegacyNpmPackages = new()
     {
+        ["claude"] = "@anthropic-ai/claude-code",
+        ["codex"] = "@openai/codex",
+        ["gemini"] = "@google/gemini-cli",
+    };
+
+    /// <summary>
+    /// npm packages to look for: each rule's own, or for the claude, codex and gemini rules of policies published
+    /// before rules named packages, the ones agents always knew.
+    /// </summary>
+    public static (string Package, ProductRule Rule)[] NpmTargets(PolicyDocument policy) =>
+        policy
+            .Products.SelectMany(r => (
+                    r.NpmPackages.Length > 0 ? r.NpmPackages
+                    : LegacyNpmPackages.TryGetValue(r.Id, out var legacy) ? [legacy]
+                    : []
+                ).Where(IsNpmPackageName).Select(p => (p.Trim().ToLowerInvariant(), r)))
+            .ToArray();
+
+    // "name" or "@scope/name"; nothing that could leave node_modules.
+    private static bool IsNpmPackageName(string name) =>
+        Regex.IsMatch(name.Trim(), @"^(@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*$", RegexOptions.IgnoreCase);
+
+    /// <summary>Global npm packages under a node_modules folder whose package.json names a rule's package.</summary>
+    public static Evidence[] ScanNpmRoot(string root, string? sid, PolicyDocument policy)
+    {
+        if (!DirectoryPresent(root))
+            return [];
         var found = new List<Evidence>();
-        foreach (var (file, id) in new[] { ("claude.exe", "claude"), ("codex.exe", "codex"), ("gemini.exe", "gemini") })
+        foreach (var (package, rule) in NpmTargets(policy))
         {
-            if (!FilePresent(Path.Combine(root, file)))
+            var manifest = Path.Combine([root, .. package.Split('/'), "package.json"]);
+            if (!FilePresent(manifest))
                 continue;
-            var rule = policy.Products.FirstOrDefault(r => r.Id == id);
-            if (rule is not null)
+            using var doc = JsonDocument.Parse(File.ReadAllText(manifest), ManifestOptions);
+            if (
+                !doc.RootElement.TryGetProperty("name", out var name)
+                || name.ValueKind != JsonValueKind.String
+                || !string.Equals(name.GetString(), package, StringComparison.OrdinalIgnoreCase)
+            )
+                continue;
+            found.Add(
+                new(
+                    rule.Id,
+                    rule.Name,
+                    EvidenceKind.Installation,
+                    "npm:" + (sid ?? "machine") + ":" + package,
+                    "npm 包清单",
+                    "npm 包名：" + package,
+                    sid,
+                    true
+                )
+            );
+        }
+        return found.ToArray();
+    }
+
+    /// <summary>The .cmd launchers npm creates for the programs of rules that name npm packages.</summary>
+    public static string[] NpmShimNames(PolicyDocument policy) =>
+        NpmTargets(policy)
+            .SelectMany(t => t.Rule.ExecutableNames)
+            .Where(n => n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            .Select(n => n[..^4].ToLowerInvariant() + ".cmd")
+            .Distinct()
+            .ToArray();
+
+    /// <summary>PEP 503 normalization: "Aider_Chat" and "aider.chat" are both "aider-chat".</summary>
+    public static string PipName(string name) => Regex.Replace(name.Trim(), @"[-_.]+", "-").ToLowerInvariant();
+
+    /// <summary>Python packages in a site-packages folder, read from their "name-version.dist-info" folder names.</summary>
+    public static Evidence[] ScanSitePackages(string sitePackages, string? sid, PolicyDocument policy)
+    {
+        var wanted = policy
+            .Products.SelectMany(r => r.PipPackages.Select(p => (Name: PipName(p), Rule: r)))
+            .Where(x => x.Name.Length > 0)
+            .ToArray();
+        if (wanted.Length == 0 || !DirectoryPresent(sitePackages))
+            return [];
+        var found = new List<Evidence>();
+        foreach (var dir in Directory.EnumerateDirectories(sitePackages, "*.dist-info"))
+        {
+            var folder = Path.GetFileName(dir);
+            var dash = folder.IndexOf('-');
+            if (dash <= 0)
+                continue;
+            var name = PipName(folder[..dash]);
+            foreach (var (_, rule) in wanted.Where(w => w.Name == name))
                 found.Add(
                     new(
                         rule.Id,
                         rule.Name,
                         EvidenceKind.Installation,
-                        "cli-file:" + sid + ":" + file,
-                        "用户命令行目录",
-                        "命令行程序：" + file,
-                        sid
+                        "pip:" + (sid ?? "machine") + ":" + name,
+                        "Python 包清单",
+                        "Python 包：" + name + "（" + sitePackages + "）",
+                        sid,
+                        true
                     )
-                    {
-                        CollectedAt = DateTimeOffset.UtcNow,
-                    }
                 );
+        }
+        return found.ToArray();
+    }
+
+    /// <summary>Folders matching a path whose segments may hold wildcards, e.g. ["Python", "Python3*", "site-packages"].</summary>
+    public static IEnumerable<string> ExpandFolders(string root, params string[] segments)
+    {
+        IEnumerable<string> current = DirectoryPresent(root) ? [root] : [];
+        foreach (var segment in segments)
+            current = current
+                .SelectMany(dir =>
+                    segment.Contains('*')
+                        ? Directory
+                            .EnumerateDirectories(dir, segment)
+                            .Where(d => (File.GetAttributes(d) & FileAttributes.ReparsePoint) == 0)
+                    : DirectoryPresent(Path.Combine(dir, segment)) ? [Path.Combine(dir, segment)]
+                    : []
+                )
+                .ToList();
+        return current;
+    }
+
+    /// <summary>Programs in a user's command-line folder (e.g. .local\bin) named by any rule.</summary>
+    public static Evidence[] ScanKnownCliBin(string root, string sid, PolicyDocument policy)
+    {
+        if (!DirectoryPresent(root))
+            return [];
+        var found = new List<Evidence>();
+        var files = Directory
+            .EnumerateFiles(root)
+            .Select(Path.GetFileName)
+            .OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var rule in policy.Products)
+        {
+            var file = rule.ExecutableNames.FirstOrDefault(files.Contains);
+            if (file is null)
+                continue;
+            found.Add(
+                new(
+                    rule.Id,
+                    rule.Name,
+                    EvidenceKind.Installation,
+                    "cli-file:" + sid + ":" + file.ToLowerInvariant(),
+                    "用户命令行目录",
+                    "命令行程序：" + file,
+                    sid
+                )
+                {
+                    CollectedAt = DateTimeOffset.UtcNow,
+                }
+            );
         }
         return found.ToArray();
     }
