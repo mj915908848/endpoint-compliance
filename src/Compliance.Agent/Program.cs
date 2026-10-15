@@ -72,7 +72,7 @@ public static class Program
             }
             if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
             {
-                AgentLog.Attach(NativeDataDirectory.EnsureLogs(data));
+                AgentLog.Attach(data);
                 Console.WriteLine($"客户端服务启动，服务器 {config.ServerUrl}");
             }
             if (aclRepaired)

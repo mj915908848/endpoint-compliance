@@ -26,7 +26,10 @@ public static class NativeDataDirectory
                 throw new UnauthorizedAccessException("Agent data path cannot include a reparse point");
         var directory = new DirectoryInfo(full);
         if (!directory.Exists)
-            directory.Create(Protected());
+        {
+            directory.Create();
+            directory.SetAccessControl(Protected());
+        }
         foreach (var file in directory.EnumerateFiles())
             if (file.Attributes.HasFlag(FileAttributes.ReparsePoint))
                 throw new UnauthorizedAccessException("Agent data file cannot be a reparse point");
@@ -114,86 +117,5 @@ public static class NativeDataDirectory
             )
                 return false;
         return true;
-    }
-
-    /// <summary>The service log's folder next to the data directory: C:\ProgramData\ComplianceAgentLogs.</summary>
-    public static string LogDirectory(string dataDirectory) =>
-        Path.TrimEndingDirectorySeparator(Path.GetFullPath(dataDirectory)) + "Logs";
-
-    /// <summary>
-    /// Creates the log folder, which everyone may read but only SYSTEM and Administrators may change, and moves the
-    /// log of earlier versions out of the data directory, so nobody opens the data directory to read it. A folder that
-    /// is not exactly so (a user may create it first under ProgramData, or plant a link the service would write
-    /// through) is deleted and created again: it only holds logs.
-    /// </summary>
-    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    public static string EnsureLogs(string dataDirectory)
-    {
-        var logs = new DirectoryInfo(LogDirectory(dataDirectory));
-        if (logs.Exists && !LogsSecure(logs))
-        {
-            // Removes a junction itself, without following it.
-            logs.Delete(true);
-            logs.Refresh();
-        }
-        if (!logs.Exists)
-            logs.Create(LogSecurity());
-        foreach (var name in new[] { "agent.log.1", "agent.log" })
-        {
-            var earlier = Path.Combine(dataDirectory, name);
-            if (!File.Exists(earlier))
-                continue;
-            // Copied rather than moved, so the file takes the log folder's permissions.
-            var target = Path.Combine(logs.FullName, name);
-            if (!File.Exists(target))
-                File.Copy(earlier, target);
-            File.Delete(earlier);
-        }
-        return logs.FullName;
-    }
-
-    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    private static DirectorySecurity LogSecurity()
-    {
-        var security = Protected();
-        security.AddAccessRule(
-            new FileSystemAccessRule(
-                new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
-                FileSystemRights.ReadAndExecute,
-                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-                PropagationFlags.None,
-                AccessControlType.Allow
-            )
-        );
-        return security;
-    }
-
-    private const FileSystemRights Changes =
-        FileSystemRights.Write
-        | FileSystemRights.Delete
-        | FileSystemRights.DeleteSubdirectoriesAndFiles
-        | FileSystemRights.ChangePermissions
-        | FileSystemRights.TakeOwnership;
-
-    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    private static bool LogsSecure(DirectoryInfo logs)
-    {
-        if (logs.Attributes.HasFlag(FileAttributes.ReparsePoint))
-            return false;
-        var acl = logs.GetAccessControl();
-        if (!acl.AreAccessRulesProtected || !TrustedOwner(acl))
-            return false;
-        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
-        var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-        foreach (FileSystemAccessRule rule in acl.GetAccessRules(true, true, typeof(SecurityIdentifier)))
-            if (
-                rule.AccessControlType == AccessControlType.Allow
-                && !Equals(rule.IdentityReference, system)
-                && !Equals(rule.IdentityReference, administrators)
-                && (rule.FileSystemRights & Changes) != 0
-            )
-                return false;
-        return logs.EnumerateFileSystemInfos()
-            .All(f => f is FileInfo && !f.Attributes.HasFlag(FileAttributes.ReparsePoint));
     }
 }
