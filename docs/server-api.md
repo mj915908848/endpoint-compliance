@@ -1,6 +1,6 @@
 # Server API v1
 
-JSON uses camelCase and string enums from `Compliance.Core.Wire`. All endpoints return JSON except `.md`; errors are `{error:string}`. Frontend receives no sample devices. Lists are bare arrays. `/api/status` exposes mode, storage provider, network capabilities and signing public key (no secrets).
+JSON uses camelCase and string enums from `Compliance.Core.Wire`. All endpoints return JSON except `.md`; errors are `{error:string}`. Frontend receives no sample devices. Lists are bare arrays. `/api/status` exposes the release version, mode, storage provider, network capabilities and signing public key (no secrets).
 
 Login POST `/api/auth/login` `{username,password}` returns `{username,roles:string[],csrfToken}` and an HttpOnly SameSite=Strict 8-hour cookie. `/api/me` returns same shape. All subsequent management writes require `X-CSRF-Token`. Logout POST `/api/auth/logout`. No built-in account or password; bootstrap supplied via environment. Roles: Reader reads; Operator acknowledges and requests scans/registration codes; Publisher edits and publishes policies; Reviewer is still accepted in bootstrap configuration but grants nothing. Every mutation is audited.
 
