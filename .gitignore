@@ -14,3 +14,5 @@ artifacts/
 /src/Compliance.Server/wwwroot/
 .DS_Store
 *.tsbuildinfo
+/deploy/docker/certs/
+/deploy/docker/backups/

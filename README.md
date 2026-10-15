@@ -107,13 +107,14 @@ python3 integration/e2e.py
 | 前端构建与测试 | Ubuntu | 类型检查、打包、Vitest |
 | 服务端与 Core 测试 | Ubuntu + PostgreSQL 17 | Core 测试；服务端测试在 SQLite 和 PostgreSQL 上各跑一遍 |
 | 端到端测试 | Ubuntu | 启动真实管理端，客户端用模拟数据完成登记、上报、告警、离线补报 |
+| Docker 部署 | Ubuntu | 用自签证书构建并启动 Docker 部署（管理端 + PostgreSQL），检查登录、重启后签名密钥不变和备份脚本 |
 | Windows 实机采集 | windows-latest | 客户端测试（含真实端口表）；构建托盘；在本机启动管理端，客户端真实采集一次，核对注册表、PackageManager、端口表、账户名解析和代理归属 |
 
 端到端和 Windows 采集的证据（报告、快照、日志）作为构建产物上传，可在 Actions 页面下载。
 
 ## 生产部署
 
-- 管理端：PostgreSQL、客户信任的 HTTPS 证书、持久的策略签名密钥和独立的管理账号。见 `deploy/server/README.md`。
+- 管理端：推荐用 Docker 部署（含 PostgreSQL），见 `deploy/docker/README.md`；不用 Docker 时需要 PostgreSQL、客户信任的 HTTPS 证书、持久的策略签名密钥和独立的管理账号，见 `deploy/server/README.md`。
 - 客户端：正式部署只连接 HTTPS 管理端，不支持跳过证书校验。见 `deploy/windows/README.md`。
 - 初始策略为审计模式。强制模式只能发布给新建策略中指定的终端，且这些终端必须先报告所需防护措施「可启用」。
 

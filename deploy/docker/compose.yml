@@ -1,0 +1,43 @@
+# 终端合规管理端：PostgreSQL + 管理端。用法见同目录 README.md。
+name: compliance
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: compliance
+      POSTGRES_USER: compliance
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?在 .env 中设置 DB_PASSWORD}
+    volumes:
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U compliance -d compliance"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  server:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: compliance-server:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${HTTPS_PORT:-443}:8443"
+    # The certificate settings (Kestrel__Certificates__Default__*) come from .env.
+    env_file: .env
+    environment:
+      Compliance__Database: Host=db;Database=compliance;Username=compliance;Password=${DB_PASSWORD}
+      Compliance__BootstrapUsers: '[{"username":"${ADMIN_USER:-admin}","password":"${ADMIN_PASSWORD:?在 .env 中设置 ADMIN_PASSWORD}","roles":["Reader","Operator","Publisher"]}]'
+      TZ: Asia/Shanghai
+    volumes:
+      - ./certs:/certs:ro
+      - keys:/var/lib/compliance
+
+volumes:
+  db:
+  keys:
