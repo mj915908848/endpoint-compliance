@@ -30,7 +30,7 @@ describe("plain-language result explanation", () => {
     render(<OverviewGuide devices={[offline]} />);
     expect(screen.getByText(/当前没有在线终端，无法给出检查结论/)).toBeTruthy();
     expect(screen.getByText(/上次检查未通过/)).toBeTruthy();
-    expect(screen.getByText(/重新运行“本机采集试用.bat”/)).toBeTruthy();
+    expect(screen.getByText(/客户端服务正在运行/)).toBeTruthy();
   });
 
   it("explains coverage gaps without treating them as new violations", () => {

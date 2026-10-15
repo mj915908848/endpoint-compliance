@@ -93,7 +93,7 @@ export function DeviceState({ device }: { device: DeviceSummary }) {
   );
 }
 
-const RERUN_HINT = "如使用试用包，请在该电脑上重新运行“本机采集试用.bat”后刷新页面。";
+const RERUN_HINT = "请确认该电脑已开机联网、客户端服务正在运行；恢复在线后结果会自动更新。";
 
 export function OverviewGuide({ devices }: { devices: DeviceSummary[] }) {
   const online = devices.filter((d) => d.onlineState === "Online");
