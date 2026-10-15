@@ -129,6 +129,14 @@ public sealed class NotificationPipe(NotificationStore store)
                 AccessControlType.Allow
             )
         );
+        // The account running the pipe (SYSTEM for the service) needs FullControl to create further instances.
+        security.AddAccessRule(
+            new PipeAccessRule(
+                WindowsIdentity.GetCurrent().User!,
+                PipeAccessRights.FullControl,
+                AccessControlType.Allow
+            )
+        );
         using var slots = new SemaphoreSlim(5, 5);
         while (!ct.IsCancellationRequested)
         {
