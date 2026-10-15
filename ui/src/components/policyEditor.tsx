@@ -305,31 +305,14 @@ export function PolicyEditor({
           </Col>
           <Col xs={24} lg={12}>
             <Field label="检查结果有效期">
-              <Space wrap>
-                <span>完整检查</span>
-                <InputNumber
-                  aria-label="完整检查有效期"
-                  min={1}
-                  max={10080}
-                  value={value.inventoryFreshMinutes}
-                  disabled={readOnly}
-                  onChange={(v) => v && set({ inventoryFreshMinutes: v })}
-                  suffix="分钟"
-                  style={{ width: 130 }}
-                />
-                <span>快速检查</span>
-                <InputNumber
-                  aria-label="快速检查有效期"
-                  min={1}
-                  max={1440}
-                  value={value.lightweightFreshMinutes}
-                  disabled={readOnly}
-                  onChange={(v) => v && set({ lightweightFreshMinutes: v })}
-                  suffix="分钟"
-                  style={{ width: 130 }}
-                />
-              </Space>
-              <Hint>超过有效期没有新的检查结果，终端结论显示为“无法判断”。</Hint>
+              <span>
+                完整检查 {checkMinutes(value)[1] * 2} 分钟，快速检查 {checkMinutes(value)[0] * 2}{" "}
+                分钟
+              </span>
+              <Hint>
+                按“检查频率”的 2
+                倍自动计算，允许错过一次检查。超过有效期没有新的检查结果，终端结论显示为“无法判断”。
+              </Hint>
             </Field>
           </Col>
         </Row>

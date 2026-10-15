@@ -134,6 +134,17 @@ describe("policy editor", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: "未发布的修改" })).toBeNull());
   });
 
+  it("shows result validity as twice the check intervals, without an input", async () => {
+    stub(base, base);
+    renderPage();
+    expect(await screen.findByText("完整检查 120 分钟，快速检查 10 分钟")).toBeTruthy();
+    expect(screen.queryByLabelText("完整检查有效期")).toBeNull();
+    const quick = screen.getByLabelText("快速检查间隔");
+    await userEvent.clear(quick);
+    await userEvent.type(quick, "15");
+    expect(screen.getByText("完整检查 120 分钟，快速检查 30 分钟")).toBeTruthy();
+  });
+
   it("removes a product and can discard the change", async () => {
     stub(base, base);
     renderPage();
