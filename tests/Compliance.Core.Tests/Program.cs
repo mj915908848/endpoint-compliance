@@ -500,7 +500,7 @@ Test(
             now
         );
         var md = ReportRenderer.Markdown(r);
-        Yes(md.Contains("合并计为一个违规对象") && md.Contains("编辑器与浏览器扩展") && md.Contains("读取失败"));
+        Yes(md.Contains("合并计为一个违规对象") && md.Contains("编辑器扩展") && md.Contains("读取失败"));
     }
 );
 Test(

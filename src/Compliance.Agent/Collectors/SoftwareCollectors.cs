@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.Versioning;
-using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Compliance.Core;
@@ -191,7 +190,7 @@ internal sealed class ProgramFilesCollector : ICollector
     }
 }
 
-/// <summary>VS Code family and JetBrains extensions, and Chromium and Firefox browser extensions, in each user's profile.</summary>
+/// <summary>VS Code family and JetBrains extensions in each user's profile.</summary>
 [SupportedOSPlatform("windows")]
 internal sealed class ExtensionsCollector : ICollector
 {
@@ -252,49 +251,12 @@ internal sealed class ExtensionsCollector : ICollector
                 }
             }
         }
-        var browsers = new List<string>();
-        var local = Path.Combine(p.Path, "AppData", "Local");
-        var roaming = Path.Combine(p.Path, "AppData", "Roaming");
-        foreach (
-            var (userData, browser) in WindowsCollector
-                .ChromiumUserData.Select(b => (Path.Combine(local, b.Path), b.Browser))
-                .Append((Path.Combine(roaming, "Opera Software", "Opera Stable"), "Opera"))
-        )
-        {
-            ct.ThrowIfCancellationRequested();
-            var result = WindowsCollector.ScanChromiumExtensions(userData, browser, p.Sid, context.Policy);
-            evidence.AddRange(result.Evidence);
-            browsers.AddRange(result.Failed);
-        }
-        var firefox = Path.Combine(roaming, "Mozilla", "Firefox", "Profiles");
-        if (WindowsCollector.DirectoryPresent(firefox))
-            foreach (var profile in Directory.EnumerateDirectories(firefox))
-            {
-                ct.ThrowIfCancellationRequested();
-                try
-                {
-                    evidence.AddRange(
-                        WindowsCollector.ScanFirefoxExtensions(
-                            Path.Combine(profile, "extensions.json"),
-                            p.Sid,
-                            context.Policy
-                        )
-                    );
-                }
-                catch (Exception ex)
-                    when (ex is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException
-                    )
-                {
-                    browsers.Add("Firefox/" + Path.GetFileName(profile));
-                }
-            }
-        var total = extensions.Errors + failed.Count + browsers.Count;
+        var total = extensions.Errors + failed.Count;
         if (total > 0)
             throw new InvalidDataException(
                 $"{total} 个扩展清单无法读取"
                     + (extensions.Errors > 0 ? "，编辑器扩展：" + string.Join("、", extensions.Failed.Take(3)) : "")
                     + (failed.Count > 0 ? "，JetBrains 插件：" + string.Join("、", failed.Take(3)) : "")
-                    + (browsers.Count > 0 ? "，浏览器扩展：" + string.Join("、", browsers.Take(3)) : "")
             );
         return Task.CompletedTask;
     }

@@ -107,7 +107,6 @@ export interface Product {
   domains: string[];
   displayNames?: string[];
   adapterNames?: string[];
-  browserExtensions?: string[];
   npmPackages?: string[];
   pipPackages?: string[];
 }

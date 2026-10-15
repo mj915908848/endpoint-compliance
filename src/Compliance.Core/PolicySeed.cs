@@ -68,10 +68,7 @@ public static class PolicySeed
                 ["ChatGPT.exe"],
                 ["OpenAI.ChatGPT", "OpenAI.ChatGPT-Desktop"],
                 domains: ["chatgpt.com", "openai.com"]
-            ) with
-            {
-                BrowserExtensions = ["ChatGPT search"],
-            },
+            ),
             R(
                 "claude",
                 "Claude / Claude Code",
@@ -82,7 +79,6 @@ public static class PolicySeed
                 domains: ["claude.ai", "anthropic.com"]
             ) with
             {
-                BrowserExtensions = ["Claude"],
                 NpmPackages = ["@anthropic-ai/claude-code"],
             },
             R(

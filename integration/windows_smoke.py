@@ -103,11 +103,9 @@ SECRET_CONTENT = "content-must-not-upload-" + secrets.token_hex(8)
 # One hit in the user's profile and one folder hit on the drive holding the checkout (D: on CI runners).
 profile_hit = pathlib.Path.home() / f"{KEYWORD}-名单.txt"
 drive_hit = data.resolve() / f"{KEYWORD}-资料"
-# A portable proxy program unpacked outside any install folder, and a browser extension that may set the proxy.
+# A portable proxy program unpacked outside any install folder.
 TOKEN = secrets.token_hex(4)
 program_dir = data.resolve() / f"portable-{TOKEN}"
-extension_id = "".join("abcdefghijklmnop"[b % 16] for b in secrets.token_bytes(32))
-extension_profile = pathlib.Path.home() / "AppData/Local/Google/Chrome/User Data" / f"Smoke{TOKEN}"
 planted = []
 
 server_log = (data / "server.log").open("w")
@@ -158,14 +156,6 @@ try:
     program_dir.mkdir()
     planted.append(program_dir)
     (program_dir / "xray.exe").write_bytes(b"MZ")
-    # Remove the outermost folder this creates, in case the runner has no Chrome profile.
-    created = extension_profile
-    while not created.parent.exists():
-        created = created.parent
-    planted.append(created)
-    manifest = extension_profile / "Extensions" / extension_id / "1.0.0_0" / "manifest.json"
-    manifest.parent.mkdir(parents=True)
-    manifest.write_text(json.dumps({"name": f"Smoke Proxy {TOKEN}", "permissions": ["proxy"]}), encoding="utf-8")
 
     # Known state for the collectors to find: this process listens on a proxy port, and the user's
     # system proxy points at it.
@@ -228,10 +218,7 @@ try:
                and e["objectKey"].endswith(f"portable-{TOKEN}\\xray.exe".lower())]
     assert program and not program[0]["confirmed"], \
         f"Portable program without version information was not a clue: {program}"
-    browser = [e for e in evidence if e["productId"] == "browser-proxy-clue" and extension_id in e["objectKey"]]
-    assert browser and f"Smoke Proxy {TOKEN}" in browser[0]["summary"], \
-        f"Chrome extension with the proxy permission was not reported: {browser}"
-    print("PASS portable program found through the file table and proxy browser extension reported as clues")
+    print("PASS portable program found through the file table reported as a clue")
 
     users = snapshot.get("users") or []
     assert users and all(u["name"] and not u["name"].startswith("S-1-") for u in users), \

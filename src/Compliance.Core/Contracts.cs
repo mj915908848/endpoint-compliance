@@ -52,12 +52,6 @@ public record ProductRule(
     /// <summary>Substrings of tunnel adapter names or descriptions this product creates; a match is a clue only.</summary>
     public string[] AdapterNames { get; init; } = [];
 
-    /// <summary>
-    /// Browser extensions: a Chrome Web Store / Edge Add-ons id (32 letters a-p), a Firefox add-on id, or the
-    /// extension's name as shown in the browser (matched like <see cref="DisplayNames"/>).
-    /// </summary>
-    public string[] BrowserExtensions { get; init; } = [];
-
     /// <summary>npm package names installed globally, e.g. "@openai/codex".</summary>
     public string[] NpmPackages { get; init; } = [];
 

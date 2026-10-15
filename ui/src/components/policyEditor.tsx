@@ -825,7 +825,6 @@ const emptyProduct: Product = {
   domains: [],
   displayNames: [],
   adapterNames: [],
-  browserExtensions: [],
   npmPackages: [],
   pipPackages: [],
 };
@@ -855,8 +854,7 @@ function ProductTable({
       ["安装名称", p.displayNames?.length ?? 0],
       ["程序", p.executableNames.length],
       ["应用包", p.packageIds.length],
-      ["编辑器扩展", p.extensionIds.length],
-      ["浏览器扩展", p.browserExtensions?.length ?? 0],
+      ["扩展", p.extensionIds.length],
       ["命令行包", (p.npmPackages?.length ?? 0) + (p.pipPackages?.length ?? 0)],
       ["网卡", p.adapterNames?.length ?? 0],
       ["域名", p.domains.length],
@@ -1011,12 +1009,6 @@ const listFields: { name: keyof Product; label: string; hint: string; placeholde
     label: "编辑器扩展",
     hint: "VS Code 扩展 ID（发布者.名称）或 JetBrains 插件 ID。",
     placeholder: "例如 github.copilot",
-  },
-  {
-    name: "browserExtensions",
-    label: "浏览器扩展",
-    hint: "Chrome、Edge 等浏览器扩展的 ID（32 位字母），Firefox 扩展 ID，或浏览器里显示的扩展名称。",
-    placeholder: "例如 Claude",
   },
   {
     name: "npmPackages",

@@ -22,7 +22,7 @@ export const moduleLabel = lookup({
   proxy: "系统代理",
   "proxy-env": "代理环境变量",
   "proxy-advanced": "代理高级设置",
-  extensions: "编辑器与浏览器扩展",
+  extensions: "编辑器扩展",
   appx: "应用商店应用",
   ports: "端口与网络接口",
   users: "用户账户",
@@ -41,7 +41,7 @@ export const statusLabel = lookup({
 export const evidenceLabel = lookup({
   Installation: "安装记录",
   Process: "运行进程",
-  Extension: "扩展",
+  Extension: "编辑器扩展",
   Proxy: "代理设置",
   Clue: "待核查线索",
   BlockedAttempt: "拦截记录",
