@@ -32,8 +32,7 @@ public static class Program
                             "ComplianceAgent"
                         )
                 );
-            if (!simulated)
-                NativeDataDirectory.EnsureSecure(data);
+            var aclRepaired = !simulated && NativeDataDirectory.EnsureSecure(data);
             var configPath = Arg("--config") ?? Path.Combine(data, "agent.json");
             AgentConfiguration config;
             if (File.Exists(configPath))
@@ -50,7 +49,10 @@ public static class Program
                 throw new ArgumentException("Configured server differs from --server");
             // A trial install persists its HTTP trial mode so the resident service keeps the same checks.
             localDemo |= config.HttpTrial && !simulated;
-            var runtime = new AgentRuntime(config, configPath, simulated, Arg("--fixture"), localDemo);
+            var runtime = new AgentRuntime(config, configPath, simulated, Arg("--fixture"), localDemo)
+            {
+                DataAclRepaired = aclRepaired,
+            };
             if (Has("--enroll"))
             {
                 var code = Arg("--code") ?? throw new ArgumentException("--enroll requires --code");
@@ -70,6 +72,8 @@ public static class Program
                 AgentLog.Attach(data);
                 Console.WriteLine($"客户端服务启动，服务器 {config.ServerUrl}");
             }
+            if (aclRepaired)
+                Console.WriteLine(AgentRuntime.DataAclRepairedMessage);
             using var host = Host.CreateDefaultBuilder(args)
                 .UseWindowsService(options => options.ServiceName = "ComplianceAgent")
                 .ConfigureServices(services => services.AddSingleton(runtime).AddHostedService<AgentWorker>())

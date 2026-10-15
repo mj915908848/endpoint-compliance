@@ -149,6 +149,12 @@ public sealed class AgentRuntime(
     bool localDemo = false
 )
 {
+    public const string DataAclRepairedMessage =
+        "客户端数据目录的访问权限被修改过（允许了系统和管理员以外的账户），已自动恢复。期间该账户可能读取过本机的登记密钥；如不是管理员本人操作，请删除该终端并重新登记。";
+
+    /// <summary>Set when startup removed access to the data directory that someone had granted; reported once.</summary>
+    public bool DataAclRepaired { get; set; }
+
     private readonly string statePath = Path.Combine(config.DataDirectory, "policy.signed.json");
     private PolicyDocument? policy;
     private SignedPolicy? signedPolicy;
@@ -296,6 +302,11 @@ public sealed class AgentRuntime(
         var api = new AgentApi(client, uri, config.DeviceId, key);
         await using var queue = new EventOutbox(Path.Combine(config.DataDirectory, "outbox.sqlite"));
         await using var notices = new NotificationStore(Path.Combine(config.DataDirectory, "notices.sqlite"));
+        if (DataAclRepaired)
+        {
+            await queue.EnqueueAsync("Health", "agent:data-acl", null, DataAclRepairedMessage, ct);
+            DataAclRepaired = false;
+        }
         var pipeTask =
             OperatingSystem.IsWindows() && !once ? new NotificationPipe(notices).RunAsync(ct) : Task.CompletedTask;
         await LoadCachedPolicy();

@@ -301,6 +301,25 @@ try:
             assert [d["id"] for d in upgraded] == [d["id"] for d in enrolled], "Upgrade enrolled a new device"
             assert "更新到" in (data / "upgrade.log").read_text(encoding="utf-8", errors="replace")
             print("PASS upgrading an earlier release in place keeps the device identity and the service reports")
+        # Explorer's "permanently get access" prompt grants the signed-in user access to the data directory.
+        # The service must remove that grant on its next start, keep running and tell the administrator.
+        agent_data = pathlib.Path(os.environ["ProgramData"]) / "ComplianceAgent"
+        before = wait_reporting()[0]["lastHeartbeat"]
+        grant = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f"icacls '{agent_data}' /grant '*S-1-5-32-545:(OI)(CI)R' /Q | Out-Null; "
+             "Restart-Service ComplianceAgent; (Get-Service ComplianceAgent).Status"],
+            capture_output=True, text=True, timeout=120,
+        )
+        assert grant.returncode == 0 and "Running" in grant.stdout, f"Service did not restart: {grant.stdout}{grant.stderr}"
+        acl = subprocess.run(["icacls", str(agent_data)], capture_output=True, text=True).stdout
+        assert "S-1-5-32-545" not in acl and "BUILTIN\\Users" not in acl, f"Users grant kept: {acl}"
+        wait_reporting(before)
+        deadline = time.monotonic() + 120
+        while not any(a["type"] == "Health" and a["objectKey"] == "agent:data-acl" for a in request("/api/alerts")):
+            assert time.monotonic() < deadline, "No health alert for the repaired data directory permissions"
+            time.sleep(2)
+        print("PASS a user granted access to the data directory is removed at start and reported")
         # The installed tray shares the service's runtime folder; it must load from there.
         installed_tray = pathlib.Path(os.environ["ProgramFiles"]) / "ComplianceAgent" / "Compliance.Tray.exe"
         viewer = subprocess.Popen([str(installed_tray), "--notices"])
