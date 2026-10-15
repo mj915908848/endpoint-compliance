@@ -20,6 +20,10 @@ export interface DeviceSummary {
   note?: string;
   /** Name of the policy the device follows. */
   policyName?: string;
+  /** Client release the device last reported; empty for clients before 0.2.8. */
+  agentVersion?: string;
+  /** The client is older than this server's release. */
+  agentOutdated?: boolean;
 }
 export interface Evidence {
   productId: string;

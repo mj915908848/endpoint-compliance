@@ -45,7 +45,8 @@ public sealed record DeviceRecord(
     ScanSnapshot? Snapshot = null,
     long SnapshotSequence = 0,
     long TargetPolicyVersion = 1,
-    string Note = ""
+    string Note = "",
+    string AgentVersion = ""
 );
 
 public sealed record SnapshotIncident(string Id, string DeviceId, string Scope, string[] Modules);

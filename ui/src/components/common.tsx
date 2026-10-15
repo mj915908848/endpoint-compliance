@@ -10,6 +10,7 @@ import {
   Space,
   Spin,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import { SafetyCertificateOutlined } from "@ant-design/icons";
@@ -332,5 +333,19 @@ export function Login({
         </Typography.Paragraph>
       </Card>
     </Flex>
+  );
+}
+
+/** Client release of a device, flagged when older than the server's. */
+export function AgentVersion({ device }: { device: DeviceSummary }) {
+  const text = device.agentVersion ? `客户端 ${device.agentVersion}` : "客户端 0.2.7 或更早";
+  return device.agentOutdated ? (
+    <Tooltip title="比管理端版本旧，建议升级客户端">
+      <Tag color="warning" style={{ marginInlineEnd: 0 }}>
+        {text} · 待升级
+      </Tag>
+    </Tooltip>
+  ) : (
+    <span>{device.agentVersion ? text : "客户端版本未知"}</span>
   );
 }

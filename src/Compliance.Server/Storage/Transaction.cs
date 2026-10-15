@@ -127,10 +127,11 @@ public sealed class Transaction
 
     // ---- devices -------------------------------------------------------------------------
 
-    // Inserts leave out note (added by migration 3), so the legacy import in migration 2 can still insert.
+    // Inserts leave out note and agent_version (added by migrations 3 and 6), so the legacy import in migration 2
+    // can still insert.
     const string DeviceColumns =
         "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, controls, snapshot, snapshot_sequence, target_policy_version";
-    const string DeviceSelect = DeviceColumns + ", note";
+    const string DeviceSelect = DeviceColumns + ", note, agent_version";
 
     static DeviceRecord ReadDevice(DbDataReader r) =>
         new(
@@ -143,7 +144,8 @@ public sealed class Transaction
             r.IsDBNull(6) ? null : Wire.Read<ScanSnapshot>(r.GetString(6)),
             Long(r, 7),
             Long(r, 8),
-            r.GetString(9)
+            r.GetString(9),
+            r.GetString(10)
         );
 
     public Task<DeviceRecord?> GetDevice(string id) =>
@@ -188,11 +190,13 @@ public sealed class Transaction
         string hostName,
         DateTimeOffset at,
         long appliedPolicyVersion,
-        ControlState[] controls
+        ControlState[] controls,
+        string agentVersion
     ) =>
         Execute(
-            "UPDATE devices SET host_name = @host, last_heartbeat = @at, applied_policy_version = @applied, controls = @controls WHERE id = @id",
+            "UPDATE devices SET host_name = @host, last_heartbeat = @at, applied_policy_version = @applied, controls = @controls, agent_version = @version WHERE id = @id",
             ("host", hostName),
+            ("version", agentVersion),
             ("at", at),
             ("applied", appliedPolicyVersion),
             ("controls", Wire.Serialize(controls)),

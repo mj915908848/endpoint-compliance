@@ -11,6 +11,9 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     public string KeyId => Secrets.Hash(PublicKey)[..16];
     public DateTimeOffset Now => clock.GetUtcNow();
 
+    /// <summary>This server's release version; clients of the same release report the same one.</summary>
+    public static readonly string Version = ReleaseVersion.Of(typeof(ComplianceService).Assembly);
+
     public static string DeviceLock(string deviceId) => "device:" + deviceId;
 
     /// <summary>
@@ -235,7 +238,9 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             report?.ViolationCount ?? 0,
             d.Snapshot?.Simulated ?? false,
             d.Note,
-            policy.PolicyId
+            policy.PolicyId,
+            d.AgentVersion,
+            ReleaseVersion.Older(d.AgentVersion, Version)
         );
     }
 

@@ -185,6 +185,32 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Heartbeat_records_the_client_version()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        async Task<DeviceSummary> Beat(string version)
+        {
+            await f.Agent("POST", "/api/agent/heartbeat", new HeartbeatRequest("host", version, f.Clock.Now, 1, []));
+            return Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
+        }
+        Assert.Equal("0.2.8", (await Beat("0.2.8")).AgentVersion);
+        // The fixed value clients before 0.2.8 sent is not a release.
+        Assert.Equal("", (await Beat("0.1.0")).AgentVersion);
+    }
+
+    [Theory]
+    [InlineData("0.2.7", "0.2.8", true)]
+    [InlineData("", "0.2.8", true)]
+    [InlineData("0.2.8", "0.2.8", false)]
+    [InlineData("0.2.9", "0.2.8", false)]
+    [InlineData("0.2.7", "0.0.0-dev", false)]
+    [InlineData("0.0.0-dev", "0.2.8", false)]
+    public void Client_is_outdated_only_against_a_release_server(string agent, string server, bool older) =>
+        Assert.Equal(older, ReleaseVersion.Older(agent, server));
+
+    [Fact]
     public async Task New_received_time_does_not_refresh_old_scan_or_offline_verdict()
     {
         await using var f = new Fixture();

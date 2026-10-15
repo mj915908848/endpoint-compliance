@@ -12,6 +12,7 @@ import {
   ControlList,
   CoverageGuide,
   CoverageTable,
+  AgentVersion,
   DeviceGuide,
   deviceName,
   Empty,
@@ -164,6 +165,9 @@ export function DeviceDetailPage({
                 <Fact label="在线状态">{onlineLabel(d.onlineState) ?? "未知"}</Fact>
                 <Fact label="最近检查">{time(d.lastScan)}</Fact>
                 <Fact label="最近心跳">{time(d.lastHeartbeat)}</Fact>
+                <Fact label="客户端版本">
+                  <AgentVersion device={d} />
+                </Fact>
                 <Fact label="策略">
                   {d.policyName && `${d.policyName} `}v{d.targetPolicyVersion}
                   {d.appliedPolicyVersion !== d.targetPolicyVersion &&

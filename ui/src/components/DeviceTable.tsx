@@ -1,5 +1,5 @@
 import { Button, Space, Table, Typography, type TableColumnsType } from "antd";
-import { DeviceState, Empty, time } from "./common";
+import { AgentVersion, DeviceState, Empty, time } from "./common";
 import type { DeviceSummary } from "../types";
 
 export function DeviceTable({
@@ -55,6 +55,11 @@ export function DeviceTable({
           {!compact && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               心跳 {time(d.lastHeartbeat)}
+            </Typography.Text>
+          )}
+          {!compact && (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <AgentVersion device={d} />
             </Typography.Text>
           )}
         </Space>

@@ -467,7 +467,7 @@ public sealed class AgentRuntime(
         {
             var heartbeat = new HeartbeatRequest(
                 HostName,
-                "0.1.0",
+                ReleaseVersion.Of(typeof(AgentRuntime).Assembly),
                 DateTimeOffset.UtcNow,
                 signedPolicy is null ? 0 : policy?.Version ?? 0,
                 latest?.Controls ?? []

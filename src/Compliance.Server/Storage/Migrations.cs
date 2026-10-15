@@ -18,6 +18,11 @@ public static class Migrations
         new(3, "device notes", tx => tx.Execute("ALTER TABLE devices ADD COLUMN note TEXT NOT NULL DEFAULT ''")),
         new(4, "multiple policies", MultiplePolicies),
         new(5, "multi-use enrollment codes", MultiUseCodes),
+        new(
+            6,
+            "client versions",
+            tx => tx.Execute("ALTER TABLE devices ADD COLUMN agent_version TEXT NOT NULL DEFAULT ''")
+        ),
     ];
 
     public static async Task<bool> Apply(Transaction tx)

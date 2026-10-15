@@ -245,7 +245,9 @@ public record DeviceSummary(
     int ViolationCount,
     bool Simulated,
     string Note = "",
-    string PolicyName = ""
+    string PolicyName = "",
+    string AgentVersion = "",
+    bool AgentOutdated = false
 );
 
 public record AlertSummary(

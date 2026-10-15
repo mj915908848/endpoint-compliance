@@ -73,6 +73,17 @@ describe("deleting a device", () => {
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/devices"));
   });
 
+  it("shows the client version and flags one older than the server", async () => {
+    Object.assign(device, { agentVersion: "0.2.7", agentOutdated: true });
+    try {
+      stubApi(["Reader"]);
+      renderAt("/devices/dev-1");
+      expect(await screen.findByText("客户端 0.2.7 · 待升级")).toBeTruthy();
+    } finally {
+      Object.assign(device, { agentVersion: undefined, agentOutdated: undefined });
+    }
+  });
+
   it("is not offered to read-only accounts", async () => {
     stubApi(["Reader"]);
     renderAt("/devices/dev-1");

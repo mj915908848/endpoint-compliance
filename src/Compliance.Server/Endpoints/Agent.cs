@@ -88,6 +88,8 @@ static partial class Endpoints
                     || r.Controls == null
                     || r.Controls.Length > 100
                     || r.Controls.Any(x => x is null)
+                    || r.AgentVersion is null
+                    || r.AgentVersion.Length > 64
                     || r.SourceTime > s.Now.AddMinutes(5)
                     || r.SourceTime < s.Now.AddMinutes(-5)
                 )
@@ -105,7 +107,11 @@ static partial class Endpoints
                         EvidenceSanitizer.Clean(r.HostName),
                         s.Now,
                         r.PolicyVersion,
-                        controls
+                        controls,
+                        // Clients before 0.2.8 sent a fixed "0.1.0" that was never a release.
+                        r.AgentVersion == "0.1.0"
+                            ? ""
+                            : EvidenceSanitizer.Clean(r.AgentVersion)
                     );
                     await s.UpdateOffline(tx);
                     return new { ok = true };
