@@ -285,6 +285,16 @@ try:
         uses = [c for c in request("/api/enrollment-codes") if c["id"] == batch["id"]][0]["uses"]
         assert uses == 1, f"batch code uses {uses}"
         print("PASS double-click installer enrolls with the downloaded config; the service reports")
+        # The installed tray shares the service's runtime folder; it must load from there.
+        installed_tray = pathlib.Path(os.environ["ProgramFiles"]) / "ComplianceAgent" / "Compliance.Tray.exe"
+        viewer = subprocess.Popen([str(installed_tray), "--notices"])
+        try:
+            time.sleep(6)
+            assert viewer.poll() is None, f"Installed tray exited with {viewer.returncode}"
+        finally:
+            viewer.kill()
+            viewer.wait(timeout=10)
+        print("PASS installed tray starts from the shared runtime folder")
 
     print("Evidence: " + str(data))
 finally:

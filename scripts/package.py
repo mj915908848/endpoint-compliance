@@ -7,6 +7,8 @@ Writes artifacts/compliance-client-<version>-windows.zip (and compliance-trial-<
 from __future__ import annotations
 
 import argparse
+import filecmp
+import json
 import os
 from pathlib import Path
 import shutil
@@ -29,9 +31,54 @@ def next_version() -> str:
 def publish(project: str, output: Path, ver: str, single_file: bool) -> None:
     args = [DOTNET, "publish", f"src/{project}", "-c", "Release", "-r", "win-x64", "--self-contained"]
     args += [f"-p:Version={ver}", "-p:EnableWindowsTargeting=true", "-o", str(output), "--nologo", "-v", "q"]
+    # Only Chinese resources for the runtime's own messages; other languages fall back to English.
+    args += ["-p:SatelliteResourceLanguages=zh-Hans"]
     if single_file:
         args.append("-p:PublishSingleFile=true")
     subprocess.run(args, cwd=ROOT, check=True)
+
+
+def file_versions(folder: Path) -> dict[str, tuple]:
+    """(assembly version, file version) of each published file, from the apps' deps.json files."""
+    def key(v: str | None) -> tuple:
+        return tuple(int(x) for x in (v or "0").split("."))
+
+    versions: dict[str, tuple] = {}
+    for deps in folder.glob("*.deps.json"):
+        for library in json.loads(deps.read_text(encoding="utf-8"))["targets"].values():
+            for entry in library.values():
+                for group in ("runtime", "native"):
+                    for path, info in entry.get(group, {}).items():
+                        versions[Path(path).name] = (key(info.get("assemblyVersion")), key(info.get("fileVersion")))
+    return versions
+
+
+def merge(source: Path, target: Path) -> None:
+    """Adds an app's files to another self-contained app's folder so both share one .NET runtime. Where the two
+    ship different builds of a library (a NuGet package against the runtime's copy, or a facade against the full
+    Windows Desktop assembly), the higher version stays; both apps bind to it."""
+    ours, theirs = file_versions(target), file_versions(source)
+    for file in source.rglob("*"):
+        if not file.is_file():
+            continue
+        destination = target / file.relative_to(source)
+        if not destination.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file, destination)
+        elif not filecmp.cmp(file, destination, shallow=False):
+            if file.name not in ours or file.name not in theirs:
+                raise ValueError(f"Conflicting file without version information: {destination}")
+            if theirs[file.name] > ours[file.name]:
+                shutil.copy2(file, destination)
+
+
+def publish_client(output: Path, ver: str) -> None:
+    """The service and the tray in one folder with one copy of the runtime."""
+    shutil.rmtree(output, ignore_errors=True)
+    publish("Compliance.Tray", output, ver, False)
+    publish("Compliance.Agent", output.with_name(output.name + "-agent"), ver, False)
+    merge(output.with_name(output.name + "-agent"), output)
+    shutil.rmtree(output.with_name(output.name + "-agent"))
 
 
 def copy(source: Path, target: Path) -> None:
@@ -53,8 +100,7 @@ def make_zip(folder: Path, destination: Path) -> None:
 
 
 def stage_client(stage: Path, published: Path) -> None:
-    shutil.copytree(published / "agent", stage / "agent-windows-x64")
-    shutil.copytree(published / "tray", stage / "agent-windows-x64", dirs_exist_ok=True)
+    shutil.copytree(published / "client", stage / "agent-windows-x64")
     windows = ROOT / "deploy" / "windows"
     for script in windows.glob("*.ps1"):
         copy(script, stage / "deploy" / "windows" / script.name)
@@ -65,12 +111,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", help="release version; defaults to the next one with a -dev suffix")
     parser.add_argument("--trial", action="store_true", help="also build the full trial package with the Windows server")
+    parser.add_argument("--stage", type=Path, help="only stage the client package (no zip) into this folder")
     args = parser.parse_args()
     ver = args.version or next_version() + "-dev"
     published = ARTIFACTS / "publish"
     shutil.rmtree(published, ignore_errors=True)
-    publish("Compliance.Agent", published / "agent", ver, True)
-    publish("Compliance.Tray", published / "tray", ver, True)
+    publish_client(published / "client", ver)
+    if args.stage:
+        shutil.rmtree(args.stage, ignore_errors=True)
+        stage_client(args.stage, published)
+        return
 
     stage = ARTIFACTS / "stage"
     shutil.rmtree(stage, ignore_errors=True)
