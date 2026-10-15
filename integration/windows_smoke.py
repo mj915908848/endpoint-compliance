@@ -210,6 +210,9 @@ try:
     assert not any(k.endswith("-内部.txt") for k in hits), "File inside a reported folder was listed again"
     assert SECRET_CONTENT not in json.dumps(snapshot, ensure_ascii=False), "File content left the machine"
     print(f"PASS sensitive file names found in the profile and under {drive_evidence['source']}; content not uploaded")
+    log_text = (data / "agent.log").read_text(encoding="utf-8", errors="replace")
+    assert "通过 NTFS 文件表比对" in log_text, "Sensitive file scan did not use the NTFS file table"
+    print("PASS sensitive file scan read the NTFS file table instead of walking folders")
 
     alerts = request("/api/alerts")
     sensitive_alerts = {a["objectKey"].lower() for a in alerts if a["type"] == "SensitiveFile"}

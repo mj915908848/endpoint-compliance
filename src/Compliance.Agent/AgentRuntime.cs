@@ -301,7 +301,8 @@ public sealed class AgentRuntime(
                 ? new SensitiveFileScanner(
                     Path.Combine(config.DataDirectory, "sensitive-files.json"),
                     SensitiveFileScanner.WindowsTargets,
-                    SensitiveFileScanner.WindowsOwner
+                    SensitiveFileScanner.WindowsOwner,
+                    NtfsVolume.TryOpen
                 )
                 : null;
         sensitiveFiles = scanner;

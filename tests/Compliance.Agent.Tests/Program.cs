@@ -1013,9 +1013,12 @@ await Check(
                         && modules.Single(m => m.Scope == "drive:E") is { Status: "Unknown", Error: "磁盘未就绪" },
                     "scope status wrong"
                 );
-                var before = scanner.Completion;
+                // Without a change journal only the interval (or a vanished path) brings a rescan.
+                File.WriteAllText(Path.Combine(docs, "机密附件.pdf"), "");
                 scanner.Update(policy, false, now.AddHours(1));
-                Assert(ReferenceEquals(before, scanner.Completion), "rescanned before the interval");
+                await scanner.Completion;
+                Assert(scanner.Results(policy, now).Evidence.Length == 1, "rescanned before the interval");
+                File.Delete(Path.Combine(docs, "机密附件.pdf"));
             }
             gone = false;
             using (var scanner = new SensitiveFileScanner(state, Targets))
@@ -1078,6 +1081,189 @@ await Check(
     }
 );
 
+await Check(
+    "volume index scan reports the same names as the folder walk",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-index-" + Guid.NewGuid());
+        var outside = root + "-out";
+        try
+        {
+            var alice = Path.Combine(root, "Users", "alice");
+            foreach (
+                var dir in new[]
+                {
+                    "项目机密资料/子目录",
+                    "AppData/机密",
+                    "skipme",
+                    "普通/深层/更深",
+                    "Program Files",
+                    "Users/alice/文档",
+                }
+            )
+                Directory.CreateDirectory(Path.Combine(root, dir));
+            Directory.CreateDirectory(outside);
+            foreach (
+                var file in new[]
+                {
+                    "项目机密资料/子目录/机密名单.docx",
+                    "项目机密资料/salary.xlsx",
+                    "AppData/机密/机密.txt",
+                    "skipme/机密.txt",
+                    "普通/深层/更深/ＳＡＬＡＲＹ表.XLSX",
+                    "普通/salary-notes.txt",
+                    "Program Files/机密.txt",
+                    "Users/alice/文档/机密计划.txt",
+                    "机密在根目录.txt",
+                }
+            )
+                File.WriteAllText(Path.Combine(root, file), "");
+            File.WriteAllText(Path.Combine(outside, "机密-linked.txt"), "");
+            Directory.CreateSymbolicLink(Path.Combine(root, "普通", "云盘机密"), outside);
+            var policy = new SensitiveFilePolicy
+            {
+                Enabled = true,
+                Rules =
+                [
+                    new("secret", "机密文件", ["机密"]),
+                    new("salary", "薪资表", ["salary"]) { Extensions = [".xlsx"], Action = "Violation" },
+                ],
+                ExcludePaths = ["AppData", Path.Combine(root, "skipme")],
+            };
+            SensitiveScanTarget[] targets =
+            [
+                new("drive:D", root, null, true, [alice]),
+                new("user-1", alice, "S-1-5-21-1-2-3-1001", false, []),
+            ];
+            var volume = new FakeVolume(root);
+            // A cloud-only folder: linked, yet the file table lists names under it. They are not reported.
+            volume.Extra.Add(
+                new(9999, volume.Id(Path.Combine(root, "普通", "云盘机密")), "机密-cloud.txt", FileAttributes.Normal)
+            );
+            var indexed = SensitiveIndexScan.Scan(
+                volume,
+                targets,
+                policy,
+                p => "S-1-5-21-9",
+                CancellationToken.None,
+                out var names
+            );
+            Assert(names > 15, "file table not read: " + names);
+            static string Describe(SensitiveScopeResult r) =>
+                r.Scope
+                + " "
+                + r.Status
+                + ": "
+                + string.Join(
+                    " | ",
+                    r.Evidence.Select(e => $"{e.ObjectKey} {e.ProductId} {e.Summary} {e.UserSid}")
+                        .Order(StringComparer.Ordinal)
+                );
+            foreach (var target in targets)
+            {
+                var walked = Describe(
+                    SensitiveFileWalker.Scan(target, policy, p => "S-1-5-21-9", CancellationToken.None)
+                );
+                var fromIndex = Describe(indexed.Single(r => r.Scope == target.Scope));
+                Assert(walked == fromIndex, $"index and walk differ:\n  walk:  {walked}\n  index: {fromIndex}");
+            }
+            var drive = indexed.Single(r => r.Scope == "drive:D");
+            Assert(
+                // The linked folder's own name is reported; nothing under it is.
+                drive.Evidence.Length == 5
+                    && drive.Evidence.All(e => !e.ObjectKey.Contains("cloud") && !e.ObjectKey.Contains("alice")),
+                "unexpected drive hits: " + Describe(drive)
+            );
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+            Directory.Delete(outside, true);
+        }
+        await Task.CompletedTask;
+    }
+);
+await Check(
+    "sensitive file scanner reads the change journal and rescans only for relevant changes",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-journal-" + Guid.NewGuid());
+        var docs = Path.Combine(root, "docs");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(docs, "node_modules", "pkg"));
+            File.WriteAllText(Path.Combine(docs, "机密合同.pdf"), "");
+            File.WriteAllText(Path.Combine(docs, "node_modules", "pkg", "机密-包.txt"), "");
+            var volume = new FakeVolume(root);
+            var policy = new SensitiveFilePolicy { Enabled = true, Rules = [new("secret", "机密文件", ["机密"])] };
+            using var scanner = new SensitiveFileScanner(
+                Path.Combine(root, "state.json"),
+                _ => [new("user-1", docs, "S-1-5-21-1", false, [])],
+                null,
+                _ => volume
+            );
+            var now = DateTimeOffset.UtcNow;
+            string[] Keys() =>
+                scanner
+                    .Results(policy, now)
+                    .Evidence.Select(e => Path.GetFileName(e.ObjectKey))
+                    .Order(StringComparer.Ordinal)
+                    .ToArray();
+            async Task Cycle()
+            {
+                scanner.Update(policy, false, now);
+                await scanner.Completion;
+            }
+            await Cycle();
+            Assert(volume.Scans == 1 && Keys() is ["机密合同.pdf"], "first scan: " + string.Join(",", Keys()));
+            var first = scanner.Results(policy, now).Modules.Single().CollectedAt;
+
+            await Task.Delay(20);
+            volume.Change(Path.Combine(docs, "普通.txt"), JournalReasons.Create);
+            await Cycle();
+            Assert(volume.Scans == 1, "unrelated change caused a rescan");
+            Assert(
+                scanner.Results(policy, now).Modules.Single().CollectedAt > first,
+                "unchanged result not confirmed as current"
+            );
+
+            volume.Change(Path.Combine(docs, "机密附件.pdf"), JournalReasons.Create);
+            await Cycle();
+            Assert(
+                volume.Scans == 2 && Keys() is ["机密合同.pdf", "机密附件.pdf"],
+                "new file missed: " + string.Join(",", Keys())
+            );
+
+            // Renaming an excluded folder brings the names under it into view.
+            Directory.Move(Path.Combine(docs, "node_modules"), Path.Combine(docs, "vendor"));
+            volume.Change(Path.Combine(docs, "vendor"), JournalReasons.RenameNewName, folder: true);
+            await Cycle();
+            Assert(
+                volume.Scans == 3 && Keys().Contains("机密-包.txt"),
+                "folder moved into view missed: " + string.Join(",", Keys())
+            );
+
+            // Moved away with its folder: no record names the file, but its reported path is gone.
+            Directory.Move(Path.Combine(docs, "vendor"), Path.Combine(root, "vendor"));
+            await Cycle();
+            Assert(
+                volume.Scans == 4 && !Keys().Contains("机密-包.txt"),
+                "vanished path kept: " + string.Join(",", Keys())
+            );
+
+            volume.Journal++;
+            await Cycle();
+            Assert(volume.Scans == 5, "recreated journal did not cause a rescan");
+            await Cycle();
+            Assert(volume.Scans == 5, "rescanned again after the journal was re-read");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+
 // Native checks run on Windows only (CI runs them on windows-latest); elsewhere they are skipped.
 if (OperatingSystem.IsWindows())
 {
@@ -1102,6 +1288,41 @@ if (OperatingSystem.IsWindows())
             return Task.CompletedTask;
         }
     );
+    await Check(
+        "NTFS file table lists names with their folders and the change journal records new ones",
+        () =>
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "compliance-ntfs-" + Guid.NewGuid());
+            Directory.CreateDirectory(dir);
+            try
+            {
+                File.WriteAllText(Path.Combine(dir, "机密-ntfs.txt"), "");
+                using var volume = NtfsVolume.TryOpen(Path.GetPathRoot(Path.GetFullPath(dir))!);
+                Assert(volume is not null, "NTFS volume could not be opened");
+                var cursor = volume!.Cursor();
+                Assert(cursor is not null, "change journal unavailable");
+                var found = volume.Entries(CancellationToken.None).Where(e => e.Name == "机密-ntfs.txt").ToList();
+                Assert(found.Count == 1, $"file table lists the file {found.Count} times");
+                var folder = volume.PathOf(found[0].ParentId);
+                Assert(
+                    folder is not null && folder.Equals(volume.Canonical(dir), StringComparison.OrdinalIgnoreCase),
+                    $"parent resolved to {folder}, expected {volume.Canonical(dir)}"
+                );
+                File.WriteAllText(Path.Combine(dir, "机密-新.txt"), "");
+                var (changes, next) = volume.ChangesSince(cursor!, CancellationToken.None);
+                Assert(
+                    changes.Any(c => c.Name == "机密-新.txt" && (c.Reason & JournalReasons.Create) != 0),
+                    "journal did not record the new file"
+                );
+                Assert(next.NextUsn > cursor!.NextUsn, "journal cursor did not advance");
+            }
+            finally
+            {
+                Directory.Delete(dir, true);
+            }
+            return Task.CompletedTask;
+        }
+    );
 }
 else
     Console.WriteLine("SKIP native Windows checks (not running on Windows)");
@@ -1120,4 +1341,79 @@ sealed class DelayedHandler : HttpMessageHandler
         await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
         return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
     }
+}
+
+/// <summary>A folder tree read as if it were an indexed volume: ids are stable per path, changes are queued by the test.</summary>
+sealed class FakeVolume(string root) : IVolumeIndex
+{
+    private readonly Dictionary<string, ulong> ids = new() { [root] = 1 };
+    private readonly List<VolumeEntry> pending = [];
+    public readonly List<VolumeEntry> Extra = [];
+    public ulong Journal = 7;
+    public int Scans;
+    private long usn;
+
+    public string Root => root;
+    public ulong RootId => 1;
+
+    public ulong Id(string path)
+    {
+        if (!ids.TryGetValue(path, out var id))
+            ids[path] = id = (ulong)ids.Count + 1;
+        return id;
+    }
+
+    public void Change(string path, uint reason, bool folder = false)
+    {
+        if (!folder)
+            File.WriteAllText(path, "");
+        pending.Add(
+            new(
+                Id(path),
+                Id(Path.GetDirectoryName(path)!),
+                Path.GetFileName(path),
+                folder ? FileAttributes.Directory : FileAttributes.Normal,
+                reason
+            )
+        );
+    }
+
+    public VolumeCursor? Cursor() => new(root, Journal, usn);
+
+    public IEnumerable<VolumeEntry> Entries(CancellationToken ct)
+    {
+        Scans++;
+        var folders = new Stack<string>([root]);
+        while (folders.Count > 0)
+        {
+            var folder = folders.Pop();
+            foreach (var entry in new DirectoryInfo(folder).EnumerateFileSystemInfos())
+            {
+                yield return new(Id(entry.FullName), Id(folder), entry.Name, entry.Attributes);
+                if (
+                    (entry.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint))
+                    == FileAttributes.Directory
+                )
+                    folders.Push(entry.FullName);
+            }
+        }
+        foreach (var extra in Extra)
+            yield return extra;
+    }
+
+    public (List<VolumeEntry> Changes, VolumeCursor Next) ChangesSince(VolumeCursor since, CancellationToken ct)
+    {
+        if (since.JournalId != Journal)
+            throw new JournalGoneException("journal recreated");
+        var changes = pending.ToList();
+        usn += changes.Count;
+        pending.Clear();
+        return (changes, since with { NextUsn = usn });
+    }
+
+    public string? PathOf(ulong id) => ids.FirstOrDefault(p => p.Value == id && Directory.Exists(p.Key)).Key;
+
+    public string? Canonical(string path) => Directory.Exists(path) ? SensitiveScopeRules.Full(path) : null;
+
+    public void Dispose() { }
 }
