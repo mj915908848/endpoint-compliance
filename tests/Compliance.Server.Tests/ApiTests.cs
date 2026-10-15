@@ -455,6 +455,78 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Enforcement_starts_once_the_pilot_device_reports_its_measures_ready()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        var snap = new ScanSnapshot
+        {
+            DeviceId = f.Device,
+            HostName = "pilot",
+            PolicyVersion = 1,
+            CollectedAt = f.Clock.Now,
+        };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("s", 1, f.Clock.Now, "Snapshot", "scan", snap)])
+        );
+        async Task Heartbeat(params ControlState[] controls) =>
+            Assert.Equal(
+                HttpStatusCode.OK,
+                (
+                    await f.Agent(
+                        "POST",
+                        "/api/agent/heartbeat",
+                        new HeartbeatRequest("pilot", "1", f.Clock.Now, 1, controls),
+                        Guid.NewGuid().ToString()
+                    )
+                ).StatusCode
+            );
+        var pilot = PolicySeed.Create() with
+        {
+            PolicyId = "试点",
+            Mode = "Enforce",
+            TargetDeviceIds = [f.Device],
+            RequiredControls = ["application", "edge", "network"],
+        };
+
+        await Heartbeat(
+            new ControlState("process", 1, "Ready", "可启用", true),
+            new ControlState("browser", 1, "Uncovered", "客户端没有写入浏览器策略的权限")
+        );
+        var refused = await f.Client.PostAsJsonAsync("/api/policies/new", pilot, Wire.Json);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Contains("浏览器网址拦截", await refused.Content.ReadAsStringAsync());
+
+        await Heartbeat(
+            new ControlState("process", 1, "Ready", "可启用", true),
+            new ControlState("browser", 1, "Ready", "可启用", true)
+        );
+        var created = await f.Client.PostAsJsonAsync("/api/policies/new", pilot, Wire.Json);
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var doc = Wire.Read<PolicyDocument>(
+            (await created.Content.ReadFromJsonAsync<PolicyListItem>(Wire.Json))!.Release.Payload
+        );
+        // Legacy names map onto the measures that exist; the never-implemented network measure is dropped.
+        Assert.Equal(["process", "browser"], doc.RequiredControls);
+
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([
+                new("b", 2, f.Clock.Now, "BlockedAttempt", "blocked:cursor", null, "Cursor（Cursor.exe）已被结束"),
+            ])
+        );
+        var blocked = Assert.Single(
+            (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!,
+            a => a.Type == "BlockedAttempt"
+        );
+        Assert.Equal("Cursor（Cursor.exe）已被结束", blocked.Summary);
+    }
+
+    [Fact]
     public async Task Conflicting_sequence_rolls_back_entire_batch()
     {
         await using var f = new Fixture();

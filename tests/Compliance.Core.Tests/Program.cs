@@ -223,7 +223,7 @@ Test(
         )
 );
 Test(
-    "enforcement missing network capability cannot pass",
+    "enforcement needs every required measure in effect",
     () =>
         Eq(
             Verdict.UNKNOWN,
@@ -235,11 +235,7 @@ Test(
                     },
                     clean with
                     {
-                        Controls =
-                        [
-                            new("edge", 1, "Applied", "readback", true),
-                            new("application", 1, "Applied", "loaded", true),
-                        ],
+                        Controls = [new("browser", 1, "Applied", "readback", true)],
                     },
                     now
                 )
@@ -256,11 +252,11 @@ Test(
                     p with
                     {
                         Mode = "Enforce",
-                        RequiredControls = ["edge"],
+                        RequiredControls = ["browser"],
                     },
                     clean with
                     {
-                        Controls = [new("edge", 1, "Applied", "readback", false)],
+                        Controls = [new("browser", 1, "Applied", "readback", false)],
                     },
                     now
                 )
@@ -268,7 +264,28 @@ Test(
         )
 );
 Test(
-    "all required verified controls permit enforcement PASS",
+    "a measure that is only ready does not count while enforcing",
+    () =>
+        Eq(
+            Verdict.UNKNOWN,
+            ReportEngine
+                .Evaluate(
+                    p with
+                    {
+                        Mode = "Enforce",
+                        RequiredControls = ["browser"],
+                    },
+                    clean with
+                    {
+                        Controls = [new("browser", 1, "Ready", "can write", true)],
+                    },
+                    now
+                )
+                .Verdict
+        )
+);
+Test(
+    "legacy measure names map onto the measures that exist",
     () =>
         Eq(
             Verdict.PASS,
@@ -277,11 +294,35 @@ Test(
                     p with
                     {
                         Mode = "Enforce",
-                        RequiredControls = ["edge"],
+                        RequiredControls = ["edge", "network"],
                     },
                     clean with
                     {
-                        Controls = [new("edge", 1, "Verified", "verified canary", true)],
+                        Controls = [new("browser", 1, "Applied", "readback", true)],
+                    },
+                    now
+                )
+                .Verdict
+        )
+);
+Test(
+    "all required measures in effect permit enforcement PASS",
+    () =>
+        Eq(
+            Verdict.PASS,
+            ReportEngine
+                .Evaluate(
+                    p with
+                    {
+                        Mode = "Enforce",
+                    },
+                    clean with
+                    {
+                        Controls =
+                        [
+                            new("process", 1, "Applied", "sweeping", true),
+                            new("browser", 1, "Applied", "readback", true),
+                        ],
                     },
                     now
                 )

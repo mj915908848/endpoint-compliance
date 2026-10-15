@@ -1299,8 +1299,188 @@ await Check(
 );
 
 // Native checks run on Windows only (CI runs them on windows-latest); elsewhere they are skipped.
+await Check(
+    "process measure ends only confirmed forbidden programs, and only while enforcing",
+    async () =>
+    {
+        var table = new FakeProcesses([
+            new(10, "Cursor.exe", () => "Cursor", () => "S-1-5-21-1"),
+            new(11, "cursor.exe", () => "Some Other Cursor", () => "S-1-5-21-1"),
+            new(12, "notepad.exe", () => "Notepad", () => null),
+        ]);
+        var enforcer = new ProcessEnforcer(table);
+        var policy = PolicySeed.Create() with { Version = 3 };
+        Assert(
+            enforcer.Sweep(policy, DateTimeOffset.UtcNow).Count == 0 && table.Killed.Count == 0,
+            "audit mode must not end anything"
+        );
+        var ready = enforcer.State(policy);
+        Assert(
+            ready is { State: "Ready", Verified: true, Version: 3 },
+            "audit mode reports the measure as ready: " + ready
+        );
+
+        var enforce = policy with { Mode = "Enforce", TargetDeviceIds = ["d"] };
+        var blocked = enforcer.Sweep(enforce, DateTimeOffset.UtcNow);
+        Assert(
+            table.Killed.SequenceEqual([10]),
+            "only the process whose product name is confirmed: " + string.Join(",", table.Killed)
+        );
+        Assert(
+            blocked.Single() is { ProductId: "cursor", UserSid: "S-1-5-21-1" },
+            "blocked record names product and user"
+        );
+        Assert(
+            enforcer.State(enforce) is { State: "Applied", Verified: true },
+            "enforcing reports the measure in effect"
+        );
+
+        var stuck = new ProcessEnforcer(
+            new FakeProcesses([new(20, "Cursor.exe", () => "Cursor", () => null)]) { Refuse = true }
+        );
+        stuck.Sweep(enforce, DateTimeOffset.UtcNow);
+        Assert(
+            stuck.State(enforce) is { State: "Error", Verified: false },
+            "a process that cannot be ended is an error"
+        );
+        Assert(
+            new ProcessEnforcer(new FakeProcesses([]) { System = false }).State(enforce).State == "Uncovered",
+            "without SYSTEM rights the measure is not available"
+        );
+        await Task.CompletedTask;
+    }
+);
+await Check(
+    "browser measure writes numbered URLBlocklist values, keeps others' entries and removes only its own",
+    async () =>
+    {
+        var state = Path.Combine(Path.GetTempPath(), "compliance-blocklist-" + Guid.NewGuid() + ".json");
+        try
+        {
+            var store = new FakeBlocklist();
+            store.Values["Edge"] = ["gpo.example.com"];
+            var blocklist = new BrowserBlocklist(store, state);
+            var policy = PolicySeed.Create() with { Version = 4, BlockDomains = ["chatgpt.com", "gpo.example.com"] };
+            blocklist.Apply(policy);
+            Assert(store.Writes == 0, "audit mode writes nothing");
+            Assert(blocklist.State(policy) is { State: "Ready", Verified: true }, "audit mode reports ready");
+
+            var enforce = policy with { Mode = "Enforce", TargetDeviceIds = ["d"] };
+            blocklist.Apply(enforce);
+            var wanted = EdgePolicyCompiler.Compile(enforce.BlockDomains);
+            Assert(
+                store.Values["Edge"].SequenceEqual(["gpo.example.com", .. wanted.Where(w => w != "gpo.example.com")]),
+                "Edge keeps the group policy entry first: " + string.Join(",", store.Values["Edge"])
+            );
+            Assert(store.Values["Chrome"].SequenceEqual(wanted), "Chrome gets every rule");
+            Assert(blocklist.State(enforce) is { State: "Applied", Verified: true }, "read back as in effect");
+            var writes = store.Writes;
+            blocklist.Apply(enforce);
+            Assert(store.Writes == writes, "unchanged rules are not rewritten");
+
+            // Group policy refresh replaced the list: reported, then written again on the next cycle.
+            store.Values["Chrome"] = ["other.example.com"];
+            Assert(blocklist.State(enforce).State == "Error", "a list overwritten by someone else is reported");
+            blocklist.Apply(enforce);
+            Assert(
+                store.Values["Chrome"].SequenceEqual(["other.example.com", .. wanted]),
+                "rules restored after the other entry"
+            );
+
+            // Back to audit (or a restart of the agent): only this agent's entries go away.
+            new BrowserBlocklist(store, state).Apply(policy);
+            Assert(store.Values["Edge"].SequenceEqual(["gpo.example.com"]), "Edge back to the group policy entry");
+            Assert(store.Values["Chrome"].SequenceEqual(["other.example.com"]), "Chrome back to the other entry");
+            Assert(!File.Exists(state) || File.ReadAllText(state).Trim() == "{}", "nothing left owned");
+        }
+        finally
+        {
+            File.Delete(state);
+        }
+        await Task.CompletedTask;
+    }
+);
 if (OperatingSystem.IsWindows())
 {
+    await Check(
+        "process measure ends a real confirmed process and names its owner",
+        async () =>
+        {
+            var ping = Path.Combine(Environment.SystemDirectory, "PING.EXE");
+            var product = System.Diagnostics.FileVersionInfo.GetVersionInfo(ping).ProductName!;
+            using var child = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(ping, "-n 60 127.0.0.1") { CreateNoWindow = true }
+            )!;
+            try
+            {
+                var policy = PolicySeed.Create() with
+                {
+                    Mode = "Enforce",
+                    TargetDeviceIds = ["d"],
+                    Products = [new ProductRule("ping", product, "test", [], ["PING.EXE"], [], [])],
+                };
+                var blocked = new ProcessEnforcer(new WindowsProcessTable()).Sweep(policy, DateTimeOffset.UtcNow);
+                Assert(
+                    blocked.Any(b => b.Pid == child.Id),
+                    "ping was not ended: " + string.Join(",", blocked.Select(b => b.Pid))
+                );
+                Assert(child.WaitForExit(5000), "ping still running");
+                Assert(
+                    blocked.First(b => b.Pid == child.Id).UserSid
+                        == System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value,
+                    "owner SID not read"
+                );
+            }
+            finally
+            {
+                if (!child.HasExited)
+                    child.Kill();
+            }
+            await Task.CompletedTask;
+        }
+    );
+    // Writes the machine's real browser policy, so only on a disposable CI runner.
+    if (Environment.GetEnvironmentVariable("CI") == "true")
+        await Check(
+            "browser measure writes Edge and Chrome URLBlocklist in the registry and removes it again",
+            async () =>
+            {
+                var state = Path.Combine(Path.GetTempPath(), "compliance-blocklist-" + Guid.NewGuid() + ".json");
+                var store = new WindowsBlocklistStore();
+                Assert(store.CanWrite, "runner cannot write HKLM\\SOFTWARE\\Policies");
+                var saved = store.Browsers.ToDictionary(b => b, store.Read);
+                try
+                {
+                    var blocklist = new BrowserBlocklist(store, state);
+                    var policy = PolicySeed.Create() with
+                    {
+                        Mode = "Enforce",
+                        TargetDeviceIds = ["d"],
+                        BlockDomains = ["chatgpt.com", "claude.ai"],
+                    };
+                    blocklist.Apply(policy);
+                    Assert(
+                        blocklist.State(policy) is { State: "Applied", Verified: true },
+                        "not read back as in effect"
+                    );
+                    using (
+                        var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                            @"SOFTWARE\Policies\Google\Chrome\URLBlocklist"
+                        )
+                    )
+                        Assert(key?.GetValue("1") is "chatgpt.com", "Chrome value 1 missing");
+                    blocklist.Apply(policy with { Mode = "Audit" });
+                    Assert(store.Browsers.All(b => store.Read(b).SequenceEqual(saved[b])), "entries not removed");
+                }
+                finally
+                {
+                    foreach (var (browser, values) in saved)
+                        store.Write(browser, values);
+                    File.Delete(state);
+                }
+                await Task.CompletedTask;
+            }
+        );
     await Check(
         "native TCP table lists our own listener with this process as owner",
         () =>
@@ -1509,4 +1689,38 @@ sealed class FakeVolume(string root) : IVolumeIndex
     public string? Canonical(string path) => Directory.Exists(path) ? SensitiveScopeRules.Full(path) : null;
 
     public void Dispose() { }
+}
+
+sealed class FakeProcesses(RunningProcess[] running) : IProcessTable
+{
+    public List<int> Killed { get; } = [];
+    public bool Refuse { get; set; }
+    public bool System { get; init; } = true;
+    public bool CanTerminate => System;
+
+    public IEnumerable<RunningProcess> Running() => running.Where(p => !Killed.Contains(p.Pid));
+
+    public bool Kill(int pid)
+    {
+        if (Refuse)
+            return false;
+        Killed.Add(pid);
+        return true;
+    }
+}
+
+sealed class FakeBlocklist : IBlocklistStore
+{
+    public Dictionary<string, List<string>> Values { get; } = new() { ["Edge"] = [], ["Chrome"] = [] };
+    public int Writes { get; private set; }
+    public IReadOnlyList<string> Browsers => ["Edge", "Chrome"];
+    public bool CanWrite => true;
+
+    public List<string> Read(string browser) => [.. Values[browser]];
+
+    public void Write(string browser, IReadOnlyList<string> values)
+    {
+        Writes++;
+        Values[browser] = [.. values];
+    }
 }

@@ -9,7 +9,7 @@ using Orientation = System.Windows.Controls.Orientation;
 
 namespace Compliance.Tray;
 
-/// <summary>A notice from the service. Messages are stored as "Type: detail" (Violation, Reminder, Recovered) or plain text.</summary>
+/// <summary>A notice from the service. Messages are stored as "Type: detail" (Violation, Reminder, Recovered, Blocked) or plain text.</summary>
 public sealed record Notice(string Id, string Message, DateTimeOffset At, bool Acknowledged)
 {
     public (string Label, Color Color, string Text) Parse()
@@ -19,6 +19,7 @@ public sealed record Notice(string Id, string Message, DateTimeOffset At, bool A
             {
                 ("Violation: ", "需要处理", Color.FromRgb(0xF5, 0x3F, 0x3F)),
                 ("Reminder: ", "仍未处理", Color.FromRgb(0xFF, 0x7D, 0x00)),
+                ("Blocked: ", "已拦截", Color.FromRgb(0xF5, 0x3F, 0x3F)),
                 ("Recovered: ", "已恢复", Color.FromRgb(0x00, 0xB4, 0x2A)),
             }
         )

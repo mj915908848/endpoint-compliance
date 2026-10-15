@@ -161,6 +161,8 @@ public sealed class AgentRuntime(
 
     // A one-time check waits for the file name scan so its results are part of the single upload.
     private bool waitForSensitiveFiles;
+    private ProcessEnforcer? processes;
+    private BrowserBlocklist? browsers;
 
     // A fixture stands in for another machine, so report its host name rather than this one's.
     private string HostName =>
@@ -306,6 +308,14 @@ public sealed class AgentRuntime(
                 )
                 : null;
         sensitiveFiles = scanner;
+        if (OperatingSystem.IsWindows() && !simulated)
+        {
+            processes = new ProcessEnforcer(new WindowsProcessTable());
+            browsers = new BrowserBlocklist(
+                new WindowsBlocklistStore(),
+                Path.Combine(config.DataDirectory, "browser-blocklist.json")
+            );
+        }
         if (once)
         {
             waitForSensitiveFiles = true;
@@ -316,10 +326,13 @@ public sealed class AgentRuntime(
                 );
             return;
         }
+        var enforceTask = processes is null ? Task.CompletedTask : EnforceAsync(queue, notices, ct);
         while (!ct.IsCancellationRequested)
         {
             if (pipeTask.IsFaulted)
                 await pipeTask;
+            if (enforceTask.IsFaulted)
+                await enforceTask;
             try
             {
                 await Cycle(api, queue, notices, lastFull < DateTimeOffset.UtcNow.AddMinutes(-60), ct);
@@ -346,6 +359,49 @@ public sealed class AgentRuntime(
                 }
             }
             await Task.Delay(TimeSpan.FromSeconds(55 + Random.Shared.Next(11)), ct);
+        }
+    }
+
+    /// <summary>
+    /// Ends forbidden programs every 2 seconds while the policy enforces it. Each product is reported to the
+    /// server and to the user's tray at most once per 10 minutes, however often it is restarted.
+    /// </summary>
+    private async Task EnforceAsync(EventOutbox queue, NotificationStore notices, CancellationToken ct)
+    {
+        var reported = new Dictionary<string, DateTimeOffset>();
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            if (policy is not { } current || processes is null)
+                continue;
+            List<BlockedProcess> blocked;
+            try
+            {
+                blocked = processes.Sweep(current, DateTimeOffset.UtcNow);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"结束禁用程序时出错：{e.GetType().Name}: {e.Message}");
+                continue;
+            }
+            foreach (var b in blocked)
+            {
+                Console.WriteLine($"已结束禁用程序 {b.ProductName}（{b.Executable}，进程号 {b.Pid}）");
+                var key = b.ProductId + "|" + b.UserSid;
+                if (reported.TryGetValue(key, out var at) && at > DateTimeOffset.UtcNow.AddMinutes(-10))
+                    continue;
+                reported[key] = DateTimeOffset.UtcNow;
+                var detail = $"{b.ProductName}（{b.Executable}）已被结束：单位策略禁止在本机使用该程序";
+                await notices.AddAsync(Guid.NewGuid().ToString("D"), b.UserSid, "Blocked: " + detail, ct);
+                try
+                {
+                    await queue.EnqueueAsync("BlockedAttempt", "blocked:" + b.ProductId, null, detail, ct);
+                }
+                catch (OutboxCapacityException e)
+                {
+                    Console.Error.WriteLine(e.Message);
+                }
+            }
         }
     }
 
@@ -499,7 +555,14 @@ public sealed class AgentRuntime(
                 var (found, results) = sensitiveFiles.Results(policy.SensitiveFiles, DateTimeOffset.UtcNow);
                 scan = scan with { Evidence = [.. scan.Evidence, .. found], Modules = [.. scan.Modules, .. results] };
             }
-            var controls = WindowsControls.Inspect(policy);
+            browsers?.Apply(policy);
+            ControlState[] controls =
+                processes is not null && browsers is not null
+                    ? [processes.State(policy), browsers.State(policy)]
+                    : UnavailableControls.For(
+                        policy,
+                        simulated ? "模拟终端不执行防护措施" : "非 Windows 环境无法执行防护措施"
+                    );
             // Lightweight cadence uses fresh module results only for modules actually collected.
             var moduleResults = policyIssue is null
                 ? scan.Modules

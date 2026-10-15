@@ -77,7 +77,7 @@ public static class ReportEngine
             }
         }
         var controlsMissing = new List<string>();
-        foreach (var id in policy.RequiredControls)
+        foreach (var id in Controls.Normalize(policy.RequiredControls))
         {
             var c = snapshot.Controls.FirstOrDefault(c => c.Id == id);
             if (
@@ -87,14 +87,14 @@ public static class ReportEngine
                 || c.RebootRequired
                 || c.State is not ("Verified" or "Applied")
             )
-                controlsMissing.Add($"{id}（{c?.Detail ?? "终端未上报"}）");
+                controlsMissing.Add($"{Labels.Control(id)}（{c?.Detail ?? "终端未上报"}）");
         }
         if (policy.Mode == "Enforce")
             gaps.AddRange(controlsMissing);
         string protection =
             policy.Mode == "Audit" ? "审计模式：只检查，不拦截"
-            : controlsMissing.Count == 0 ? "所需防护措施均已验证"
-            : "以下防护措施尚未验证：" + string.Join("；", controlsMissing);
+            : controlsMissing.Count == 0 ? "强制模式：所需防护措施均已生效"
+            : "以下防护措施尚未生效：" + string.Join("；", controlsMissing);
         var knownIds = policy.Products.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
         foreach (
             var e in snapshot.Evidence.Where(e =>

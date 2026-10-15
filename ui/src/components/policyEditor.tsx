@@ -44,7 +44,12 @@ export const modules = [
   "users",
   "cli",
 ];
-const controls = ["application", "edge", "network"];
+const controls = ["process", "browser"];
+/** Earlier policies named measures that were never implemented; show them as the ones that replaced them. */
+const currentControls = (ids: string[]) =>
+  controls.filter((c) =>
+    ids.some((id) => id === c || (c === "process" ? id === "application" : id === "edge")),
+  );
 
 /** Matches the server default; policies published before sensitive file scanning omit the section. */
 export const defaultSensitiveFiles: SensitiveFilePolicy = {
@@ -403,12 +408,16 @@ export function PolicyEditor({
           <Col xs={24} lg={10}>
             <Field label="必需防护措施">
               <Checkbox.Group
-                value={value.requiredControls}
+                value={currentControls(value.requiredControls)}
                 disabled={readOnly}
                 onChange={(v) => set({ requiredControls: controls.filter((c) => v.includes(c)) })}
                 options={controls.map((c) => ({ value: c, label: controlLabel(c) }))}
               />
-              <Hint>仅在强制模式下生效，发布前会核对试点终端是否已验证这些防护措施。</Hint>
+              <Hint>
+                仅在强制模式下执行：“发现即结束进程”每 2
+                秒结束一次已核实的禁用程序并通知用户；“浏览器网址拦截”把禁止访问的域名写入 Edge 和
+                Chrome 的拦截策略。发布前会核对试点终端已报告“可启用”，生效后报告“已生效”。
+              </Hint>
             </Field>
           </Col>
         </Row>

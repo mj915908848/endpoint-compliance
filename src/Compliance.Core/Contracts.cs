@@ -66,7 +66,7 @@ public record PolicyDocument
     public bool DenyProxy { get; init; } = true;
     public string[] RequiredModules { get; init; } =
     ["installed", "processes", "proxy", "extensions", "appx", "ports", "users"];
-    public string[] RequiredControls { get; init; } = ["application", "edge", "network"];
+    public string[] RequiredControls { get; init; } = ["process", "browser"];
     public int InventoryFreshMinutes { get; init; } = 120;
     public int LightweightFreshMinutes { get; init; } = 10;
     public ProductRule[] Products { get; init; } = [];

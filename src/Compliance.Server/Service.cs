@@ -586,6 +586,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             ExpiresAt = Now + PolicyValidity,
             DenyInstalled = true,
             DenyProxy = true,
+            RequiredControls = Controls.Normalize(submitted.RequiredControls),
             TargetDeviceIds = isDefault ? [] : (submitted.TargetDeviceIds ?? []).Distinct().ToArray(),
         };
         if (
@@ -644,6 +645,10 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         return policy.Document.PolicyId;
     }
 
+    /// <summary>
+    /// Enforcement starts only on pilot devices that are online with a fresh real scan and report every required
+    /// measure as ready (or already in effect) under the policy they hold now.
+    /// </summary>
     async Task ValidateEnforcement(Transaction tx, PolicyDocument doc)
     {
         if (doc.Mode != "Enforce")
@@ -651,6 +656,10 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
 
         if (doc.TargetDeviceIds.Length == 0 || doc.RequiredControls.Length == 0)
             throw new ApiError(409, "强制模式需要指定试点终端，并选择至少一项防护措施");
+        if (doc.RequiredControls.Contains(Controls.Process) && !doc.Products.Any(p => p.ExecutableNames.Length > 0))
+            throw new ApiError(409, "“发现即结束进程”需要至少一个填写了程序文件名的禁用产品");
+        if (doc.RequiredControls.Contains(Controls.Browser) && doc.BlockDomains.Length == 0)
+            throw new ApiError(409, "“浏览器网址拦截”需要至少一个禁止访问的域名");
         foreach (var id in doc.TargetDeviceIds)
         {
             var d = await Device(tx, id);
@@ -660,7 +669,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 || d.Snapshot.Simulated
                 || d.Snapshot.CollectedAt < Now.AddMinutes(-10)
             )
-                throw new ApiError(409, "试点终端需要在线，且 10 分钟内有真实（非模拟）的检查结果");
+                throw new ApiError(409, $"试点终端 {d.HostName} 需要在线，且 10 分钟内有真实（非模拟）的检查结果");
             foreach (var control in doc.RequiredControls)
             {
                 var c = d.Controls?.FirstOrDefault(x => x.Id == control);
@@ -669,15 +678,14 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                     || !c.Verified
                     || c.RebootRequired
                     || c.Version != d.TargetPolicyVersion
-                    || c.State is not ("Applied" or "Verified")
+                    || c.State is not ("Ready" or "Applied" or "Verified")
                 )
-                    throw new ApiError(409, "试点终端尚未验证所需的防护措施，请先在审计模式下确认防护措施已生效");
+                    throw new ApiError(
+                        409,
+                        $"试点终端 {d.HostName} 的“{Labels.Control(control)}”尚不可用：{c?.Detail ?? "终端未上报，请更新客户端"}"
+                    );
             }
         }
-        if (doc.RequiredControls.Contains("network"))
-            throw new ApiError(409, "暂不支持强制启用“网络访问拦截”");
-        if (doc.ApplicationRules.Length == 0 || doc.BlockDomains.Length > 1000)
-            throw new ApiError(409, "强制模式需要至少一条应用程序拦截规则，禁止访问的域名不能超过 1000 项");
     }
 
     public SignedPolicy Sign(PolicyDocument doc) => PolicyCrypto.Sign(doc, signer, KeyId);

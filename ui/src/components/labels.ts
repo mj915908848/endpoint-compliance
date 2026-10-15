@@ -87,18 +87,21 @@ export const categoryLabel = lookup({
 });
 
 export const controlLabel = lookup({
-  application: "应用程序拦截",
-  edge: "Edge 浏览器策略",
-  network: "网络访问拦截",
+  process: "发现即结束进程",
+  browser: "浏览器网址拦截",
+  application: "应用程序拦截（旧）",
+  edge: "Edge 浏览器策略（旧）",
+  network: "网络访问拦截（旧）",
 });
 
 export const controlStateLabel = lookup({
   Verified: "已验证",
-  Applied: "已应用",
+  Ready: "可启用",
+  Applied: "已生效",
   AppliedUnverified: "已应用，未验证",
   PendingManualApplication: "待人工部署",
   Uncovered: "未覆盖",
-  Error: "读取失败",
+  Error: "出错",
 });
 
 /** "整机", "D 盘" for a data drive, or "用户 kaiyu" when the snapshot names the account, else "用户 <SID>". */
