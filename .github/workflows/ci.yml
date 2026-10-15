@@ -137,6 +137,16 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Install scripts parse in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $failed = $false
+          foreach ($f in Get-ChildItem deploy -Recurse -Filter *.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors) | Out-Null
+            foreach ($e in $errors) { Write-Host "$($f.Name):$($e.Extent.StartLineNumber): $($e.Message)"; $failed = $true }
+          }
+          if ($failed) { exit 1 }
       - name: Agent tests (including native socket table)
         run: dotnet run --project tests/Compliance.Agent.Tests
       - name: Build management UI, server, agent and tray
