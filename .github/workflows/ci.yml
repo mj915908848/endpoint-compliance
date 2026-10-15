@@ -230,8 +230,14 @@ jobs:
           dotnet build src/Compliance.Tray -c Release
       - name: Stage a client package
         run: python scripts/package.py --stage artifacts/pkg
-      - name: Native scan against a loopback server, then install the package as a service
-        run: python integration/windows_smoke.py --data artifacts/windows-smoke --package artifacts/pkg
+      - name: Download an earlier release to upgrade from
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.2.1 -p 'compliance-client-*' -D artifacts/old-zip
+          python -m zipfile -e artifacts/old-zip/*.zip artifacts/old-pkg
+      - name: Native scan against a loopback server, then install the earlier release and upgrade it as a service
+        run: python integration/windows_smoke.py --data artifacts/windows-smoke --package artifacts/pkg --old-package artifacts/old-pkg
       - if: always()
         uses: actions/upload-artifact@v5
         with:

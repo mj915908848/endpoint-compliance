@@ -19,6 +19,8 @@ ap.add_argument("--data", type=pathlib.Path)
 # A staged package (agent-windows-x64 + deploy/windows): installs it as a service from a downloaded
 # 登记配置.json, as an administrator would, then uninstalls it.
 ap.add_argument("--package", type=pathlib.Path)
+# An earlier release's package: installed first, then upgraded in place with --package ("1 仅更新程序").
+ap.add_argument("--old-package", type=pathlib.Path)
 args = ap.parse_args()
 data = args.data or root / "artifacts" / ("windows-smoke-" + secrets.token_hex(4))
 data.mkdir(parents=True, exist_ok=False)
@@ -261,30 +263,44 @@ try:
     if args.package:
         package = args.package.resolve()
         batch = request("/api/enrollment-codes", {"expiresMinutes": 60, "maxUses": 2, "label": "冒烟批次"})
-        (package / "登记配置.json").write_text(
-            json.dumps({"serverUrl": base, "code": batch["code"]}), encoding="utf-8"
-        )
-        install = [
-            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-File", str(package / "deploy/windows/Install-TrialService.ps1"), "-PackageRoot", str(package),
-        ]
+
+        def run_installer(root_dir, answer, name):
+            (root_dir / "登记配置.json").write_text(
+                json.dumps({"serverUrl": base, "code": batch["code"]}), encoding="utf-8"
+            )
+            install = [
+                "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                "-File", str(root_dir / "deploy/windows/Install-TrialService.ps1"), "-PackageRoot", str(root_dir),
+            ]
+            with (data / name).open("w", encoding="utf-8") as log:
+                # Without an answer there is no console input: a prompt the config should have answered fails.
+                result = subprocess.run(install, input=answer, stdout=log, stderr=subprocess.STDOUT,
+                                        text=True, timeout=300)
+            print((data / name).read_text(encoding="utf-8", errors="replace"))
+            assert result.returncode == 0, f"Installer exited with {result.returncode}"
+
+        def wait_reporting(since=""):
+            deadline = time.monotonic() + 180
+            while True:
+                enrolled = [d for d in request("/api/devices") if d["id"] != device]
+                if enrolled and (enrolled[0]["lastHeartbeat"] or "") > since and enrolled[0]["lastScan"]:
+                    return enrolled
+                assert time.monotonic() < deadline, "Installed service did not enroll, heartbeat and report"
+                time.sleep(2)
+
         installed = True
-        with (data / "install.log").open("w", encoding="utf-8") as log:
-            # No console input: a prompt the config should have answered fails instead of waiting.
-            result = subprocess.run(install, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                                    timeout=300)
-        print((data / "install.log").read_text(encoding="utf-8", errors="replace"))
-        assert result.returncode == 0, f"Installer exited with {result.returncode}"
-        deadline = time.monotonic() + 180
-        while True:
-            enrolled = [d for d in request("/api/devices") if d["id"] != device]
-            if enrolled and enrolled[0]["lastHeartbeat"] and enrolled[0]["lastScan"]:
-                break
-            assert time.monotonic() < deadline, "Installed service did not enroll, heartbeat and report"
-            time.sleep(2)
+        run_installer((args.old_package or args.package).resolve(), "", "install.log")
+        enrolled = wait_reporting()
         uses = [c for c in request("/api/enrollment-codes") if c["id"] == batch["id"]][0]["uses"]
         assert uses == 1, f"batch code uses {uses}"
         print("PASS double-click installer enrolls with the downloaded config; the service reports")
+        if args.old_package:
+            before = enrolled[0]["lastHeartbeat"]
+            run_installer(package, "1\n", "upgrade.log")
+            upgraded = wait_reporting(before)
+            assert [d["id"] for d in upgraded] == [d["id"] for d in enrolled], "Upgrade enrolled a new device"
+            assert "更新到" in (data / "upgrade.log").read_text(encoding="utf-8", errors="replace")
+            print("PASS upgrading an earlier release in place keeps the device identity and the service reports")
         # The installed tray shares the service's runtime folder; it must load from there.
         installed_tray = pathlib.Path(os.environ["ProgramFiles"]) / "ComplianceAgent" / "Compliance.Tray.exe"
         viewer = subprocess.Popen([str(installed_tray), "--notices"])
