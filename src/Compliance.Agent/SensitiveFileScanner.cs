@@ -318,6 +318,11 @@ public sealed class SensitiveFileScanner(
     private bool runningFull;
     private Task current = Task.CompletedTask;
 
+    private int revision;
+
+    /// <summary>Counts changes to the reported results: a scope rescanned or a full scan finished.</summary>
+    public int Revision => Volatile.Read(ref revision);
+
     /// <summary>The scan in progress, or a completed task when idle.</summary>
     public Task Completion
     {
@@ -696,6 +701,7 @@ public sealed class SensitiveFileScanner(
             var scopes = state.Scopes.Where(s => s.Scope != result.Scope).Append(result).ToArray();
             state = state with { Scopes = scopes };
             Save();
+            Interlocked.Increment(ref revision);
         }
     }
 
@@ -712,6 +718,7 @@ public sealed class SensitiveFileScanner(
                 Scopes = state.Scopes.Where(s => keep.Contains(s.Scope)).ToArray(),
             };
             Save();
+            Interlocked.Increment(ref revision);
         }
     }
 

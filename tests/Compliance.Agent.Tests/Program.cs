@@ -1008,6 +1008,8 @@ await Check(
                 await scanner.Completion;
                 var (evidence, modules) = scanner.Results(policy, now);
                 Assert(evidence is [{ ProductId: "secret" }], "hit missing");
+                var revision = scanner.Revision;
+                Assert(revision > 0, "a finished scan did not count as new results");
                 Assert(
                     modules.Single(m => m.Scope == "user-1").Status == "Complete"
                         && modules.Single(m => m.Scope == "drive:E") is { Status: "Unknown", Error: "磁盘未就绪" },
@@ -1018,6 +1020,7 @@ await Check(
                 scanner.Update(policy, false, now.AddHours(1));
                 await scanner.Completion;
                 Assert(scanner.Results(policy, now).Evidence.Length == 1, "rescanned before the interval");
+                Assert(scanner.Revision == revision, "a change check without changes counted as new results");
                 File.Delete(Path.Combine(docs, "机密附件.pdf"));
             }
             gone = false;

@@ -161,6 +161,7 @@ public sealed class AgentRuntime(
 
     // A one-time check waits for the file name scan so its results are part of the single upload.
     private bool waitForSensitiveFiles;
+    private int reportedSensitiveRevision;
     private ProcessEnforcer? processes;
     private BrowserBlocklist? browsers;
 
@@ -538,7 +539,15 @@ public sealed class AgentRuntime(
             forceFull = true;
         bool full =
             forceFull || latest is null || lastFull < DateTimeOffset.UtcNow.AddMinutes(-policy.FullCheckMinutes);
-        bool light = full || lastLight < DateTimeOffset.UtcNow.AddMinutes(-policy.QuickCheckMinutes);
+        // A background sensitive file scan that has finished with new results is reported at once, not at the next
+        // quick check.
+        bool sensitiveNews =
+            sensitiveFiles is { Completion.IsCompleted: true } finished
+            && finished.Revision != reportedSensitiveRevision;
+        bool due = full || lastLight < DateTimeOffset.UtcNow.AddMinutes(-policy.QuickCheckMinutes);
+        if (sensitiveNews && !due && AgentLog.Active)
+            Console.WriteLine("敏感文件扫描有新结果，立即上报");
+        bool light = due || sensitiveNews;
         if (light)
         {
             if (sensitiveFiles is not null)
@@ -556,6 +565,7 @@ public sealed class AgentRuntime(
                 : await CollectNativeAsync(config.DeviceId!, policy, full ? null : latest, ct);
             if (sensitiveFiles is not null)
             {
+                reportedSensitiveRevision = sensitiveFiles.Revision;
                 var (found, results) = sensitiveFiles.Results(policy.SensitiveFiles, DateTimeOffset.UtcNow);
                 scan = scan with { Evidence = [.. scan.Evidence, .. found], Modules = [.. scan.Modules, .. results] };
             }
