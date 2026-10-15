@@ -21,8 +21,11 @@ $dataDir = Join-Path $env:ProgramData 'ComplianceAgent'
 $uninstall = Join-Path $PSScriptRoot 'Uninstall-TrialService.ps1'
 
 $tray = Join-Path $installDir 'Compliance.Tray.exe'
+$newVersion = ((Get-Item (Join-Path $package 'Compliance.Agent.exe')).VersionInfo.ProductVersion -split '\+')[0]
+Write-Host "客户端版本 $newVersion"
 if (Get-Service ComplianceAgent -ErrorAction SilentlyContinue) {
-    Write-Host '本机已安装常驻客户端：'
+    $oldVersion = ((Get-Item (Join-Path $installDir 'Compliance.Agent.exe') -ErrorAction SilentlyContinue).VersionInfo.ProductVersion -split '\+')[0]
+    Write-Host "本机已安装常驻客户端（版本 $oldVersion）："
     Write-Host '  1  仅更新程序，保留登记身份和本地数据（推荐）'
     Write-Host '  2  卸载后重新安装，需要新的登记码'
     $choice = Read-Host '请选择 (1/2，其他键取消)'
@@ -33,7 +36,7 @@ if (Get-Service ComplianceAgent -ErrorAction SilentlyContinue) {
         Copy-Item (Join-Path $package '*') $installDir -Recurse -Force
         Start-Service ComplianceAgent
         Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $tray + '"')
-        Write-Host '更新完成，服务已重新启动。约 1 分钟后在管理端刷新即可看到新的检查结果。' -ForegroundColor Green
+        Write-Host "已从 $oldVersion 更新到 $newVersion，服务已重新启动。约 1 分钟后在管理端刷新即可看到新的检查结果。" -ForegroundColor Green
         exit 0
     }
     if ($choice -ne '2') { Write-Host '已取消。'; exit 0 }

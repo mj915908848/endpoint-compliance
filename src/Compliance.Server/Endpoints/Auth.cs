@@ -1,7 +1,16 @@
+using System.Reflection;
+
 namespace Compliance.Server;
 
 static partial class Endpoints
 {
+    /// <summary>The release version, without the commit hash the SDK appends.</summary>
+    static readonly string Version =
+        typeof(Endpoints)
+            .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion.Split('+')[0]
+        ?? "";
+
     static void MapAuth(IEndpointRouteBuilder routes, ComplianceService s, Settings settings)
     {
         var group = routes.MapGroup("/api");
@@ -11,6 +20,7 @@ static partial class Endpoints
             () =>
                 new
                 {
+                    version = Version,
                     mode = settings.DemoMode ? (settings.DemoHttpLan ? "LanHttpTrial" : "LoopbackDemo") : "Production",
                     storage = settings.Storage,
                     networkCapabilities = new[]

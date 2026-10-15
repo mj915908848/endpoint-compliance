@@ -94,14 +94,28 @@ docker compose exec -T db pg_restore -U compliance -d compliance --clean --if-ex
 docker compose up -d
 ```
 
-## 升级
+## 版本与升级
+
+每次改动推送到 main 且 CI 通过后，GitHub 自动发布一个版本（Releases 页，版本号如 `0.1.64`），附带：
+
+- `compliance-server-<版本>.tar.gz`：管理端 Docker 镜像，服务器上直接加载，不用在服务器上构建；
+- `终端合规-<版本>-Windows客户端.zip`：Windows 客户端安装包。
+
+管理端当前版本显示在“系统”页。
+
+**升级管理端**：在能访问 GitHub 的电脑上下载镜像（或用 `gh release download v<版本> -p 'compliance-server-*'`），拷到服务器的本目录，然后：
 
 ```bash
-git pull
-docker compose up -d --build
+./backup.sh
+docker load -i compliance-server-<版本>.tar.gz
+docker compose up -d
 ```
 
-数据库结构在启动时自动升级。升级前先备份。
+`docker load` 会把镜像标记为 `compliance-server:latest`，`up -d` 即换成新版本；数据库结构在启动时自动升级。不要加 `--build`，否则会用服务器上的源码重新构建。首次部署也可以这样用下载的镜像代替第 4 步的构建，但仍需要本目录的 `compose.yml`、`.env.example`、`backup.sh`（来自源码包）。
+
+在服务器上从源码构建（第 4 步的方式）同样可用：更新源码后 `docker compose up -d --build`。
+
+**升级客户端**：解压新的客户端包，在已安装的电脑上双击 `安装客户端（正式环境）.bat`，选“1 仅更新程序”，保留登记身份，不需要登记码。窗口里会显示从哪个版本更新到哪个版本。
 
 ## 常用命令
 

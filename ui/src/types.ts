@@ -162,6 +162,7 @@ export interface Audit {
   at: string;
 }
 export interface Status {
+  version?: string;
   mode: string;
   storage: string;
   networkCapabilities: (

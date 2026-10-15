@@ -12,9 +12,12 @@ COPY global.json Directory.Build.props ./
 COPY src/Compliance.Core/ src/Compliance.Core/
 COPY src/Compliance.Server/ src/Compliance.Server/
 COPY --from=ui /src/ui/dist ui/dist
-RUN dotnet publish src/Compliance.Server -c Release -o /app
+ARG VERSION=0.0.0-dev
+RUN dotnet publish src/Compliance.Server -c Release -p:Version=$VERSION -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+ARG VERSION=0.0.0-dev
+LABEL org.opencontainers.image.version=$VERSION
 WORKDIR /app
 COPY --from=server /app ./
 # The signing key lives here; a named volume mounted on it inherits this ownership.

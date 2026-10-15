@@ -41,6 +41,7 @@ export function SystemPage() {
                       </Tag>
                     ),
                   },
+                  { label: "版本", children: status.data.version ?? "未知" },
                   { label: "数据库", children: status.data.storage },
                   {
                     label: "策略签名密钥 ID",
