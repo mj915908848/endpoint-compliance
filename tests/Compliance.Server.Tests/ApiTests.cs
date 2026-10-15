@@ -211,6 +211,48 @@ public class ApiTests
         Assert.Equal(older, ReleaseVersion.Older(agent, server));
 
     [Fact]
+    public async Task Snapshot_events_keep_no_copy_and_old_events_are_pruned()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        var snapshot = new ScanSnapshot
+        {
+            DeviceId = f.Device,
+            HostName = "SNAPSHOT-HOST",
+            CollectedAt = f.Clock.Now,
+            PolicyVersion = 1,
+        };
+        var batch = new EventBatch([
+            new("scan", 1, f.Clock.Now, "Snapshot", "scan", snapshot),
+            new("violation", 2, f.Clock.Now, "Violation", "x", Detail: "confirmed"),
+        ]);
+        Assert.Equal(HttpStatusCode.OK, (await f.Agent("POST", "/api/agent/events", batch)).StatusCode);
+        string? Body(string id) => service.Tx(tx => tx.GetEventBody(f.Device, id)).GetAwaiter().GetResult();
+        Assert.DoesNotContain("SNAPSHOT-HOST", Body("scan"));
+        Assert.Contains("confirmed", Body("violation"));
+        var detail = await f.Client.GetFromJsonAsync<JsonElement>($"/api/devices/{f.Device}", Wire.Json);
+        Assert.Equal("SNAPSHOT-HOST", detail.GetProperty("snapshot").GetProperty("hostName").GetString());
+
+        f.Clock.Now = f.Clock.Now.AddDays(2);
+        // The snapshot event, and the administrator's session that has expired by now.
+        Assert.Equal(2, await service.Maintain());
+        Assert.Null(Body("scan"));
+        // A retry of a kept event is still recognized.
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await f.Agent("POST", "/api/agent/events", new EventBatch([batch.Events[1]]))).StatusCode
+        );
+        Assert.NotNull(Body("violation"));
+
+        f.Clock.Now = f.Clock.Now.AddDays(90);
+        Assert.True(await service.Maintain() >= 1);
+        Assert.Null(Body("violation"));
+        Assert.Equal(0, await service.Maintain());
+    }
+
+    [Fact]
     public async Task New_received_time_does_not_refresh_old_scan_or_offline_verdict()
     {
         await using var f = new Fixture();

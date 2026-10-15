@@ -18,6 +18,7 @@ public partial class Program
         b.Services.AddSingleton<Store>();
         b.Services.AddSingleton<ComplianceService>();
         b.Services.AddHostedService<OfflineMonitor>();
+        b.Services.AddHostedService<MaintenanceService>();
         b.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         b.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 2 * 1024 * 1024);
         b.Services.AddRateLimiter(o =>

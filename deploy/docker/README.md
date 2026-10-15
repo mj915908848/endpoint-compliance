@@ -168,6 +168,12 @@ docker compose up -d
 
 在服务器上从源码构建（第 4 步的方式）同样可用：更新源码后 `docker compose up -d --build`。
 
+**数据保留**：管理端每小时自动清理一次：检查结果的上报记录保留 1 天（每台设备最新的检查结果另存，不受影响），告警、违规等其他上报记录保留 90 天，过期的登录会话和检查请求也一并删除。保留天数可在 `compose.yml` 的 `server` 环境变量里加 `Compliance__EventRetentionDays: "180"` 调整。0.2.8 及以前的版本不清理，升级后一天内旧记录会被删掉；PostgreSQL 会把腾出的空间留给新数据复用，如需立刻缩小磁盘占用，可在业务低峰执行一次（会短暂锁住该表）：
+
+```bash
+docker compose exec db psql -U compliance -d compliance -c 'VACUUM FULL events'
+```
+
 **升级客户端**：解压新的客户端包，在已安装的电脑上双击 `安装客户端（正式环境）.bat`，选“1 仅更新程序”，保留登记身份，不需要登记码。窗口里会显示从哪个版本更新到哪个版本。
 
 ## 常用命令

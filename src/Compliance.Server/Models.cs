@@ -13,6 +13,9 @@ public sealed class Settings
     public string SigningKeyPath { get; set; } = "";
     public string BootstrapUsers { get; set; } = "[]";
     public string[] TrustedProxies { get; set; } = [];
+
+    /// <summary>Days events other than snapshots are kept for; snapshot events are kept one day.</summary>
+    public int EventRetentionDays { get; set; } = 90;
 }
 
 public sealed record UserRecord(string Username, string PasswordHash, string[] Roles);

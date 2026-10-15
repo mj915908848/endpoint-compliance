@@ -255,6 +255,36 @@ public sealed class Transaction
 
     // ---- events --------------------------------------------------------------------------
 
+    public Task<string?> GetEventBody(string deviceId, string eventId) =>
+        Single(
+            "SELECT body FROM events WHERE device_id = @device AND event_id = @event",
+            r => r.GetString(0),
+            ("device", deviceId),
+            ("event", eventId)
+        );
+
+    /// <summary>
+    /// Deletes at most <paramref name="limit"/> events received before <paramref name="cutoff"/>, only snapshots
+    /// when <paramref name="snapshotsOnly"/>; returns how many. Kept small so each batch is a short transaction.
+    /// </summary>
+    public Task<int> PruneEvents(DateTimeOffset cutoff, bool snapshotsOnly, int limit) =>
+        Execute(
+            $"""
+            DELETE FROM events WHERE (device_id, event_id) IN (
+                SELECT device_id, event_id FROM events
+                WHERE received_at < @cutoff{(snapshotsOnly ? " AND type = 'Snapshot'" : "")}
+                LIMIT @limit)
+            """,
+            ("cutoff", cutoff),
+            ("limit", (long)limit)
+        );
+
+    public Task<int> PruneSessions(DateTimeOffset now) =>
+        Execute("DELETE FROM sessions WHERE expires_at < @now", ("now", now));
+
+    public Task<int> PruneCommands(DateTimeOffset cutoff) =>
+        Execute("DELETE FROM commands WHERE expires_at < @cutoff", ("cutoff", cutoff));
+
     public Task<string?> GetEventFingerprint(string deviceId, string eventId) =>
         Single(
             "SELECT fingerprint FROM events WHERE device_id = @device AND event_id = @event",

@@ -248,6 +248,37 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         );
     }
 
+    public static readonly TimeSpan SnapshotEventRetention = TimeSpan.FromDays(1);
+    public static readonly TimeSpan ExpiredCommandRetention = TimeSpan.FromDays(30);
+    const int PruneBatch = 2000;
+
+    /// <summary>
+    /// Removes what nothing reads any more, in short batches: snapshot events after a day (their rows only answer
+    /// retries, which come within minutes), other events after <see cref="Settings.EventRetentionDays"/>, expired
+    /// sessions, and commands expired for 30 days. Returns how many rows went.
+    /// </summary>
+    public async Task<int> Maintain(CancellationToken ct = default)
+    {
+        var total = 0;
+        async Task Repeat(Func<Transaction, Task<int>> batch)
+        {
+            int removed;
+            do
+            {
+                ct.ThrowIfCancellationRequested();
+                removed = await Tx(batch);
+                total += removed;
+            } while (removed >= PruneBatch);
+        }
+        await Repeat(tx => tx.PruneEvents(Now - SnapshotEventRetention, true, PruneBatch));
+        await Repeat(tx =>
+            tx.PruneEvents(Now - TimeSpan.FromDays(Math.Max(1, settings.EventRetentionDays)), false, PruneBatch)
+        );
+        total += await Tx(tx => tx.PruneSessions(Now));
+        total += await Tx(tx => tx.PruneCommands(Now - ExpiredCommandRetention));
+        return total;
+    }
+
     /// <summary>
     /// Opens an offline alert for devices silent for 5 minutes and resolves it once they are Online again.
     /// Only devices whose state actually changes are loaded.
@@ -313,7 +344,11 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 Detail = e.Detail is null ? null : EvidenceSanitizer.Clean(e.Detail),
                 Snapshot = e.Snapshot is null ? null : EvidenceSanitizer.Sanitize(e.Snapshot),
             };
-            await tx.InsertEvent(deviceId, new StoredEvent(fingerprint, safe, Now));
+            // The event row only answers retries; the snapshot itself is kept on the device below.
+            await tx.InsertEvent(
+                deviceId,
+                new StoredEvent(fingerprint, e.Type == "Snapshot" ? safe with { Snapshot = null } : safe, Now)
+            );
             accepted.Add(e.EventId);
 
             // Current snapshot follows original collection time (sequence breaks ties), never arrival time.
@@ -709,6 +744,33 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     public SignedPolicy Sign(PolicyDocument doc) => PolicyCrypto.Sign(doc, signer, KeyId);
 
     public void Dispose() => signer.Dispose();
+}
+
+public sealed class MaintenanceService(ComplianceService service, ILogger<MaintenanceService> logger)
+    : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+            do
+            {
+                try
+                {
+                    var removed = await service.Maintain(stoppingToken);
+                    if (removed > 0)
+                        logger.LogInformation("Removed {Count} expired events, sessions and commands", removed);
+                }
+                catch (Exception e) when (!stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogError(e, "Maintenance failed");
+                }
+            } while (await timer.WaitForNextTickAsync(stoppingToken));
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+    }
 }
 
 public sealed class OfflineMonitor(ComplianceService service, ILogger<OfflineMonitor> logger) : BackgroundService
