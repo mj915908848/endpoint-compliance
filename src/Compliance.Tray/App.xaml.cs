@@ -32,7 +32,7 @@ public partial class App : System.Windows.Application
         SetState(Icons.App, "终端合规 · 正在连接客户端服务");
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("打开通知中心", null, (_, _) => ShowWindow());
-        menu.Items.Add("运行日志（需管理员）", null, (_, _) => LogWindow.OpenElevated());
+        menu.Items.Add("运行日志", null, (_, _) => LogWindow.Open());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出托盘", null, (_, _) => Shutdown());
         icon.ContextMenuStrip = menu;

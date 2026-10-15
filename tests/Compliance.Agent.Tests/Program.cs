@@ -1536,6 +1536,88 @@ if (OperatingSystem.IsWindows())
                 await Task.CompletedTask;
             }
         );
+    if (
+        new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent()).IsInRole(
+            System.Security.Principal.WindowsBuiltInRole.Administrator
+        )
+    )
+        await Check(
+            "log folder is readable by users, changeable only by administrators, and takes the data directory's log",
+            async () =>
+            {
+                var users = new System.Security.Principal.SecurityIdentifier(
+                    System.Security.Principal.WellKnownSidType.BuiltinUsersSid,
+                    null
+                );
+                const System.Security.AccessControl.FileSystemRights changes =
+                    System.Security.AccessControl.FileSystemRights.Write
+                    | System.Security.AccessControl.FileSystemRights.Delete
+                    | System.Security.AccessControl.FileSystemRights.ChangePermissions;
+                System.Security.AccessControl.FileSystemRights UsersMay(string folder) =>
+                    new DirectoryInfo(folder)
+                        .GetAccessControl()
+                        .GetAccessRules(true, true, typeof(System.Security.Principal.SecurityIdentifier))
+                        .Cast<System.Security.AccessControl.FileSystemAccessRule>()
+                        .Where(r =>
+                            Equals(r.IdentityReference, users)
+                            && r.AccessControlType == System.Security.AccessControl.AccessControlType.Allow
+                        )
+                        .Aggregate(
+                            default(System.Security.AccessControl.FileSystemRights),
+                            (a, r) => a | r.FileSystemRights
+                        );
+                var path = Path.Combine(Path.GetTempPath(), "compliance-data-" + Guid.NewGuid());
+                var logs = NativeDataDirectory.LogDirectory(path);
+                try
+                {
+                    NativeDataDirectory.EnsureSecure(path);
+                    File.WriteAllText(Path.Combine(path, "agent.log"), "earlier\n");
+                    // A user created the log folder first, with write access and a file of their own in it.
+                    Directory.CreateDirectory(logs);
+                    var planted = new System.Security.AccessControl.DirectorySecurity();
+                    planted.AddAccessRule(
+                        new System.Security.AccessControl.FileSystemAccessRule(
+                            users,
+                            System.Security.AccessControl.FileSystemRights.FullControl,
+                            System.Security.AccessControl.InheritanceFlags.ContainerInherit
+                                | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                            System.Security.AccessControl.PropagationFlags.None,
+                            System.Security.AccessControl.AccessControlType.Allow
+                        )
+                    );
+                    new DirectoryInfo(logs).SetAccessControl(planted);
+                    File.WriteAllText(Path.Combine(logs, "planted.txt"), "x");
+
+                    Assert(NativeDataDirectory.EnsureLogs(path) == logs, "unexpected log folder");
+                    Assert(!File.Exists(Path.Combine(logs, "planted.txt")), "the planted folder was kept");
+                    Assert(!File.Exists(Path.Combine(path, "agent.log")), "the log stayed in the data directory");
+                    Assert(
+                        File.ReadAllText(Path.Combine(logs, "agent.log")) == "earlier\n",
+                        "the earlier log was not moved"
+                    );
+                    var may = UsersMay(logs);
+                    Assert(
+                        may.HasFlag(System.Security.AccessControl.FileSystemRights.ReadAndExecute)
+                            && (may & changes) == 0,
+                        "users may: " + may
+                    );
+                    // A secure folder and its log are kept as they are.
+                    File.AppendAllText(Path.Combine(logs, "agent.log"), "later\n");
+                    NativeDataDirectory.EnsureLogs(path);
+                    Assert(
+                        File.ReadAllText(Path.Combine(logs, "agent.log")) == "earlier\nlater\n",
+                        "a secure log folder was recreated"
+                    );
+                }
+                finally
+                {
+                    foreach (var folder in new[] { path, logs })
+                        if (Directory.Exists(folder))
+                            Directory.Delete(folder, true);
+                }
+                await Task.CompletedTask;
+            }
+        );
     await Check(
         "process measure ends a real confirmed process and names its owner",
         async () =>

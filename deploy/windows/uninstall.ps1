@@ -27,3 +27,9 @@ if($RemoveData -and (Test-Path -LiteralPath $DataDirectory)) {
     & cmd.exe /c rmdir /s /q "$DataDirectory"
     if (Test-Path -LiteralPath $DataDirectory) { throw "Data directory $DataDirectory could not be removed" }
 }
+# The service log's folder (NativeDataDirectory.LogDirectory) goes with the data.
+$logDirectory = $DataDirectory.TrimEnd('\') + 'Logs'
+if($RemoveData -and (Test-Path -LiteralPath $logDirectory)) {
+    & cmd.exe /c rmdir /s /q "$logDirectory"
+    if (Test-Path -LiteralPath $logDirectory) { throw "Log directory $logDirectory could not be removed" }
+}

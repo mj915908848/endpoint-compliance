@@ -12,8 +12,10 @@ For a development simulation on macOS, run the agent with `--fixture <snapshot.j
 
 ## 日志
 
-常驻服务的运行日志写在 `%ProgramData%\ComplianceAgent\agent.log`，每行带时间；超过 1 MB 时旧内容移到 `agent.log.1`。该目录只有管理员和 SYSTEM 可读，需在管理员 PowerShell 中查看：
+常驻服务的运行日志写在 `%ProgramData%\ComplianceAgentLogs\agent.log`，每行带时间；超过 1 MB 时旧内容移到 `agent.log.1`。所有用户都能直接查看（托盘菜单“运行日志”，或用资源管理器打开该文件夹），只有 SYSTEM 和管理员能修改。旧版本写在数据目录里的日志，更新后会在服务启动时移到这里。
 
 ```powershell
-Get-Content "$env:ProgramData\ComplianceAgent\agent.log" -Encoding UTF8 -Tail 50
+Get-Content "$env:ProgramData\ComplianceAgentLogs\agent.log" -Encoding UTF8 -Tail 50
 ```
+
+数据目录 `%ProgramData%\ComplianceAgent` 存放设备密钥，只有 SYSTEM 和管理员能访问，日常不需要打开。不要在资源管理器的“你当前无权访问该文件夹”提示中点“继续”：这会把当前账户加进目录权限，客户端下次启动时会移除并在管理端产生一条“设备健康”告警。

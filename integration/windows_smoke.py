@@ -6,7 +6,7 @@ real scan, and checks that the registry, PackageManager, socket-table, account l
 produced complete modules and the expected evidence. Runs on Windows only (CI uses windows-latest); it
 changes the current user's proxy setting and restores it, and removes the planted files.
 """
-import argparse, http.cookiejar, json, os, pathlib, secrets, socket, subprocess, sys, time, urllib.request
+import argparse, http.cookiejar, json, os, pathlib, re, secrets, socket, subprocess, sys, time, urllib.request
 import winreg
 
 # The runner console is cp1252; agent and server logs are UTF-8 Chinese.
@@ -326,6 +326,13 @@ try:
             line.split()[-1] in ("S-1-5-18", "S-1-5-32-544") for line in owners.splitlines() if line.strip()
         ), f"Data directory items with other owners: {owners}"
         print("PASS the data directory and its files belong to SYSTEM or Administrators")
+        # The service log has its own folder that users may read, so nobody opens the data directory for it.
+        agent_logs = pathlib.Path(os.environ["ProgramData"]) / "ComplianceAgentLogs"
+        assert (agent_logs / "agent.log").exists(), f"No service log in {agent_logs}"
+        assert not (agent_data / "agent.log").exists(), "The service log is still in the data directory"
+        log_acl = subprocess.run(["icacls", str(agent_logs)], capture_output=True, text=True).stdout
+        assert re.search(r"(BUILTIN\\Users|S-1-5-32-545):\(OI\)\(CI\)\(RX\)", log_acl), f"Log folder ACL: {log_acl}"
+        print("PASS the service log is in its own folder that users may read but not change")
         # Explorer's "permanently get access" prompt grants the signed-in user access to the data directory.
         # The service must remove that grant on its next start, keep running and tell the administrator.
         before = wait_reporting()[0]["lastHeartbeat"]

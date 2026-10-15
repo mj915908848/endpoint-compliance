@@ -106,11 +106,11 @@ public sealed class NoticeWindow : Window
 
         var log = new Button
         {
-            Content = "运行日志（需管理员）",
+            Content = "运行日志",
             Style = Styled("Link"),
             FontSize = 12,
         };
-        log.Click += (_, _) => LogWindow.OpenElevated();
+        log.Click += (_, _) => LogWindow.Open();
         var footer = new DockPanel { Margin = new Thickness(20, 10, 20, 12) };
         footer.Children.Add(
             new TextBlock

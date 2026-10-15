@@ -3,8 +3,8 @@ using System.Text;
 namespace Compliance.Agent;
 
 /// <summary>
-/// Console output of the resident service, which otherwise goes nowhere, written to agent.log in the data directory
-/// with a timestamp per line. At 1 MB the file is moved to agent.log.1, so at most 2 MB are kept.
+/// Console output of the resident service, which otherwise goes nowhere, written to agent.log in the log folder
+/// (<see cref="NativeDataDirectory.EnsureLogs"/>) with a timestamp per line. At 1 MB the file is moved to agent.log.1, so at most 2 MB are kept.
 /// </summary>
 public sealed class AgentLog(string path, long maxBytes = 1 << 20) : TextWriter
 {
@@ -15,10 +15,10 @@ public sealed class AgentLog(string path, long maxBytes = 1 << 20) : TextWriter
     /// <summary>Output goes to the log file, so each check is summarized in one line instead of a full report.</summary>
     public static bool Active { get; private set; }
 
-    public static void Attach(string dataDirectory)
+    public static void Attach(string logDirectory)
     {
         Active = true;
-        var log = Synchronized(new AgentLog(Path.Combine(dataDirectory, "agent.log")));
+        var log = Synchronized(new AgentLog(Path.Combine(logDirectory, "agent.log")));
         Console.SetOut(log);
         Console.SetError(log);
     }

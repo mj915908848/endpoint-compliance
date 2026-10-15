@@ -9,8 +9,8 @@ using System.Windows.Threading;
 namespace Compliance.Tray;
 
 /// <summary>
-/// The resident service's log for administrators testing the client. It lives in the service's data folder, which only
-/// administrators can read, so the tray opens this window in a separate elevated process.
+/// The resident service's log. It lives in its own folder that everyone may read, apart from the data folder that
+/// only administrators may open.
 /// </summary>
 public sealed class LogWindow : Window
 {
@@ -19,7 +19,7 @@ public sealed class LogWindow : Window
 
     private static readonly string Folder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        "ComplianceAgent"
+        "ComplianceAgentLogs"
     );
     private static readonly string LogPath = Path.Combine(Folder, "agent.log");
 
@@ -30,16 +30,20 @@ public sealed class LogWindow : Window
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(5) };
     private string shown = "";
 
-    /// <summary>Starts an elevated copy of the tray showing the log; nothing happens if the UAC prompt is declined.</summary>
-    public static void OpenElevated()
+    private static LogWindow? open;
+
+    /// <summary>Shows the log window, bringing back the one already open.</summary>
+    public static void Open()
     {
-        try
+        if (open is null)
         {
-            Process.Start(
-                new ProcessStartInfo(Environment.ProcessPath!, Argument) { UseShellExecute = true, Verb = "runas" }
-            );
+            open = new LogWindow();
+            open.Closed += (_, _) => open = null;
+            open.Show();
         }
-        catch (System.ComponentModel.Win32Exception) { }
+        if (open.WindowState == WindowState.Minimized)
+            open.WindowState = WindowState.Normal;
+        open.Activate();
     }
 
     public LogWindow()
@@ -197,8 +201,7 @@ public sealed class LogWindow : Window
         if (lines.Length == 0)
         {
             text.Text = "";
-            status.Text =
-                $"还没有日志：{LogPath}。客户端服务更新到新版本并启动后开始记录（每 5 分钟检查一次，每次一行摘要）。";
+            status.Text = $"还没有日志：{LogPath}。客户端服务启动后开始记录（每次检查一行摘要）。";
             return;
         }
         var keyword = filter.Text.Trim();
