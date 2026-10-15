@@ -98,7 +98,7 @@ static partial class Endpoints
                 {
                     var deviceId = Agent(c);
                     await tx.Lock(ComplianceService.DeviceLock(deviceId));
-                    await s.Device(tx, deviceId);
+                    await s.DeviceHead(tx, deviceId);
                     var controls = r
                         .Controls.Select(x => x with { Detail = EvidenceSanitizer.Clean(x.Detail) })
                         .ToArray();
@@ -113,7 +113,8 @@ static partial class Endpoints
                             ? ""
                             : EvidenceSanitizer.Clean(r.AgentVersion)
                     );
-                    await s.UpdateOffline(tx);
+                    // OfflineMonitor resolves the offline alert within 15 seconds; doing it here would make every
+                    // heartbeat wait for the one global offline lock.
                     return new { ok = true };
                 });
             }
@@ -122,7 +123,7 @@ static partial class Endpoints
         group.MapGet(
             "/policy",
             async Task<SignedPolicy> (HttpContext c) =>
-                await s.Tx(async tx => await s.AssignedPolicy(tx, await s.Device(tx, Agent(c))))
+                await s.Tx(async tx => await s.AssignedPolicy(tx, await s.DeviceHead(tx, Agent(c))))
         );
 
         group.MapPost(

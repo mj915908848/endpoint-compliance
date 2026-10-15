@@ -99,6 +99,10 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     public async Task<DeviceRecord> Device(Transaction tx, string id) =>
         await tx.GetDevice(id) ?? throw new ApiError(404, "Device not found");
 
+    /// <summary>A device without its controls and snapshot, for requests that need neither.</summary>
+    public async Task<DeviceRecord> DeviceHead(Transaction tx, string id) =>
+        await tx.GetDeviceHead(id) ?? throw new ApiError(404, "Device not found");
+
     public string Online(DeviceRecord device)
     {
         if (device.LastHeartbeat is null || Now - device.LastHeartbeat >= TimeSpan.FromMinutes(5))
@@ -135,7 +139,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     async Task Reassign(Transaction tx)
     {
         var policies = await Policies(tx);
-        var devices = await tx.AllDevices();
+        var devices = await tx.AllDeviceHeads();
         foreach (
             var stale in policies
                 .Where(p =>

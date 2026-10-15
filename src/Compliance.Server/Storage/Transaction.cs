@@ -133,6 +133,11 @@ public sealed class Transaction
         "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, controls, snapshot, snapshot_sequence, target_policy_version";
     const string DeviceSelect = DeviceColumns + ", note, agent_version";
 
+    // The same columns with controls and snapshot left out: most requests need neither, and parsing the snapshot of
+    // every device is the bulk of reading one.
+    const string DeviceHeadSelect =
+        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version";
+
     static DeviceRecord ReadDevice(DbDataReader r) =>
         new(
             r.GetString(0),
@@ -156,6 +161,13 @@ public sealed class Transaction
         Single("SELECT public_key_pem FROM devices WHERE id = @id", r => r.GetString(0), ("id", id));
 
     public Task<List<DeviceRecord>> AllDevices() => Query($"SELECT {DeviceSelect} FROM devices", ReadDevice);
+
+    /// <summary>A device without its controls and snapshot.</summary>
+    public Task<DeviceRecord?> GetDeviceHead(string id) =>
+        Single($"SELECT {DeviceHeadSelect} FROM devices WHERE id = @id", ReadDevice, ("id", id));
+
+    /// <summary>Every device without its controls and snapshot.</summary>
+    public Task<List<DeviceRecord>> AllDeviceHeads() => Query($"SELECT {DeviceHeadSelect} FROM devices", ReadDevice);
 
     public async Task<bool> DeviceKeyExists(string publicKeyPem) =>
         await Count("SELECT COUNT(*) FROM devices WHERE public_key_pem = @key", ("key", publicKeyPem)) > 0;

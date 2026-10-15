@@ -19,7 +19,7 @@ static partial class Endpoints
                 return await s.Tx(async tx =>
                 {
                     var policies = await s.Policies(tx);
-                    var devices = await tx.AllDevices();
+                    var devices = await tx.AllDeviceHeads();
                     return policies
                         .Select(p => new PolicyListItem(
                             p.Key,
@@ -90,7 +90,7 @@ static partial class Endpoints
                 s.Now
             );
             var policies = await s.Policies(tx);
-            var devices = await tx.AllDevices();
+            var devices = await tx.AllDeviceHeads();
             var state = policies.First(p => p.Key == published);
             return new PolicyListItem(
                 published,
