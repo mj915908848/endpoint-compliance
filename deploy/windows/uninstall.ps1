@@ -12,5 +12,12 @@ if (Get-Service ComplianceAgent -ErrorAction SilentlyContinue) {
 }
 Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name 'ComplianceTray' -ErrorAction SilentlyContinue
 Write-Warning 'Review OS application/browser policies and approval records before deleting agent files. This build does not apply native block rules automatically.'
-if(Test-Path $InstallDirectory) { Remove-Item $InstallDirectory -Recurse -Force }
+# A stopped service's process can still be exiting and holding the runtime files open.
+Get-Process 'Compliance.Agent','Compliance.Tray' -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$InstallDirectory\*" } | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+if(Test-Path $InstallDirectory) {
+    for ($attempt = 1; ; $attempt++) {
+        try { Remove-Item $InstallDirectory -Recurse -Force; break }
+        catch { if ($attempt -ge 10) { throw }; Start-Sleep -Seconds 1 }
+    }
+}
 if($RemoveData) { Write-Warning 'Removing device identity, signed policy cache, notifications and unsent events'; Remove-Item $DataDirectory -Recurse -Force }

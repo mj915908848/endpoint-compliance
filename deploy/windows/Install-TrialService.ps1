@@ -33,7 +33,12 @@ if (Get-Service ComplianceAgent -ErrorAction SilentlyContinue) {
         Get-Process 'Compliance.Tray' -ErrorAction SilentlyContinue | Stop-Process -Force
         Stop-Service ComplianceAgent
         (Get-Service ComplianceAgent).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
-        Copy-Item (Join-Path $package '*') $installDir -Recurse -Force
+        # The stopped service's process can still be exiting and holding the runtime files open.
+        Get-Process 'Compliance.Agent', 'Compliance.Tray' -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$installDir\*" } | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+        for ($attempt = 1; ; $attempt++) {
+            try { Copy-Item (Join-Path $package '*') $installDir -Recurse -Force; break }
+            catch { if ($attempt -ge 10) { throw }; Start-Sleep -Seconds 1 }
+        }
         Start-Service ComplianceAgent
         Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $tray + '"')
         Write-Host "已从 $oldVersion 更新到 $newVersion，服务已重新启动。约 1 分钟后在管理端刷新即可看到新的检查结果。" -ForegroundColor Green

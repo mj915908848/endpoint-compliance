@@ -295,6 +295,18 @@ try:
             viewer.kill()
             viewer.wait(timeout=10)
         print("PASS installed tray starts from the shared runtime folder")
+        # Start the installed tray as the installer does, then uninstall: every runtime file must be removed.
+        subprocess.Popen(["explorer.exe", str(installed_tray)])
+        time.sleep(5)
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+             str(package / "deploy/windows/Uninstall-TrialService.ps1"), "-Quiet"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
+        )
+        installed = False
+        assert result.returncode == 0 and not installed_tray.parent.exists(), \
+            f"Uninstall left {installed_tray.parent}: {result.stdout}{result.stderr}"
+        print("PASS uninstall stops the tray and service and removes the install folder")
 
     print("Evidence: " + str(data))
 finally:
