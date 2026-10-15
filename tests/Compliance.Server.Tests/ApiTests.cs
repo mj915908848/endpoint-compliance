@@ -92,6 +92,35 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Device_enrolled_while_the_default_policy_is_being_published_gets_the_new_release()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var code = await f.Code();
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        var published = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // A publish that has reassigned the devices it sees but not committed yet.
+        var publish = service.Tx(async tx =>
+        {
+            await tx.Lock(ComplianceService.PolicyLock);
+            var (_, signed) = await service.Publish(tx, ComplianceService.DefaultPolicy, new PolicyDocument());
+            published.SetResult(Wire.Read<PolicyDocument>(signed.Payload).Version);
+            await commit.Task;
+            return true;
+        });
+        var version = await published.Task;
+        var enroll = f.Enroll(code);
+        // Without waiting for the publish, enrollment would finish here on the old release.
+        await Task.WhenAny(enroll, Task.Delay(TimeSpan.FromSeconds(1)));
+        commit.SetResult();
+        await publish;
+        await enroll;
+        var device = Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
+        Assert.Equal(version, device.TargetPolicyVersion);
+    }
+
+    [Fact]
     public async Task Invalid_device_signatures_and_replayed_nonce_are_rejected()
     {
         await using var f = new Fixture();

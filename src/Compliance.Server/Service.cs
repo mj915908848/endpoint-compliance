@@ -13,6 +13,10 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
 
     public static string DeviceLock(string deviceId) => "device:" + deviceId;
 
+    /// <summary>
+    /// Held by everything that publishes or reassigns policies, and by enrollment. Taken after "bootstrap" and
+    /// <see cref="EnrollmentLock"/>, never before them.
+    /// </summary>
     public const string PolicyLock = "policy";
     public const string DefaultPolicy = "default";
 
@@ -43,6 +47,8 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         await store.Transaction(async tx =>
         {
             await tx.Lock("bootstrap");
+            // Renaming the legacy default reassigns devices, like a publish.
+            await tx.Lock(PolicyLock);
             foreach (var user in Wire.Read<BootstrapUser[]>(settings.BootstrapUsers))
             {
                 if (

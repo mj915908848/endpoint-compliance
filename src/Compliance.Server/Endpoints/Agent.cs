@@ -42,6 +42,10 @@ static partial class Endpoints
                     return await s.Tx(async tx =>
                     {
                         await tx.Lock(ComplianceService.EnrollmentLock);
+                        // Publishing reassigns only the devices it can see, so a device enrolled while a publish
+                        // is uncommitted would keep the old default release. Waiting for the policy lock makes the
+                        // version read below the one any concurrent publish commits.
+                        await tx.Lock(ComplianceService.PolicyLock);
                         var hash = Secrets.Hash(r.Code);
                         var code = await tx.GetCode(hash);
                         if (code == null || code.Revoked || code.Uses >= code.MaxUses || code.ExpiresAt <= s.Now)
