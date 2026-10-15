@@ -1357,6 +1357,62 @@ if (OperatingSystem.IsWindows())
             return Task.CompletedTask;
         }
     );
+    await Check(
+        "notification pipe answers the tray's list and acknowledge requests",
+        async () =>
+        {
+            var path = Path.Combine(Path.GetTempPath(), "compliance-notices-" + Guid.NewGuid() + ".sqlite");
+            using var stop = new CancellationTokenSource();
+            try
+            {
+                await using var store = new NotificationStore(path);
+                var sid = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
+                await store.AddAsync("n-1", sid, "Violation: Cursor：已安装", CancellationToken.None);
+                await store.AddAsync("n-2", null, "本机的检查未能完全覆盖", CancellationToken.None);
+                var server = new NotificationPipe(store).RunAsync(stop.Token);
+                async Task<string> Ask(string request)
+                {
+                    // Exactly as the tray connects.
+                    using var pipe = new System.IO.Pipes.NamedPipeClientStream(
+                        ".",
+                        NotificationPipe.PipeName,
+                        System.IO.Pipes.PipeDirection.InOut,
+                        System.IO.Pipes.PipeOptions.Asynchronous,
+                        System.Security.Principal.TokenImpersonationLevel.Identification
+                    );
+                    await pipe.ConnectAsync(5000);
+                    using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
+                    using var reader = new StreamReader(pipe, leaveOpen: true);
+                    await writer.WriteLineAsync(request);
+                    return await reader.ReadLineAsync() ?? throw new IOException("Empty service response");
+                }
+                var list = await Ask("{\"action\":\"list\"}");
+                Assert(list.Contains("n-1") && list.Contains("n-2") && list.Contains("\"at\""), "list reply: " + list);
+                var ack = await Ask("{\"action\":\"ack\",\"eventId\":\"n-1\"}");
+                Assert(ack.Contains("true"), "ack reply: " + ack);
+                var after = await Ask("{\"action\":\"list\"}");
+                using var json = System.Text.Json.JsonDocument.Parse(after);
+                Assert(
+                    json.RootElement.EnumerateArray()
+                        .Single(n => n.GetProperty("eventId").GetString() == "n-1")
+                        .GetProperty("acknowledged")
+                        .GetBoolean(),
+                    "acknowledgment not kept: " + after
+                );
+                stop.Cancel();
+                try
+                {
+                    await server;
+                }
+                catch (OperationCanceledException) { }
+            }
+            finally
+            {
+                stop.Cancel();
+                DeleteDatabase(path);
+            }
+        }
+    );
 }
 else
     Console.WriteLine("SKIP native Windows checks (not running on Windows)");

@@ -187,7 +187,7 @@ public sealed class NotificationPipe(NotificationStore store)
             if (line is null)
                 return;
             string? sid = null;
-            pipe.RunAsClient(() => sid = WindowsIdentity.GetCurrent().User?.Value);
+            pipe.RunAsClient(() => sid = ClientSid());
             if (sid is null)
                 return;
             using var doc = JsonDocument.Parse(line);
@@ -205,12 +205,39 @@ public sealed class NotificationPipe(NotificationStore store)
             };
             await writer.WriteLineAsync(Compliance.Core.Wire.Serialize(reply));
         }
+        catch (Exception ex) when (ex is OperationCanceledException && stop.IsCancellationRequested) { }
         catch (Exception ex)
-            when (ex is IOException or JsonException or UnauthorizedAccessException or OperationCanceledException)
         {
-            Console.Error.WriteLine("Notification IPC request rejected: " + ex.GetType().Name);
+            // Never let a bad request fault the handler silently: the tray would only see a dropped connection.
+            Console.Error.WriteLine($"托盘通知请求失败：{ex.GetType().Name}: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// The connected user's SID. The tray connects at Identification level, so the thread token must be opened
+    /// with the service's own rights (OpenAsSelf); WindowsIdentity.GetCurrent() opens it as the client and fails
+    /// with "bad impersonation level".
+    /// </summary>
+    private static string? ClientSid()
+    {
+        const uint TokenQuery = 0x0008;
+        if (!OpenThreadToken(GetCurrentThread(), TokenQuery, true, out var token))
+            throw new System.ComponentModel.Win32Exception();
+        using (token)
+        using (var identity = new WindowsIdentity(token.DangerousGetHandle()))
+            return identity.User?.Value;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentThread();
+
+    [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool OpenThreadToken(
+        IntPtr thread,
+        uint access,
+        bool openAsSelf,
+        out Microsoft.Win32.SafeHandles.SafeAccessTokenHandle token
+    );
 
     private static async Task<string?> ReadLimitedLineAsync(StreamReader reader, CancellationToken ct)
     {

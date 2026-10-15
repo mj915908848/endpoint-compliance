@@ -44,66 +44,133 @@ public sealed class LogWindow : Window
 
     public LogWindow()
     {
+        Style = (Style)System.Windows.Application.Current.FindResource(typeof(Window));
+        Icon = Icons.Image(Icons.App, 32);
         Title = "终端合规客户端 · 运行日志";
         Width = 900;
         Height = 600;
-        filter = new System.Windows.Controls.TextBox { Width = 220, Margin = new Thickness(6, 0, 12, 0) };
+        var page = (System.Windows.Media.Brush)FindResource("Surface");
+        var line = (System.Windows.Media.Brush)FindResource("Line");
+        var muted = (System.Windows.Media.Brush)FindResource("Muted");
+        filter = new System.Windows.Controls.TextBox
+        {
+            Width = 220,
+            Padding = new Thickness(6, 4, 6, 4),
+            BorderBrush = line,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = "只显示包含这段文字的行",
+        };
         scansOnly = new System.Windows.Controls.CheckBox
         {
             Content = "只看敏感文件扫描",
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 12, 0),
-        };
-        var refresh = new System.Windows.Controls.Button
-        {
-            Content = "刷新",
-            Padding = new Thickness(10, 2, 10, 2),
-            Margin = new Thickness(0, 0, 8, 0),
+            Margin = new Thickness(16, 0, 0, 0),
         };
         var open = new System.Windows.Controls.Button
         {
             Content = "打开日志文件夹",
-            Padding = new Thickness(10, 2, 10, 2),
+            Style = (Style)FindResource("Link"),
+            VerticalAlignment = VerticalAlignment.Center,
         };
         filter.TextChanged += (_, _) => Load(force: true);
         scansOnly.Click += (_, _) => Load(force: true);
-        refresh.Click += (_, _) => Load(force: true);
         open.Click += (_, _) =>
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Folder}\"") { UseShellExecute = true });
+
+        var heading = new StackPanel
+        {
+            Margin = new Thickness(12, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        heading.Children.Add(
+            new TextBlock
+            {
+                Text = "运行日志",
+                FontSize = 16,
+                FontWeight = FontWeights.SemiBold,
+            }
+        );
+        heading.Children.Add(
+            new TextBlock
+            {
+                Text = "客户端服务的检查、上报和敏感文件扫描记录，每 5 秒自动刷新",
+                FontSize = 12,
+                Foreground = muted,
+            }
+        );
+        var header = new DockPanel { Margin = new Thickness(20, 16, 20, 16) };
+        DockPanel.SetDock(open, Dock.Right);
+        header.Children.Add(open);
+        var logo = new System.Windows.Controls.Image
+        {
+            Source = Icons.Image(Icons.App, 64),
+            Width = 36,
+            Height = 36,
+        };
+        DockPanel.SetDock(logo, Dock.Left);
+        header.Children.Add(logo);
+        header.Children.Add(heading);
+        var top = new Border
+        {
+            Background = page,
+            BorderBrush = line,
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = header,
+        };
 
         var bar = new StackPanel
         {
             Orientation = System.Windows.Controls.Orientation.Horizontal,
-            Margin = new Thickness(10),
+            Margin = new Thickness(20, 14, 20, 10),
         };
-        bar.Children.Add(new TextBlock { Text = "筛选", VerticalAlignment = VerticalAlignment.Center });
+        bar.Children.Add(
+            new TextBlock
+            {
+                Text = "筛选",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+            }
+        );
         bar.Children.Add(filter);
         bar.Children.Add(scansOnly);
-        bar.Children.Add(refresh);
-        bar.Children.Add(open);
 
         text = new System.Windows.Controls.TextBox
         {
             IsReadOnly = true,
-            FontFamily = new System.Windows.Media.FontFamily("Consolas, Microsoft YaHei UI"),
+            BorderThickness = new Thickness(0),
+            Background = System.Windows.Media.Brushes.Transparent,
+            FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas, Microsoft YaHei UI"),
             FontSize = 12,
             TextWrapping = TextWrapping.NoWrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Margin = new Thickness(10, 0, 10, 0),
+        };
+        var sheet = new Border
+        {
+            Background = page,
+            BorderBrush = line,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12, 8, 4, 8),
+            Margin = new Thickness(20, 0, 20, 0),
+            Child = text,
         };
         status = new TextBlock
         {
-            Margin = new Thickness(10, 6, 10, 10),
-            Foreground = System.Windows.Media.Brushes.Gray,
+            Margin = new Thickness(20, 8, 20, 12),
+            Foreground = muted,
+            FontSize = 12,
+            TextTrimming = TextTrimming.CharacterEllipsis,
         };
 
         var layout = new DockPanel();
+        DockPanel.SetDock(top, Dock.Top);
         DockPanel.SetDock(bar, Dock.Top);
         DockPanel.SetDock(status, Dock.Bottom);
+        layout.Children.Add(top);
         layout.Children.Add(bar);
         layout.Children.Add(status);
-        layout.Children.Add(text);
+        layout.Children.Add(sheet);
         Content = layout;
 
         timer.Tick += (_, _) => Load(force: false);
@@ -151,7 +218,7 @@ public sealed class LogWindow : Window
                 text.ScrollToEnd();
         }
         status.Text =
-            $"{LogPath} · 显示 {selected.Length} / {lines.Length} 行 · 每 5 秒自动刷新 · 最后更新 {File.GetLastWriteTime(LogPath):HH:mm:ss}";
+            $"{LogPath} · 显示 {selected.Length} / {lines.Length} 行 · 最后写入 {File.GetLastWriteTime(LogPath):HH:mm:ss}";
     }
 
     /// <summary>The rotated file followed by the current one; opened shared because the service keeps appending.</summary>

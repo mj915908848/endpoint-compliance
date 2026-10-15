@@ -40,6 +40,21 @@ client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.coo
 csrf = ""
 
 
+
+def screenshot(path):
+    """Best effort: a hosted runner may have no visible desktop."""
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
+        "$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;"
+        "$i=New-Object System.Drawing.Bitmap $b.Width,$b.Height;"
+        "$g=[System.Drawing.Graphics]::FromImage($i);"
+        "$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size);"
+        f"$i.Save('{path}')"
+    )
+    result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Screenshot {path.name} failed: {result.stderr.strip()[:300]}")
+
 def request(path, body=None, raw=False):
     encoded = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(
@@ -226,16 +241,18 @@ try:
     assert sum(line.startswith("## ") for line in md.splitlines()) == 9
     print("PASS native report: FAIL with nine Markdown sections")
 
-    # The tray's log window (opened elevated from the tray menu) must start and stay up.
+    # The tray's windows must start and stay up; screenshots go to the evidence folder for a visual check.
     tray = root / "src/Compliance.Tray/bin/Release/net10.0-windows/Compliance.Tray.exe"
-    viewer = subprocess.Popen([str(tray), "--log"])
-    try:
-        time.sleep(5)
-        assert viewer.poll() is None, f"Tray log window exited with {viewer.returncode}"
-    finally:
-        viewer.kill()
-        viewer.wait(timeout=10)
-    print("PASS tray log window starts")
+    for argument, shot in (("--log", "tray-log.png"), ("--notices", "tray-notices.png")):
+        viewer = subprocess.Popen([str(tray), argument])
+        try:
+            time.sleep(6)
+            assert viewer.poll() is None, f"Tray {argument} exited with {viewer.returncode}"
+            screenshot(data / shot)
+        finally:
+            viewer.kill()
+            viewer.wait(timeout=10)
+    print("PASS tray log window and notification center start")
     print("Evidence: " + str(data))
 finally:
     write_proxy(saved_proxy)
