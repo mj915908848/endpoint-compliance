@@ -359,7 +359,7 @@ export function ReportFindings({ report: r }: { report: Report }) {
         <Section title="未发现问题">
           <Space align="start">
             <CheckCircleFilled style={{ color: "var(--good)" }} />
-            所有必需检查项均已完成，未发现确认违规。
+            所有检查项均已完成，未发现确认违规。
           </Space>
         </Section>
       )}

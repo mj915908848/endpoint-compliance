@@ -116,8 +116,8 @@ export function describeChanges(before: Policy, after: Policy): string[] {
     after.approvedNetworkAdapters ?? [],
     same,
   );
-  diff("必需检查项", before.requiredModules, after.requiredModules);
-  diff("必需防护措施", before.requiredControls, after.requiredControls, controlLabel);
+  diff("检查项", before.requiredModules, after.requiredModules);
+  diff("防护措施", before.requiredControls, after.requiredControls, controlLabel);
   const [qb, fb] = checkMinutes(before),
     [qa, fa] = checkMinutes(after);
   if (qb !== qa || fb !== fa)
@@ -414,7 +414,7 @@ export function PolicyEditor({
         </Field>
         <Row gutter={[24, 16]}>
           <Col xs={24} lg={14}>
-            <Field label="必需检查项">
+            <Field label="检查项">
               <Checkbox.Group
                 value={value.requiredModules}
                 disabled={readOnly}
@@ -425,7 +425,7 @@ export function PolicyEditor({
             </Field>
           </Col>
           <Col xs={24} lg={10}>
-            <Field label="必需防护措施">
+            <Field label="防护措施">
               <Checkbox.Group
                 value={currentControls(value.requiredControls)}
                 disabled={readOnly}
