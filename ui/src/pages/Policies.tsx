@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, App, Button, Input, Modal, Space, Tag, Tooltip, Typography } from "antd";
+import { Alert, App, Button, Input, Modal, Segmented, Space, Tag, Tooltip, Typography } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { request } from "../api";
 import { useResource, useRefresh } from "../useResource";
 import {
@@ -14,9 +15,9 @@ import {
   time,
 } from "../components";
 import { role } from "../session";
-import type { DeviceSummary, Policy, Session, SignedPolicy } from "../types";
+import type { DeviceSummary, Policy, PolicyListItem, Session } from "../types";
 
-const parse = (signed: SignedPolicy | null | undefined) => {
+const parse = (signed: { payload: string } | null | undefined) => {
   try {
     return signed ? (JSON.parse(signed.payload) as Policy) : null;
   } catch {
@@ -24,15 +25,31 @@ const parse = (signed: SignedPolicy | null | undefined) => {
   }
 };
 
+const NEW = "__new__";
+
 export function Policies({ session }: { session: Session }) {
   const { message, modal } = App.useApp();
   const refresh = useRefresh();
-  const current = useResource<SignedPolicy>("/api/policies/current"),
+  const list = useResource<PolicyListItem[]>("/api/policies"),
     devices = useResource<DeviceSummary[]>("/api/devices"),
     // Rule content shipped with this server version; differs from the published policy after an upgrade.
     template = useResource<Policy>("/api/policies/template");
-  const policy = useMemo(() => parse(current.data), [current.data]);
+  const policies = useMemo(
+    () =>
+      (list.data ?? []).flatMap((item) => {
+        const doc = parse(item.release);
+        return doc ? [{ ...item, doc }] : [];
+      }),
+    [list.data],
+  );
   const canPublish = role(session, "Publisher");
+  // The selected policy's key, or NEW for a policy not yet published.
+  const [selected, setSelected] = useState("default");
+  const creating = selected === NEW;
+  const entry = policies.find((p) => p.key === selected);
+  const defaultDoc = policies.find((p) => p.isDefault)?.doc ?? null;
+  const policy = creating ? null : (entry?.doc ?? null);
+  const isDefault = !creating && (entry?.isDefault ?? true);
   const [draft, setDraft] = useState<Policy | null>(null),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
@@ -40,7 +57,32 @@ export function Policies({ session }: { session: Session }) {
   useEffect(() => {
     if (policy && !draft) setDraft(policy);
   }, [policy, draft]);
-  const dirty = !!policy && !!draft && !sameContent(policy, draft);
+  const dirty = creating ? !!draft : !!policy && !!draft && !sameContent(policy, draft);
+  // Devices another named policy already lists cannot be chosen here.
+  const takenBy = new Map(
+    policies
+      .filter((p) => !p.isDefault && p.key !== selected)
+      .flatMap((p) => p.doc.targetDeviceIds.map((id) => [id, p.doc.policyId] as const)),
+  );
+
+  function select(key: string) {
+    const go = () => {
+      setSelected(key);
+      setError(null);
+      if (key === NEW && defaultDoc)
+        // A new policy starts from the default policy's rules, in audit mode, with no devices.
+        setDraft({ ...defaultDoc, policyId: "", mode: "Audit", targetDeviceIds: [] });
+      else setDraft(policies.find((p) => p.key === key)?.doc ?? null);
+    };
+    if (!dirty) return go();
+    modal.confirm({
+      title: "放弃未发布的修改？",
+      content: "切换后，当前策略未发布的修改会丢失。",
+      okText: "放弃并切换",
+      cancelText: "继续编辑",
+      onOk: go,
+    });
+  }
 
   const rules = (p: Policy) =>
     JSON.stringify([
@@ -63,10 +105,15 @@ export function Policies({ session }: { session: Session }) {
   }
 
   function publish() {
-    if (!policy || !draft) return;
-    const changes = describeChanges(policy, draft);
+    if (!draft || (!policy && !creating)) return;
+    const changes = creating
+      ? [
+          `新建策略“${draft.policyId || "（未命名）"}”，适用 ${draft.targetDeviceIds.length} 台终端`,
+          "这些终端改用这份策略，其余终端仍使用默认策略",
+        ]
+      : describeChanges(policy!, draft);
     modal.confirm({
-      title: `发布策略 v${policy.version + 1}？`,
+      title: creating ? "发布新策略？" : `发布“${policy!.policyId}”的新版本？`,
       width: 560,
       content: (
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
@@ -86,18 +133,44 @@ export function Policies({ session }: { session: Session }) {
         setBusy(true);
         setError(null);
         try {
-          const signed = await request<SignedPolicy>("/api/policies", {
-            method: "POST",
-            body: draft,
-            csrfToken: session.csrfToken,
-          });
-          setDraft(parse(signed));
-          message.success(`策略 v${policy.version + 1} 已发布。`);
+          const published = await request<PolicyListItem>(
+            `/api/policies/${creating ? "new" : encodeURIComponent(selected)}`,
+            { method: "POST", body: draft, csrfToken: session.csrfToken },
+          );
+          const doc = parse(published.release);
+          setSelected(published.key);
+          setDraft(doc);
+          message.success(`“${doc?.policyId}” v${doc?.version} 已发布。`);
           refresh();
         } catch (e) {
           setError(errorText(e));
         } finally {
           setBusy(false);
+        }
+      },
+    });
+  }
+
+  function remove() {
+    if (!entry || entry.isDefault) return;
+    modal.confirm({
+      title: `删除策略“${entry.doc.policyId}”？`,
+      content: `它适用的 ${entry.devices} 台终端将改用默认策略，终端下次联系管理端时生效。`,
+      okText: "删除",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await request(`/api/policies/${encodeURIComponent(entry.key)}`, {
+            method: "DELETE",
+            csrfToken: session.csrfToken,
+          });
+          message.success(`已删除“${entry.doc.policyId}”。`);
+          setSelected("default");
+          setDraft(defaultDoc);
+          refresh();
+        } catch (e) {
+          message.error(errorText(e));
         }
       },
     });
@@ -119,9 +192,13 @@ export function Policies({ session }: { session: Session }) {
       <PageHeading
         title="策略管理"
         description={
-          policy ? (
+          creating ? (
+            "新建一份策略，指定适用的终端；其余终端仍使用默认策略。"
+          ) : policy ? (
             <Space size={8} wrap>
-              <span>当前生效 v{policy.version}</span>
+              <span>
+                {policy.policyId} · 当前生效 v{policy.version} · 适用 {entry?.devices ?? 0} 台终端
+              </span>
               <Tag color={policy.mode === "Enforce" ? "warning" : "default"}>
                 {modeLabel(policy.mode)}
               </Tag>
@@ -141,6 +218,11 @@ export function Policies({ session }: { session: Session }) {
               </Button>
             )}
             <Button onClick={refresh}>刷新</Button>
+            {canPublish && entry && !entry.isDefault && !creating && (
+              <Button danger onClick={remove}>
+                删除策略
+              </Button>
+            )}
             {canPublish && (
               <Tooltip title={dirty ? undefined : "没有需要保存的修改"}>
                 <Button type="primary" disabled={!dirty} loading={busy} onClick={publish}>
@@ -152,6 +234,27 @@ export function Policies({ session }: { session: Session }) {
         }
       />
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        {policies.length > 0 && (
+          <Space wrap size={12}>
+            <Segmented
+              aria-label="选择策略"
+              value={selected}
+              onChange={select}
+              options={[
+                ...policies.map((p) => ({
+                  value: p.key,
+                  label: `${p.doc.policyId}${p.isDefault ? "（默认）" : ""} · ${p.devices} 台`,
+                })),
+                ...(creating ? [{ value: NEW, label: "新策略（未发布）" }] : []),
+              ]}
+            />
+            {canPublish && !creating && (
+              <Button icon={<PlusOutlined />} onClick={() => select(NEW)}>
+                新建策略
+              </Button>
+            )}
+          </Space>
+        )}
         <ErrorNotice error={error} title="发布失败" />
         {!canPublish && (
           <Alert type="info" showIcon title="当前账号只能查看策略，修改和发布需要发布权限。" />
@@ -165,13 +268,16 @@ export function Policies({ session }: { session: Session }) {
             action={<Button onClick={loadTemplate}>载入内置最新规则</Button>}
           />
         )}
-        <Fresh error={current.error} loading={current.loading || !draft}>
+        <Fresh error={list.error} loading={list.loading || !draft}>
           {draft && (
             <PolicyEditor
+              key={selected}
               value={draft}
               onChange={setDraft}
               devices={devices.data ?? []}
               readOnly={!canPublish}
+              isDefault={isDefault}
+              takenBy={takenBy}
             />
           )}
         </Fresh>
@@ -180,7 +286,9 @@ export function Policies({ session }: { session: Session }) {
         <div className="policy-bar" role="region" aria-label="未发布的修改">
           <Typography.Text>有未保存的修改，发布后终端才会按新策略检查</Typography.Text>
           <Space>
-            <Button onClick={() => setDraft(policy)}>放弃修改</Button>
+            <Button onClick={() => (creating ? select("default") : setDraft(policy))}>
+              {creating ? "取消新建" : "放弃修改"}
+            </Button>
             <Button type="primary" loading={busy} onClick={publish}>
               保存并发布
             </Button>

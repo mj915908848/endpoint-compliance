@@ -50,8 +50,8 @@ static partial class Endpoints
                             throw new ApiError(400, "Key already enrolled");
 
                         var id = Guid.NewGuid().ToString();
-                        var current = await s.Current(tx);
-                        var target = current.TargetDeviceIds.Length == 0 ? current.Version : 1;
+                        // A new device has an id no policy lists yet, so it starts on the default policy.
+                        var target = Wire.Read<PolicyDocument>((await s.CurrentRelease(tx)).Payload).Version;
                         await tx.InsertDevice(
                             new DeviceRecord(
                                 id,

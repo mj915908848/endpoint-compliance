@@ -16,6 +16,7 @@ public static class Migrations
         new(1, "relational schema", CreateSchema),
         new(2, "import legacy records table", ImportLegacyRecords),
         new(3, "device notes", tx => tx.Execute("ALTER TABLE devices ADD COLUMN note TEXT NOT NULL DEFAULT ''")),
+        new(4, "multiple policies", MultiplePolicies),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -109,6 +110,16 @@ public static class Migrations
         "CREATE TABLE IF NOT EXISTS nonces(device TEXT NOT NULL, nonce TEXT NOT NULL, expires BIGINT NOT NULL, PRIMARY KEY(device, nonce))",
         "CREATE INDEX IF NOT EXISTS nonces_expiry ON nonces(expires)",
     ];
+
+    /// <summary>Every release so far belongs to the default policy; named policies add rows to <c>policies</c>.</summary>
+    static async Task MultiplePolicies(Transaction tx)
+    {
+        await tx.Execute("ALTER TABLE policy_releases ADD COLUMN policy_key TEXT NOT NULL DEFAULT 'default'");
+        await tx.Execute(
+            "CREATE TABLE IF NOT EXISTS policies(key TEXT PRIMARY KEY, created_at BIGINT NOT NULL, deleted_at BIGINT NULL)"
+        );
+        await tx.InsertPolicy(ComplianceService.DefaultPolicy, DateTimeOffset.UtcNow);
+    }
 
     static async Task CreateSchema(Transaction tx)
     {

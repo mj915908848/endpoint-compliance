@@ -56,7 +56,7 @@ public record ProductRule(
 public record PolicyDocument
 {
     public int SchemaVersion { get; init; } = 1;
-    public string PolicyId { get; init; } = "endpoint-compliance";
+    public string PolicyId { get; init; } = "Default";
     public long Version { get; init; } = 1;
     public string Mode { get; init; } = "Audit";
     public string[] TargetDeviceIds { get; init; } = [];
@@ -234,7 +234,8 @@ public record DeviceSummary(
     string ProtectionStatus,
     int ViolationCount,
     bool Simulated,
-    string Note = ""
+    string Note = "",
+    string PolicyName = ""
 );
 
 public record AlertSummary(

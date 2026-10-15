@@ -177,21 +177,8 @@ public sealed class Transaction
             ("id", id)
         );
 
-    /// <summary>Assigns a release to the listed devices, or to every device when the list is empty.</summary>
-    public async Task AssignPolicy(long version, string[] deviceIds)
-    {
-        if (deviceIds.Length == 0)
-        {
-            await Execute("UPDATE devices SET target_policy_version = @version", ("version", version));
-            return;
-        }
-        foreach (var id in deviceIds.Distinct())
-            await Execute(
-                "UPDATE devices SET target_policy_version = @version WHERE id = @id",
-                ("version", version),
-                ("id", id)
-            );
-    }
+    public Task SetTargetPolicy(string id, long version) =>
+        Execute("UPDATE devices SET target_policy_version = @version WHERE id = @id", ("version", version), ("id", id));
 
     /// <summary>Devices whose last heartbeat is at or before <paramref name="cutoff"/> and that have no active offline alert.</summary>
     public Task<List<(string Id, string HostName)>> DevicesGoingOffline(DateTimeOffset cutoff) =>
@@ -352,15 +339,50 @@ public sealed class Transaction
     public Task<SignedPolicy?> CurrentRelease() =>
         Single("SELECT payload, signature, key_id FROM policy_releases ORDER BY version DESC LIMIT 1", ReadRelease);
 
-    public Task InsertRelease(long version, SignedPolicy signed, DateTimeOffset publishedAt) =>
+    public Task InsertRelease(
+        long version,
+        SignedPolicy signed,
+        DateTimeOffset publishedAt,
+        string policy = ComplianceService.DefaultPolicy
+    ) =>
         Execute(
-            "INSERT INTO policy_releases(version, payload, signature, key_id, published_at) VALUES(@version, @payload, @signature, @key, @at)",
+            // The default policy relies on the column default, so the legacy import (before policy_key existed) works.
+            policy == ComplianceService.DefaultPolicy
+                ? "INSERT INTO policy_releases(version, payload, signature, key_id, published_at) VALUES(@version, @payload, @signature, @key, @at)"
+                : "INSERT INTO policy_releases(version, payload, signature, key_id, published_at, policy_key) VALUES(@version, @payload, @signature, @key, @at, @policy)",
             ("version", version),
             ("payload", signed.Payload),
             ("signature", signed.Signature),
             ("key", signed.KeyId),
-            ("at", publishedAt)
+            ("at", publishedAt),
+            ("policy", policy)
         );
+
+    /// <summary>The newest release of every policy that is not deleted.</summary>
+    public Task<List<(string Key, SignedPolicy Release)>> LatestReleases() =>
+        Query(
+            """
+            SELECT r.policy_key, r.payload, r.signature, r.key_id FROM policy_releases r
+            JOIN policies p ON p.key = r.policy_key
+            WHERE p.deleted_at IS NULL
+              AND r.version = (SELECT MAX(x.version) FROM policy_releases x WHERE x.policy_key = r.policy_key)
+            """,
+            r => (r.GetString(0), new SignedPolicy(r.GetString(1), r.GetString(2), r.GetString(3)))
+        );
+
+    public Task InsertPolicy(string key, DateTimeOffset at) =>
+        Execute(
+            "INSERT INTO policies(key, created_at) VALUES(@key, @at) ON CONFLICT(key) DO NOTHING",
+            ("key", key),
+            ("at", at)
+        );
+
+    public async Task<bool> DeletePolicy(string key, DateTimeOffset at) =>
+        await Execute(
+            "UPDATE policies SET deleted_at = @at WHERE key = @key AND deleted_at IS NULL",
+            ("key", key),
+            ("at", at)
+        ) == 1;
 
     const string DraftColumns = "id, document, created_by, approved_by, published, impact_reviewed";
 

@@ -14,6 +14,10 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     public static string DeviceLock(string deviceId) => "device:" + deviceId;
 
     public const string PolicyLock = "policy";
+    public const string DefaultPolicy = "default";
+
+    /// <summary>Names the default policy had in earlier versions; renamed to "Default" at startup.</summary>
+    static readonly string[] LegacyDefaultNames = ["customer-no-foreign-ai", "endpoint-compliance"];
     public const string EnrollmentLock = "enrollment";
 
     public async Task Initialize()
@@ -75,6 +79,8 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 await tx.InsertRelease(1, PolicyCrypto.Sign(doc, signer, KeyId), Now);
                 await tx.Audit("bootstrap", "SeedAuditPolicy", "1", Now);
             }
+            else
+                await RenameLegacyDefault(tx);
             return true;
         });
     }
@@ -91,12 +97,87 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         return Now - device.LastHeartbeat >= TimeSpan.FromMinutes(3) ? "SuspectedOffline" : "Online";
     }
 
+    public sealed record PolicyState(string Key, SignedPolicy Release, PolicyDocument Document)
+    {
+        public bool IsDefault => Key == DefaultPolicy;
+    }
+
+    public async Task<List<PolicyState>> Policies(Transaction tx) =>
+        (await tx.LatestReleases())
+            .Select(r => new PolicyState(r.Key, r.Release, Wire.Read<PolicyDocument>(r.Release.Payload)))
+            .OrderBy(p => p.IsDefault ? 0 : 1)
+            .ThenBy(p => p.Document.PolicyId, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+    /// <summary>The default policy's newest release: it applies to every device no other policy names.</summary>
     public async Task<SignedPolicy> CurrentRelease(Transaction tx) =>
-        await tx.CurrentRelease()
+        (await Policies(tx)).FirstOrDefault(p => p.IsDefault)?.Release
         ?? throw new InvalidOperationException("No policy release; database was not initialized");
 
-    public async Task<PolicyDocument> Current(Transaction tx) =>
-        Wire.Read<PolicyDocument>((await CurrentRelease(tx)).Payload);
+    /// <summary>A device follows the named policy that lists it, otherwise the default policy.</summary>
+    public static PolicyState PolicyFor(string deviceId, List<PolicyState> policies) =>
+        policies.FirstOrDefault(p => !p.IsDefault && p.Document.TargetDeviceIds.Contains(deviceId))
+        ?? policies.First(p => p.IsDefault);
+
+    /// <summary>
+    /// Points every device at the newest release of its policy. Agents refuse a lower version than they hold,
+    /// so a policy that devices move to from a newer release is first re-issued under a new version.
+    /// </summary>
+    async Task Reassign(Transaction tx)
+    {
+        var policies = await Policies(tx);
+        var devices = await tx.AllDevices();
+        foreach (
+            var stale in policies
+                .Where(p =>
+                    devices.Any(d => d.TargetPolicyVersion > p.Document.Version && PolicyFor(d.Id, policies) == p)
+                )
+                .ToList()
+        )
+        {
+            var doc = stale.Document with
+            {
+                Version = await NextVersion(tx),
+                IssuedAt = Now,
+                ExpiresAt = Now + PolicyValidity,
+            };
+            await tx.InsertRelease(doc.Version, Sign(doc), Now, stale.Key);
+            await tx.Audit("system", "ReissuePolicy", $"{doc.PolicyId} v{doc.Version}", Now);
+        }
+        policies = await Policies(tx);
+        foreach (var d in devices)
+        {
+            var version = PolicyFor(d.Id, policies).Document.Version;
+            if (d.TargetPolicyVersion != version)
+                await tx.SetTargetPolicy(d.Id, version);
+        }
+    }
+
+    async Task<long> NextVersion(Transaction tx) =>
+        Wire.Read<PolicyDocument>((await tx.CurrentRelease())!.Payload).Version + 1;
+
+    async Task RenameLegacyDefault(Transaction tx)
+    {
+        var current = (await Policies(tx)).FirstOrDefault(p => p.IsDefault)?.Document;
+        // A legacy release limited to pilot devices keeps its name until an administrator republishes it.
+        if (
+            current == null
+            || !LegacyDefaultNames.Contains(current.PolicyId)
+            || current.TargetDeviceIds.Length > 0
+            || current.Mode != "Audit"
+        )
+            return;
+        var doc = current with
+        {
+            PolicyId = "Default",
+            Version = await NextVersion(tx),
+            IssuedAt = Now,
+            ExpiresAt = Now + PolicyValidity,
+        };
+        await tx.InsertRelease(doc.Version, Sign(doc), Now);
+        await tx.Audit("bootstrap", "RenameDefaultPolicy", "v" + doc.Version, Now);
+        await Reassign(tx);
+    }
 
     public async Task<SignedPolicy> AssignedPolicy(Transaction tx, DeviceRecord device) =>
         await tx.GetRelease(device.TargetPolicyVersion) ?? throw new ApiError(409, "Assigned policy unavailable");
@@ -147,7 +228,8 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             report?.ProtectionStatus ?? "未取得检查结果",
             report?.ViolationCount ?? 0,
             d.Snapshot?.Simulated ?? false,
-            d.Note
+            d.Note,
+            policy.PolicyId
         );
     }
 
@@ -477,19 +559,34 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     /// <summary>Policies stay valid this long after publishing; agents treat an expired policy as unknown.</summary>
     public static readonly TimeSpan PolicyValidity = TimeSpan.FromDays(365);
 
-    public async Task<SignedPolicy> Publish(Transaction tx, PolicyDocument? submitted)
+    /// <summary>
+    /// Publishes a new release of the policy <paramref name="key"/>, or creates a policy when the key is null.
+    /// The server owns the version and validity; the default policy always covers every other device.
+    /// </summary>
+    public async Task<(string Key, SignedPolicy Release)> Publish(
+        Transaction tx,
+        string? key,
+        PolicyDocument? submitted
+    )
     {
         if (submitted == null)
             throw new ApiError(400, "策略内容为空");
-        var current = await Current(tx);
+        var policies = await Policies(tx);
+        var existing =
+            key == null
+                ? null
+                : policies.FirstOrDefault(p => p.Key == key) ?? throw new ApiError(404, "策略不存在或已删除");
+        var isDefault = existing?.IsDefault ?? false;
         var doc = submitted with
         {
             SchemaVersion = 1,
-            Version = current.Version + 1,
+            PolicyId = submitted.PolicyId?.Trim() ?? "",
+            Version = await NextVersion(tx),
             IssuedAt = Now,
             ExpiresAt = Now + PolicyValidity,
             DenyInstalled = true,
             DenyProxy = true,
+            TargetDeviceIds = isDefault ? [] : (submitted.TargetDeviceIds ?? []).Distinct().ToArray(),
         };
         if (
             doc.RequiredModules == null
@@ -510,14 +607,44 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         {
             throw new ApiError(400, "策略内容无效：" + e.Message);
         }
-        await ValidateEnforcement(tx, doc, current);
+        var others = policies.Where(p => p.Key != key).ToList();
+        if (others.Any(p => string.Equals(p.Document.PolicyId, doc.PolicyId, StringComparison.OrdinalIgnoreCase)))
+            throw new ApiError(409, $"已有名为“{doc.PolicyId}”的策略，请换一个名称");
+        if (isDefault && doc.Mode == "Enforce")
+            throw new ApiError(409, "默认策略适用于所有终端，只能使用审计模式；强制模式请新建策略并指定试点终端");
+        if (!isDefault)
+        {
+            if (doc.TargetDeviceIds.Length == 0)
+                throw new ApiError(400, "请选择这份策略适用的终端；未指定的终端使用默认策略");
+            foreach (var id in doc.TargetDeviceIds)
+                if (others.FirstOrDefault(p => !p.IsDefault && p.Document.TargetDeviceIds.Contains(id)) is { } taken)
+                    throw new ApiError(
+                        409,
+                        $"终端 {(await tx.GetDevice(id))?.HostName ?? id} 已在策略“{taken.Document.PolicyId}”中，一台终端只能使用一份策略"
+                    );
+        }
+        await ValidateEnforcement(tx, doc);
+        key ??= "p-" + Guid.NewGuid().ToString("N")[..12];
+        await tx.InsertPolicy(key, Now);
         var signed = Sign(doc);
-        await tx.InsertRelease(doc.Version, signed, Now);
-        await tx.AssignPolicy(doc.Version, doc.TargetDeviceIds);
-        return signed;
+        await tx.InsertRelease(doc.Version, signed, Now, key);
+        await Reassign(tx);
+        return (key, signed);
     }
 
-    async Task ValidateEnforcement(Transaction tx, PolicyDocument doc, PolicyDocument current)
+    /// <summary>Deletes a named policy; its devices fall back to the default policy.</summary>
+    public async Task<string> DeletePolicy(Transaction tx, string key)
+    {
+        var policy =
+            (await Policies(tx)).FirstOrDefault(p => p.Key == key) ?? throw new ApiError(404, "策略不存在或已删除");
+        if (policy.IsDefault)
+            throw new ApiError(409, "默认策略不能删除");
+        await tx.DeletePolicy(key, Now);
+        await Reassign(tx);
+        return policy.Document.PolicyId;
+    }
+
+    async Task ValidateEnforcement(Transaction tx, PolicyDocument doc)
     {
         if (doc.Mode != "Enforce")
             return;
@@ -541,7 +668,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                     c == null
                     || !c.Verified
                     || c.RebootRequired
-                    || c.Version != current.Version
+                    || c.Version != d.TargetPolicyVersion
                     || c.State is not ("Applied" or "Verified")
                 )
                     throw new ApiError(409, "试点终端尚未验证所需的防护措施，请先在审计模式下确认防护措施已生效");

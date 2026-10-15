@@ -1,17 +1,16 @@
 import { useMemo } from "react";
-import { Button, Col, List, Row, Space, Tag, Typography } from "antd";
+import { Button, Col, Row, Space } from "antd";
 import { useResource } from "../useResource";
 import {
-  alertTypeLabel,
-  deviceName,
+  DeviceAlertCard,
   DeviceTable,
   Empty,
   Fresh,
+  groupByDevice,
   Metric,
   OverviewGuide,
   PageHeading,
   Panel,
-  time,
   UpdatedAt,
 } from "../components";
 import type { Alert, DeviceSummary } from "../types";
@@ -39,6 +38,7 @@ export function Overview({
     (d) => d.currentVerdict !== "PASS" || d.onlineState !== "Online",
   );
   const openAlertList = (alerts.data ?? []).filter((a) => a.state !== "Resolved");
+  const openByDevice = groupByDevice(openAlertList, devices.data ?? []);
   return (
     <>
       <PageHeading
@@ -97,30 +97,25 @@ export function Overview({
                   {openAlertList.length === 0 ? (
                     <Empty title="当前没有未恢复的告警" />
                   ) : (
-                    <List
-                      size="small"
-                      dataSource={openAlertList.slice(0, 6)}
-                      renderItem={(a) => (
-                        <List.Item>
-                          <Space orientation="vertical" size={2}>
-                            <Space size={4}>
-                              <Tag color={a.type === "Violation" ? "error" : "warning"}>
-                                {alertTypeLabel(a.type)}
-                              </Tag>
-                              <Typography.Text strong>{a.summary}</Typography.Text>
-                            </Space>
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              {deviceName({
-                                hostName: a.hostName,
-                                note: devices.data?.find((d) => d.id === a.deviceId)?.note,
-                              })}{" "}
-                              · {time(a.lastSeen)}
-                              {a.acknowledged ? " · 已确认" : ""}
-                            </Typography.Text>
-                          </Space>
-                        </List.Item>
+                    <Space orientation="vertical" size={10} style={{ width: "100%" }}>
+                      {openByDevice.slice(0, 5).map((d) => (
+                        <DeviceAlertCard
+                          key={d.id}
+                          device={d}
+                          label="未恢复告警"
+                          count="项未恢复"
+                          danger={d.alerts.some((a) => a.type === "Violation")}
+                          onOpen={() => openDevice(d.id)}
+                          compact
+                          limit={3}
+                        />
+                      ))}
+                      {openByDevice.length > 5 && (
+                        <Button type="link" onClick={openAlerts} style={{ paddingInline: 0 }}>
+                          还有 {openByDevice.length - 5} 台终端有未恢复告警
+                        </Button>
                       )}
-                    />
+                    </Space>
                   )}
                 </Fresh>
               </Panel>

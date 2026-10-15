@@ -1,49 +1,26 @@
 import { useMemo, useState } from "react";
-import { Alert as Notice, App, Button, Card, Flex, Segmented, Space, Tag, Typography } from "antd";
-import { CloseCircleFilled } from "@ant-design/icons";
+import { Alert as Notice, Button, Segmented, Space } from "antd";
+import { CloseCircleFilled, FileSearchOutlined } from "@ant-design/icons";
 import { request } from "../api";
 import { useResource, useRefresh } from "../useResource";
 import {
   AlertCard,
+  DeviceAlertCard,
+  type DeviceAlerts,
   Empty,
-  errorText,
   Fresh,
+  groupByDevice,
   PageHeading,
   Panel,
-  time,
+  sortNewestFirst,
   UpdatedAt,
 } from "../components";
 import { role } from "../session";
 import type { Alert, DeviceSummary, Session } from "../types";
 
-interface ViolatingDevice {
-  id: string;
-  hostName: string;
-  note?: string;
-  alerts: Alert[];
-  lastSeen: string;
-}
-
-/** Unresolved violations grouped by device, the device with the most violations first. */
-function violatingDevices(alerts: Alert[], devices: DeviceSummary[]): ViolatingDevice[] {
-  const byId = new Map<string, ViolatingDevice>();
-  for (const a of alerts) {
-    if (a.type !== "Violation" || a.state === "Resolved") continue;
-    const group = byId.get(a.deviceId) ?? {
-      id: a.deviceId,
-      hostName: a.hostName,
-      note: devices.find((d) => d.id === a.deviceId)?.note,
-      alerts: [],
-      lastSeen: a.lastSeen,
-    };
-    group.alerts.push(a);
-    if (a.lastSeen > group.lastSeen) group.lastSeen = a.lastSeen;
-    byId.set(a.deviceId, group);
-  }
-  return [...byId.values()].sort(
-    (x, y) => y.alerts.length - x.alerts.length || y.lastSeen.localeCompare(x.lastSeen),
-  );
-}
+/** Unresolved violations and sensitive files are listed per device; everything else is a single list. */
+const grouped = (a: Alert) =>
+  a.state !== "Resolved" && (a.type === "Violation" || a.type === "SensitiveFile");
 
 export function Alerts({
   session,
@@ -58,13 +35,27 @@ export function Alerts({
   const [filter, setFilter] = useState("active");
   const canAck = role(session, "Operator");
   const all = useMemo(() => data.data ?? [], [data.data]);
-  const violating = useMemo(() => violatingDevices(all, devices.data ?? []), [all, devices.data]);
+  const groups = useMemo(() => {
+    const list = devices.data ?? [];
+    return {
+      violating: groupByDevice(
+        all.filter((a) => grouped(a) && a.type === "Violation"),
+        list,
+      ),
+      sensitive: groupByDevice(
+        all.filter((a) => grouped(a) && a.type === "SensitiveFile"),
+        list,
+      ),
+    };
+  }, [all, devices.data]);
   const notes = new Map((devices.data ?? []).map((d) => [d.id, d.note]));
-  // Unresolved violations are already listed per device above.
-  const others = all.filter(
-    (a) =>
-      !(a.type === "Violation" && a.state !== "Resolved") &&
-      (filter === "all" || (filter === "active" ? a.state !== "Resolved" : a.state === "Resolved")),
+  const others = sortNewestFirst(
+    all.filter(
+      (a) =>
+        !grouped(a) &&
+        (filter === "all" ||
+          (filter === "active" ? a.state !== "Resolved" : a.state === "Resolved")),
+    ),
   );
   const ack = (id: string) =>
     request(`/api/alerts/${encodeURIComponent(id)}/ack`, {
@@ -83,32 +74,34 @@ export function Alerts({
       />
       <Fresh error={data.error} loading={data.loading}>
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          {violating.length ? (
-            <Panel
-              title={
-                <Space>
-                  <CloseCircleFilled style={{ color: "var(--danger)" }} />
-                  {`违规设备（${violating.length} 台）`}
-                </Space>
-              }
-            >
-              <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-                {violating.map((d) => (
-                  <ViolationCard
-                    key={d.id}
-                    device={d}
-                    canAck={canAck}
-                    onOpen={() => openDevice(d.id)}
-                    onAck={async (ids) => {
-                      for (const id of ids) await ack(id);
-                      refresh();
-                    }}
-                  />
-                ))}
-              </Space>
-            </Panel>
+          {groups.violating.length ? (
+            <DeviceGroups
+              icon={<CloseCircleFilled style={{ color: "var(--danger)" }} />}
+              title="违规设备"
+              label="违规设备"
+              count="项违规"
+              danger
+              groups={groups.violating}
+              canAck={canAck}
+              openDevice={openDevice}
+              ack={ack}
+              refresh={refresh}
+            />
           ) : (
             <Notice type="success" showIcon title="当前没有违规设备" />
+          )}
+          {groups.sensitive.length > 0 && (
+            <DeviceGroups
+              icon={<FileSearchOutlined style={{ color: "var(--warning)" }} />}
+              title="敏感文件"
+              label="敏感文件"
+              count="个敏感文件"
+              groups={groups.sensitive}
+              canAck={canAck}
+              openDevice={openDevice}
+              ack={ack}
+              refresh={refresh}
+            />
           )}
           <Panel
             title={`其他告警（${others.length}）`}
@@ -150,74 +143,58 @@ export function Alerts({
   );
 }
 
-function ViolationCard({
-  device: d,
+function DeviceGroups({
+  icon,
+  title,
+  label,
+  count,
+  danger,
+  groups,
   canAck,
-  onOpen,
-  onAck,
+  openDevice,
+  ack,
+  refresh,
 }: {
-  device: ViolatingDevice;
+  icon: React.ReactNode;
+  title: string;
+  label: string;
+  count: string;
+  danger?: boolean;
+  groups: DeviceAlerts[];
   canAck: boolean;
-  onOpen: () => void;
-  onAck: (ids: string[]) => Promise<void>;
+  openDevice: (id: string) => void;
+  ack: (id: string) => Promise<unknown>;
+  refresh: () => void;
 }) {
-  const { message } = App.useApp();
-  const [busy, setBusy] = useState(false);
-  const unacked = d.alerts.filter((a) => !a.acknowledged).map((a) => a.id);
-  async function ackAll() {
-    setBusy(true);
-    try {
-      await onAck(unacked);
-    } catch (e) {
-      message.error(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
-    <Card size="small" className="violation-card" aria-label={`违规设备 ${d.hostName}`}>
-      <Flex justify="space-between" align="start" gap={16} wrap>
-        <Space orientation="vertical" size={2}>
-          <Space size={8} wrap align="baseline">
-            <Typography.Text strong style={{ fontSize: 16 }}>
-              {d.hostName}
-            </Typography.Text>
-            {d.note ? (
-              <Typography.Text>{d.note}</Typography.Text>
-            ) : (
-              <Typography.Text type="secondary">未填写备注</Typography.Text>
-            )}
-            <Tag color="error" variant="solid">
-              {d.alerts.length} 项违规
-            </Tag>
-          </Space>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            最近发现 {time(d.lastSeen)}
-            {unacked.length ? ` · ${unacked.length} 项待确认` : " · 均已确认"}
-          </Typography.Text>
+    <Panel
+      title={
+        <Space>
+          {icon}
+          {`${title}（${groups.length} 台）`}
         </Space>
-        <Space wrap>
-          <Button type="primary" onClick={onOpen}>
-            查看终端
-          </Button>
-          {canAck && unacked.length > 0 && (
-            <Button loading={busy} onClick={ackAll}>
-              全部确认已阅
-            </Button>
-          )}
-        </Space>
-      </Flex>
-      <ul className="violation-list">
-        {d.alerts.map((a) => (
-          <li key={a.id}>
-            <Typography.Text>{a.summary}</Typography.Text>
-            <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
-              首次发现 {time(a.firstSeen)}
-              {a.acknowledged && " · 已确认"}
-            </Typography.Text>
-          </li>
+      }
+    >
+      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        {groups.map((d) => (
+          <DeviceAlertCard
+            key={d.id}
+            device={d}
+            label={label}
+            count={count}
+            danger={danger}
+            onOpen={() => openDevice(d.id)}
+            onAck={
+              canAck
+                ? async (ids) => {
+                    for (const id of ids) await ack(id);
+                    refresh();
+                  }
+                : undefined
+            }
+          />
         ))}
-      </ul>
-    </Card>
+      </Space>
+    </Panel>
   );
 }

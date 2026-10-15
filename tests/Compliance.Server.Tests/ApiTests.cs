@@ -381,7 +381,7 @@ public class ApiTests
     }
 
     [Fact]
-    public async Task Targeted_policy_does_not_assign_to_other_devices()
+    public async Task Named_policies_apply_to_their_devices_and_others_keep_the_default()
     {
         await using var f = new Fixture();
         await f.Login();
@@ -389,11 +389,69 @@ public class ApiTests
         f.Key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var second = (await f.Enroll(await f.Code())).DeviceId;
         f.Device = second;
-        Assert.Equal(HttpStatusCode.OK, (await f.Publish(new PolicyDocument { TargetDeviceIds = [first] })).StatusCode);
+        async Task<Dictionary<string, DeviceSummary>> Devices() =>
+            (await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!.ToDictionary(d => d.Id);
+
+        var created = await f.Client.PostAsJsonAsync(
+            "/api/policies/new",
+            new PolicyDocument { PolicyId = "研发部", TargetDeviceIds = [first] },
+            Wire.Json
+        );
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var pilot = await created.Content.ReadFromJsonAsync<PolicyListItem>(Wire.Json);
+        Assert.Equal(1, pilot!.Devices);
+        var devices = await Devices();
+        Assert.Equal(("研发部", 2L), (devices[first].PolicyName, devices[first].TargetPolicyVersion));
+        Assert.Equal(("Default", 1L), (devices[second].PolicyName, devices[second].TargetPolicyVersion));
+        // The device that was not named still receives the default release it already had.
         var signed = await (await f.Agent("GET", "/api/agent/policy")).Content.ReadFromJsonAsync<SignedPolicy>(
             Wire.Json
         );
         Assert.Equal(1, Wire.Read<PolicyDocument>(signed!.Payload).Version);
+
+        Assert.Equal(
+            HttpStatusCode.Conflict,
+            (
+                await f.Client.PostAsJsonAsync(
+                    "/api/policies/new",
+                    new PolicyDocument { PolicyId = "测试组", TargetDeviceIds = [first] },
+                    Wire.Json
+                )
+            ).StatusCode
+        );
+        Assert.Equal(
+            HttpStatusCode.Conflict,
+            (
+                await f.Client.PostAsJsonAsync(
+                    "/api/policies/new",
+                    new PolicyDocument { PolicyId = "default", TargetDeviceIds = [second] },
+                    Wire.Json
+                )
+            ).StatusCode
+        );
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (
+                await f.Client.PostAsJsonAsync("/api/policies/new", new PolicyDocument { PolicyId = "空" }, Wire.Json)
+            ).StatusCode
+        );
+        Assert.Equal(
+            HttpStatusCode.Conflict,
+            (await f.Publish(new PolicyDocument { Mode = "Enforce", TargetDeviceIds = [second] })).StatusCode
+        );
+
+        var list = await f.Client.GetFromJsonAsync<PolicyListItem[]>("/api/policies", Wire.Json);
+        Assert.Equal([(true, 1), (false, 1)], list!.Select(p => (p.IsDefault, p.Devices)));
+
+        // Deleting the named policy moves its device back to the default policy under a newer version,
+        // because agents refuse a lower version than the one they hold.
+        Assert.Equal(HttpStatusCode.OK, (await f.Client.DeleteAsync("/api/policies/" + pilot.Key)).StatusCode);
+        devices = await Devices();
+        Assert.Equal("Default", devices[first].PolicyName);
+        Assert.True(devices[first].TargetPolicyVersion > 2);
+        Assert.Equal(devices[first].TargetPolicyVersion, devices[second].TargetPolicyVersion);
+        Assert.Single((await f.Client.GetFromJsonAsync<PolicyListItem[]>("/api/policies", Wire.Json))!);
+        Assert.Equal(HttpStatusCode.Conflict, (await f.Client.DeleteAsync("/api/policies/default")).StatusCode);
     }
 
     [Fact]

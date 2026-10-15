@@ -186,7 +186,14 @@ describe("device notes", () => {
 });
 
 describe("alert center", () => {
-  const alert = (id: string, deviceId: string, hostName: string, type: string, state = "Open") => ({
+  const alert = (
+    id: string,
+    deviceId: string,
+    hostName: string,
+    type: string,
+    state = "Open",
+    lastSeen = "2026-10-14T05:00:00Z",
+  ) => ({
     id,
     deviceId,
     hostName,
@@ -196,11 +203,11 @@ describe("alert center", () => {
     state,
     lastSequence: 1,
     firstSeen: "2026-10-14T05:00:00Z",
-    lastSeen: "2026-10-14T05:00:00Z",
+    lastSeen,
     acknowledged: false,
   });
 
-  it("puts violating devices first, grouped per device with their notes", async () => {
+  it("groups violations and sensitive files per device, newest first", async () => {
     vi.stubGlobal("fetch", async (url: string) => {
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
@@ -212,11 +219,14 @@ describe("alert center", () => {
         ]);
       if (url === "/api/alerts")
         return json([
-          alert("1", "b", "PC-B", "Violation"),
-          alert("2", "a", "PC-A", "Violation"),
-          alert("3", "a", "PC-A", "Violation"),
-          alert("4", "a", "PC-A", "Offline"),
+          alert("1", "b", "PC-B", "Violation", "Open", "2026-10-14T05:00:00Z"),
+          alert("2", "a", "PC-A", "Violation", "Open", "2026-10-14T06:00:00Z"),
+          alert("3", "a", "PC-A", "Violation", "Open", "2026-10-14T04:00:00Z"),
+          alert("4", "a", "PC-A", "Offline", "Open", "2026-10-14T03:00:00Z"),
           alert("5", "b", "PC-B", "Violation", "Resolved"),
+          alert("6", "b", "PC-B", "SensitiveFile", "Open", "2026-10-14T07:00:00Z"),
+          alert("7", "b", "PC-B", "SensitiveFile", "Open", "2026-10-14T08:00:00Z"),
+          alert("8", "a", "PC-A", "Clue", "Open", "2026-10-14T09:00:00Z"),
         ]);
       return json([]);
     });
@@ -229,9 +239,19 @@ describe("alert center", () => {
     ]);
     expect(within(cards[0]).getByText("张三")).toBeTruthy();
     expect(within(cards[0]).getByText("2 项违规")).toBeTruthy();
-    // Other alerts list only what is not shown above: the offline alert, not the resolved violation.
-    expect(screen.getByText("其他告警（1）")).toBeTruthy();
-    expect(screen.getByText(/PC-A（张三）/)).toBeTruthy();
+    // Newest alert first within a device.
+    expect(
+      within(cards[0])
+        .getAllByRole("listitem")
+        .map((li) => li.textContent?.slice(0, 18)),
+    ).toEqual(["PC-A Violation 2首次", "PC-A Violation 3首次"]);
+    const sensitive = screen.getAllByLabelText(/^敏感文件 /);
+    expect(screen.getByText("敏感文件（1 台）")).toBeTruthy();
+    expect(within(sensitive[0]).getByText("2 个敏感文件")).toBeTruthy();
+    // Other alerts list only what is not shown above, newest first; not the resolved violation.
+    expect(screen.getByText("其他告警（2）")).toBeTruthy();
+    const others = screen.getAllByText(/^PC-A (Clue|Offline)/).map((e) => e.textContent);
+    expect(others).toEqual(["PC-A Clue 8", "PC-A Offline 4"]);
     await userEvent.click(within(cards[0]).getByRole("button", { name: "查看终端" }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/devices/a"));
   });

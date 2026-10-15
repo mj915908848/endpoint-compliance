@@ -18,6 +18,8 @@ export interface DeviceSummary {
   violationCount: number;
   simulated: boolean;
   note?: string;
+  /** Name of the policy the device follows. */
+  policyName?: string;
 }
 export interface Evidence {
   productId: string;
@@ -166,4 +168,11 @@ export interface Status {
   )[];
   policyPublicKeyPem: string;
   policyKeyId: string;
+}
+export interface PolicyListItem {
+  key: string;
+  isDefault: boolean;
+  release: SignedPolicy;
+  /** Devices this policy currently applies to. */
+  devices: number;
 }

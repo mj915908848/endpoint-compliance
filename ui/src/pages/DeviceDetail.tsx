@@ -165,7 +165,7 @@ export function DeviceDetailPage({
                 <Fact label="最近检查">{time(d.lastScan)}</Fact>
                 <Fact label="最近心跳">{time(d.lastHeartbeat)}</Fact>
                 <Fact label="策略">
-                  v{d.targetPolicyVersion}
+                  {d.policyName && `${d.policyName} `}v{d.targetPolicyVersion}
                   {d.appliedPolicyVersion !== d.targetPolicyVersion &&
                     `（终端已应用 v${d.appliedPolicyVersion}）`}
                   {d.protectionStatus && ` · ${d.protectionStatus}`}

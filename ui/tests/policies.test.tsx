@@ -11,7 +11,7 @@ const reader = { username: "viewer", roles: ["Reader"], csrfToken: "t" };
 
 const base: Policy = {
   schemaVersion: 1,
-  policyId: "endpoint-compliance",
+  policyId: "Default",
   version: 1,
   mode: "Audit",
   targetDeviceIds: [],
@@ -41,23 +41,41 @@ const base: Policy = {
   applicationRules: [],
 };
 
-function stub(published: Policy, template: Policy) {
+function stub(published: Policy, template: Policy, devices: object[] = []) {
+  let named: Policy[] = [];
   const posts: Policy[] = [];
+  const posted: string[] = [];
+  const release = (doc: Policy) => ({ payload: JSON.stringify(doc), signature: "s", keyId: "k" });
   vi.stubGlobal("fetch", async (url: string, options: RequestInit) => {
     const json = (body: unknown) =>
       new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
-    if (url === "/api/policies" && options.method === "POST") {
+    if (url.startsWith("/api/policies/") && options.method === "POST") {
       const doc = JSON.parse(options.body as string) as Policy;
       posts.push(doc);
+      posted.push(url);
+      if (url === "/api/policies/new") {
+        const created = { ...doc, version: 2 };
+        named = [...named, created];
+        return json({ key: "p-new", isDefault: false, release: release(created), devices: 1 });
+      }
       published = { ...doc, version: 2 };
-      return json({ payload: JSON.stringify(published), signature: "s", keyId: "k" });
+      return json({ key: "default", isDefault: true, release: release(published), devices: 3 });
     }
-    if (url === "/api/policies/current")
-      return json({ payload: JSON.stringify(published), signature: "s", keyId: "k" });
+    if (url === "/api/policies")
+      return json([
+        { key: "default", isDefault: true, release: release(published), devices: 3 },
+        ...named.map((doc, i) => ({
+          key: i === named.length - 1 && posted.includes("/api/policies/new") ? "p-new" : `p-${i}`,
+          isDefault: false,
+          release: release(doc),
+          devices: doc.targetDeviceIds.length,
+        })),
+      ]);
     if (url === "/api/policies/template") return json(template);
+    if (url === "/api/devices") return json(devices);
     return json([]);
   });
-  return posts;
+  return Object.assign(posts, { posted });
 }
 
 const renderPage = (session = publisher) =>
@@ -70,6 +88,29 @@ const renderPage = (session = publisher) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe("policy editor", () => {
+  it("creates a named policy for chosen devices, starting from the default rules", async () => {
+    const posts = stub(base, base, [
+      { id: "a", hostName: "PC-A", note: "张三" },
+      { id: "b", hostName: "PC-B" },
+    ]);
+    renderPage();
+    expect(await screen.findByText("未被其他策略指定的所有终端（当前 2 台）")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /新建策略/ }));
+    const name = screen.getByLabelText("策略名称") as HTMLInputElement;
+    expect(name.value).toBe("");
+    await userEvent.type(name, "研发部");
+    await userEvent.click(screen.getByLabelText("指定终端"));
+    await userEvent.click(await screen.findByTitle("PC-A（张三）"));
+    await userEvent.click(screen.getAllByRole("button", { name: "保存并发布" })[0]);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/新建策略“研发部”，适用 1 台终端/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "发布" }));
+    await waitFor(() => expect(posts.posted).toEqual(["/api/policies/new"]));
+    expect(posts[0]).toMatchObject({ policyId: "研发部", targetDeviceIds: ["a"], mode: "Audit" });
+    expect(posts[0].products).toEqual(base.products);
+    expect(await screen.findByText("研发部 · 1 台")).toBeTruthy();
+  });
+
   it("publishes an edit directly after showing what changes", async () => {
     const posts = stub(base, base);
     renderPage();
@@ -83,7 +124,7 @@ describe("policy editor", () => {
     const bar = screen.getByRole("region", { name: "未发布的修改" });
     await userEvent.click(within(bar).getByRole("button", { name: "保存并发布" }));
     expect(
-      (await screen.findAllByText("策略名称：endpoint-compliance → 研发部终端规范")).length,
+      (await screen.findAllByText("策略名称：Default → 研发部终端规范")).length,
     ).toBeGreaterThan(0);
     const dialog = screen.getByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "发布" }));

@@ -37,7 +37,8 @@ export function DeviceTable({
       render: (_, d) => (
         <Space orientation="vertical" size={0}>
           <span>
-            目标 v{d.targetPolicyVersion} · 已应用 v{d.appliedPolicyVersion}
+            {d.policyName && `${d.policyName} · `}目标 v{d.targetPolicyVersion} · 已应用 v
+            {d.appliedPolicyVersion}
           </span>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {d.protectionStatus || "状态未知"}

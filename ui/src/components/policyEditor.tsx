@@ -201,15 +201,19 @@ export function PolicyEditor({
   onChange,
   devices,
   readOnly,
+  isDefault = true,
+  takenBy = new Map(),
 }: {
   value: Policy;
   onChange: (p: Policy) => void;
   devices: DeviceSummary[];
   readOnly: boolean;
+  /** The default policy covers every device no other policy names. */
+  isDefault?: boolean;
+  /** Devices already named by another policy, with that policy's name. */
+  takenBy?: Map<string, string>;
 }) {
   const set = (patch: Partial<Policy>) => onChange({ ...value, ...patch });
-  const targeted = value.targetDeviceIds.length > 0;
-  const [allTargets, setAllTargets] = useState(!targeted);
   const productDomains = [...new Set(value.products.flatMap((p) => p.domains))];
   const missingDomains = productDomains.filter((d) => !value.blockDomains.includes(d));
 
@@ -226,7 +230,7 @@ export function PolicyEditor({
                 disabled={readOnly}
                 onChange={(e) => set({ policyId: e.target.value })}
               />
-              <Hint>用于在报告和终端上识别这份策略，例如“研发部终端规范”。</Hint>
+              <Hint>用于在报告和终端上识别这份策略，例如“研发部终端规范”。名称不能重复。</Hint>
             </Field>
           </Col>
           <Col xs={24} lg={12}>
@@ -237,9 +241,14 @@ export function PolicyEditor({
                 onChange={(e) => set({ mode: e.target.value as string })}
                 options={[
                   { value: "Audit", label: "审计模式：只检查，不拦截" },
-                  { value: "Enforce", label: "强制模式：检查并拦截" },
+                  { value: "Enforce", label: "强制模式：检查并拦截", disabled: isDefault },
                 ]}
               />
+              {isDefault && (
+                <Hint>
+                  默认策略适用于所有终端，只能使用审计模式；强制模式请新建策略并指定试点终端。
+                </Hint>
+              )}
               {value.mode === "Enforce" && (
                 <Hint>
                   强制模式只能用于指定的试点终端，且这些终端需要在线、已验证所选的防护措施。
@@ -249,37 +258,41 @@ export function PolicyEditor({
           </Col>
           <Col xs={24} lg={12}>
             <Field label="适用终端">
-              <Radio.Group
-                value={allTargets && !targeted ? "all" : "some"}
-                disabled={readOnly}
-                onChange={(e) => {
-                  const all = e.target.value === "all";
-                  setAllTargets(all);
-                  if (all) set({ targetDeviceIds: [] });
-                }}
-                options={[
-                  { value: "all", label: "全部终端" },
-                  { value: "some", label: "指定终端" },
-                ]}
-              />
-              {!(allTargets && !targeted) && (
+              {isDefault ? (
+                <Typography.Text>
+                  未被其他策略指定的所有终端
+                  {devices.length > 0 &&
+                    `（当前 ${devices.filter((d) => !takenBy.has(d.id)).length} 台）`}
+                </Typography.Text>
+              ) : (
                 <Select
                   mode="multiple"
                   aria-label="指定终端"
-                  style={{ width: "100%", marginTop: 8 }}
-                  placeholder="选择终端"
+                  style={{ width: "100%" }}
+                  placeholder="选择终端，可多选"
                   disabled={readOnly}
                   value={value.targetDeviceIds}
                   onChange={(ids: string[]) => set({ targetDeviceIds: ids })}
                   optionFilterProp="label"
                   options={[
-                    ...devices.map((d) => ({ value: d.id, label: deviceName(d) })),
+                    ...devices.map((d) => ({
+                      value: d.id,
+                      label: takenBy.has(d.id)
+                        ? `${deviceName(d)}（已在“${takenBy.get(d.id)}”）`
+                        : deviceName(d),
+                      disabled: takenBy.has(d.id),
+                    })),
                     ...value.targetDeviceIds
                       .filter((id) => !devices.some((d) => d.id === id))
                       .map((id) => ({ value: id, label: `${id}（已删除）` })),
                   ]}
                 />
               )}
+              <Hint>
+                {isDefault
+                  ? "新注册的终端也使用默认策略。要让部分终端使用不同规则，请新建策略。"
+                  : "一台终端只能使用一份策略；未指定的终端使用默认策略。"}
+              </Hint>
             </Field>
           </Col>
           <Col xs={24} lg={12}>
