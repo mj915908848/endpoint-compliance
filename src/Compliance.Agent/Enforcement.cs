@@ -8,7 +8,14 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Compliance.Agent;
 
-public sealed record RunningProcess(int Pid, string Name, Func<string?> ProductName, Func<string?> UserSid);
+/// <summary>A running program; <paramref name="ImagePath"/> is the full path of its executable when readable.</summary>
+public sealed record RunningProcess(
+    int Pid,
+    string Name,
+    Func<string?> ProductName,
+    Func<string?> UserSid,
+    Func<string?>? ImagePath = null
+);
 
 public sealed record BlockedProcess(string ProductId, string ProductName, string Executable, int Pid, string? UserSid);
 
@@ -44,9 +51,28 @@ public sealed class ProcessEnforcer(IProcessTable table)
     private string? lastFailure;
     private (string Name, DateTimeOffset At)? lastEnded;
 
-    /// <summary>Products whose executable names and product name both match, as the processes check confirms them.</summary>
-    public static ProductRule? Confirmed(RunningProcess process, PolicyDocument policy)
+    /// <summary>Executables whose name matched a product but could not be confirmed, each reported once.</summary>
+    private readonly HashSet<string> skipped = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The product a process belongs to: a Microsoft Store app running from its protected install folder whose
+    /// package name the product lists, or an executable whose file name and product name both match.
+    /// </summary>
+    public static ProductRule? Confirmed(RunningProcess process, PolicyDocument policy) =>
+        Confirm(process, policy, out _);
+
+    private static ProductRule? Confirm(RunningProcess process, PolicyDocument policy, out string? reason)
     {
+        reason = null;
+        var path = process.ImagePath?.Invoke();
+        if (PackageName(path) is { } package)
+        {
+            var packaged = policy.Products.FirstOrDefault(r =>
+                r.PackageIds.Any(x => string.Equals(x, package, StringComparison.OrdinalIgnoreCase))
+            );
+            if (packaged is not null)
+                return packaged;
+        }
         var candidates = policy
             .Products.Where(r =>
                 r.ExecutableNames.Any(x => string.Equals(x, process.Name, StringComparison.OrdinalIgnoreCase))
@@ -55,12 +81,34 @@ public sealed class ProcessEnforcer(IProcessTable table)
         if (candidates.Length == 0)
             return null;
         var product = process.ProductName();
-        return candidates.FirstOrDefault(r => ProductMatches(r, product));
+        var rule = candidates.FirstOrDefault(r => ProductMatches(r, product));
+        if (rule is null)
+            reason = product is null
+                ? $"{process.Name} 无法读取产品信息（{path ?? "路径不可读"}），未结束"
+                : $"{process.Name} 的产品名为“{product}”，与策略中的 {candidates[0].Name} 不符（{path ?? "路径不可读"}），未结束";
+        return rule;
+    }
+
+    /// <summary>"OpenAI.ChatGPT-Desktop" for a path under "\WindowsApps\OpenAI.ChatGPT-Desktop_1.0.0.0_x64__8wekyb3d8bbwe\".</summary>
+    public static string? PackageName(string? path)
+    {
+        if (path is null)
+            return null;
+        var parts = path.Split('\\', '/');
+        var at = Array.FindIndex(parts, p => string.Equals(p, "WindowsApps", StringComparison.OrdinalIgnoreCase));
+        if (at < 0 || at + 2 >= parts.Length)
+            return null;
+        var folder = parts[at + 1];
+        var end = folder.IndexOf('_');
+        return end > 0 && folder.Contains("__", StringComparison.Ordinal) ? folder[..end] : null;
     }
 
     public static bool ProductMatches(ProductRule rule, string? product) =>
         string.Equals(product, rule.Name, StringComparison.OrdinalIgnoreCase)
         || rule.DisplayNames.Any(x => string.Equals(product, x, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Why matching executables were left running, once per executable and product name.</summary>
+    public List<string> Skipped { get; } = [];
 
     /// <summary>Ends every confirmed forbidden process when the policy enforces this measure.</summary>
     public List<BlockedProcess> Sweep(PolicyDocument policy, DateTimeOffset now)
@@ -71,9 +119,13 @@ public sealed class ProcessEnforcer(IProcessTable table)
         lastFailure = null;
         foreach (var process in table.Running())
         {
-            var rule = Confirmed(process, policy);
+            var rule = Confirm(process, policy, out var reason);
             if (rule is null)
+            {
+                if (reason is not null && skipped.Add(reason))
+                    Skipped.Add(reason);
                 continue;
+            }
             var sid = process.UserSid();
             if (table.Kill(process.Pid))
             {
@@ -243,22 +295,53 @@ public sealed class WindowsProcessTable : IProcessTable
                 {
                     continue; // exited
                 }
-                yield return new(pid, name, () => ProductName(pid), () => Owner(pid));
+                string? path = null;
+                var read = false;
+                string? Path()
+                {
+                    if (!read)
+                        (path, read) = (ImagePath(pid), true);
+                    return path;
+                }
+                yield return new(pid, name, () => ProductName(Path()), () => Owner(pid), Path);
             }
         }
     }
 
-    public static string? ProductName(int pid)
+    public static string? ProductName(string? path)
     {
+        if (path is null)
+            return null;
         try
         {
-            using var p = Process.GetProcessById(pid);
-            return FileVersionInfo.GetVersionInfo(p.MainModule!.FileName).ProductName;
+            return FileVersionInfo.GetVersionInfo(path).ProductName;
         }
-        catch
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // Exited, protected or otherwise unreadable: not confirmed, so never ended.
+            // Unreadable: not confirmed, so never ended.
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The executable's full path. Unlike Process.MainModule this needs only limited query access, so it also
+    /// works for Microsoft Store apps and processes of other users.
+    /// </summary>
+    public static string? ImagePath(int pid)
+    {
+        const uint QueryLimitedInformation = 0x1000;
+        var process = OpenProcess(QueryLimitedInformation, false, pid);
+        if (process == IntPtr.Zero)
+            return null;
+        try
+        {
+            var buffer = new char[32768];
+            var size = buffer.Length;
+            return QueryFullProcessImageName(process, 0, buffer, ref size) ? new string(buffer, 0, size) : null;
+        }
+        finally
+        {
+            CloseHandle(process);
         }
     }
 
@@ -312,6 +395,14 @@ public sealed class WindowsProcessTable : IProcessTable
 
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError = true,
+        CharSet = CharSet.Unicode,
+        EntryPoint = "QueryFullProcessImageNameW"
+    )]
+    private static extern bool QueryFullProcessImageName(IntPtr process, uint flags, char[] name, ref int size);
 
     [DllImport("advapi32.dll", SetLastError = true)]
     private static extern bool OpenProcessToken(IntPtr process, uint access, out SafeAccessTokenHandle token);

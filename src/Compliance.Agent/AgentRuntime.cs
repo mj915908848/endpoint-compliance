@@ -378,6 +378,9 @@ public sealed class AgentRuntime(
             try
             {
                 blocked = processes.Sweep(current, DateTimeOffset.UtcNow);
+                foreach (var reason in processes.Skipped)
+                    Console.WriteLine("发现同名程序但未确认：" + reason);
+                processes.Skipped.Clear();
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {

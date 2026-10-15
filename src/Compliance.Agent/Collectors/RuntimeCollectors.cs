@@ -5,7 +5,7 @@ using Compliance.Core;
 
 namespace Compliance.Agent;
 
-/// <summary>Running processes whose executable name matches a product; confirmed only when the file's product name agrees.</summary>
+/// <summary>Running processes of a product, confirmed as the process measure confirms them before ending one.</summary>
 [SupportedOSPlatform("windows")]
 internal sealed class ProcessesCollector : ICollector
 {
@@ -16,44 +16,42 @@ internal sealed class ProcessesCollector : ICollector
 
     public Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct)
     {
-        foreach (var p in Process.GetProcesses())
+        foreach (var p in new WindowsProcessTable().Running())
         {
-            using var _ = p;
-            var name = p.ProcessName + ".exe";
-            var candidates = context
-                .Policy.Products.Where(r =>
-                    r.ExecutableNames.Any(x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase))
-                )
-                .ToArray();
-            if (candidates.Length == 0)
+            var confirmed = ProcessEnforcer.Confirmed(p, context.Policy);
+            if (confirmed is not null)
+            {
+                evidence.Add(
+                    new(
+                        confirmed.Id,
+                        confirmed.Name,
+                        EvidenceKind.Process,
+                        "pid:" + p.Pid,
+                        "运行进程",
+                        $"产品信息已核实，进程号 {p.Pid}",
+                        null,
+                        true
+                    )
+                );
                 continue;
-            string? product = null;
-            try
-            {
-                product = FileVersionInfo.GetVersionInfo(p.MainModule!.FileName).ProductName;
             }
-            catch
-            {
-                // Exited, protected or otherwise unreadable: it stays a filename clue.
-            }
-            foreach (var rule in candidates)
-            {
-                bool confirmed =
-                    string.Equals(product, rule.Name, StringComparison.OrdinalIgnoreCase)
-                    || rule.DisplayNames.Any(x => string.Equals(product, x, StringComparison.OrdinalIgnoreCase));
+            foreach (
+                var rule in context.Policy.Products.Where(r =>
+                    r.ExecutableNames.Any(x => string.Equals(x, p.Name, StringComparison.OrdinalIgnoreCase))
+                )
+            )
                 evidence.Add(
                     new(
                         rule.Id,
                         rule.Name,
-                        confirmed ? EvidenceKind.Process : EvidenceKind.Clue,
-                        "pid:" + p.Id,
+                        EvidenceKind.Clue,
+                        "pid:" + p.Pid,
                         "运行进程",
-                        confirmed ? $"产品信息已核实，进程号 {p.Id}" : $"仅文件名匹配，进程号 {p.Id}",
+                        $"仅文件名匹配，进程号 {p.Pid}",
                         null,
-                        confirmed
+                        false
                     )
                 );
-            }
         }
         return Task.CompletedTask;
     }

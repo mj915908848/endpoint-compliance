@@ -1335,6 +1335,30 @@ await Check(
             "enforcing reports the measure in effect"
         );
 
+        Assert(
+            enforcer.Skipped.Single().Contains("Some Other Cursor"),
+            "a same-named program left running says why: " + string.Join(";", enforcer.Skipped)
+        );
+
+        // Microsoft Store apps are confirmed by their protected install folder, whatever the version info says.
+        const string store = @"C:\Program Files\WindowsApps\OpenAI.ChatGPT-Desktop_1.2025.1.0_x64__2p2nqsd0c76g0\app\";
+        var packaged = new FakeProcesses([
+            new(30, "ChatGPT.exe", () => null, () => "S-1-5-21-2", () => store + "ChatGPT.exe"),
+            new(31, "helper.exe", () => null, () => "S-1-5-21-2", () => store + "helper.exe"),
+            new(32, "ChatGPT.exe", () => null, () => null, () => @"C:\Users\a\Downloads\ChatGPT.exe"),
+        ]);
+        var storeBlocked = new ProcessEnforcer(packaged).Sweep(enforce, DateTimeOffset.UtcNow);
+        Assert(
+            packaged.Killed.SequenceEqual([30, 31]) && storeBlocked.All(b => b.ProductId == "chatgpt"),
+            "Store app processes are ended, an unconfirmed copy elsewhere is not: " + string.Join(",", packaged.Killed)
+        );
+        Assert(
+            ProcessEnforcer.PackageName(@"C:\WindowsApps\Foo.exe") is null
+                && ProcessEnforcer.PackageName(@"D:\WindowsApps\Anthropic.Claude_1.0.0.0_x64__abc\Claude.exe")
+                    == "Anthropic.Claude",
+            "package name comes only from a package folder"
+        );
+
         var stuck = new ProcessEnforcer(
             new FakeProcesses([new(20, "Cursor.exe", () => "Cursor", () => null)]) { Refuse = true }
         );
