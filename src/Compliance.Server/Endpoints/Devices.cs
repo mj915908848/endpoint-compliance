@@ -18,10 +18,7 @@ static partial class Endpoints
                 return await s.Tx(async tx =>
                 {
                     await s.UpdateOffline(tx);
-                    var list = new List<DeviceSummary>();
-                    foreach (var d in await tx.AllDevices())
-                        list.Add(await s.Summary(tx, d));
-                    return list.OrderBy(d => d.HostName).ToArray();
+                    return (await s.Summaries(tx)).OrderBy(d => d.HostName).ToArray();
                 });
             }
         );

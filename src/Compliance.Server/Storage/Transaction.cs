@@ -160,8 +160,6 @@ public sealed class Transaction
     public Task<string?> GetDevicePublicKey(string id) =>
         Single("SELECT public_key_pem FROM devices WHERE id = @id", r => r.GetString(0), ("id", id));
 
-    public Task<List<DeviceRecord>> AllDevices() => Query($"SELECT {DeviceSelect} FROM devices", ReadDevice);
-
     /// <summary>A device without its controls and snapshot.</summary>
     public Task<DeviceRecord?> GetDeviceHead(string id) =>
         Single($"SELECT {DeviceHeadSelect} FROM devices WHERE id = @id", ReadDevice, ("id", id));

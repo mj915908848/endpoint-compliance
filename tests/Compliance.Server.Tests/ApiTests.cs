@@ -253,6 +253,42 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Device_list_shows_a_new_snapshot_at_once_and_expired_results_after_reuse()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        async Task<DeviceSummary> Listed() =>
+            Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
+        Assert.Null((await Listed()).LastScan);
+        var snapshot = new ScanSnapshot
+        {
+            DeviceId = f.Device,
+            HostName = "host",
+            CollectedAt = f.Clock.Now,
+            PolicyVersion = 1,
+        };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("s1", 1, f.Clock.Now, "Snapshot", "scan", snapshot)])
+        );
+        Assert.Equal(snapshot.CollectedAt, (await Listed()).LastScan);
+        var later = snapshot with { CollectedAt = f.Clock.Now.AddSeconds(10) };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("s2", 2, later.CollectedAt, "Snapshot", "scan", later)])
+        );
+        Assert.Equal(later.CollectedAt, (await Listed()).LastScan);
+        // Unchanged inputs: the same verdict, and the reused one matches a fresh evaluation.
+        var reused = await Listed();
+        f.Clock.Now += ComplianceService.VerdictReuse;
+        var fresh = await f.Client.GetFromJsonAsync<JsonElement>($"/api/devices/{f.Device}", Wire.Json);
+        Assert.Equal(reused.ProtectionStatus, fresh.GetProperty("device").GetProperty("protectionStatus").GetString());
+    }
+
+    [Fact]
     public async Task New_received_time_does_not_refresh_old_scan_or_offline_verdict()
     {
         await using var f = new Fixture();

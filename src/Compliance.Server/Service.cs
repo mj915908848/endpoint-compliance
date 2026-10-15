@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Compliance.Core;
 
@@ -214,38 +215,111 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         };
     }
 
-    public async Task<DeviceSummary> Summary(Transaction tx, DeviceRecord d)
+    /// <summary>A device's verdicts, which change only with its snapshot, its policy or the passing of time.</summary>
+    sealed record Verdicts(
+        long SnapshotSequence,
+        long TargetPolicyVersion,
+        DateTimeOffset ComputedAt,
+        PolicyDocument Policy,
+        ComplianceReport? Report,
+        Verdict? Last,
+        DateTimeOffset? CollectedAt,
+        bool Simulated
+    );
+
+    /// <summary>How long the device list reuses a verdict whose snapshot and policy are unchanged.</summary>
+    public static readonly TimeSpan VerdictReuse = TimeSpan.FromSeconds(60);
+
+    readonly ConcurrentDictionary<string, Verdicts> verdicts = new();
+
+    // Releases never change once committed; only read-only summaries fill this, never a publishing transaction.
+    readonly ConcurrentDictionary<long, PolicyDocument> releases = new();
+
+    async Task<PolicyDocument?> Release(Transaction tx, long version)
     {
-        var policy = Wire.Read<PolicyDocument>((await AssignedPolicy(tx, d)).Payload);
+        if (releases.TryGetValue(version, out var cached))
+            return cached;
+        var release = await tx.GetRelease(version);
+        return release == null ? null : releases[version] = Wire.Read<PolicyDocument>(release.Payload);
+    }
+
+    async Task<Verdicts> Evaluate(Transaction tx, DeviceRecord d)
+    {
+        var policy = await Release(tx, d.TargetPolicyVersion) ?? throw new ApiError(409, "Assigned policy unavailable");
         var report = d.Snapshot == null ? null : ReportEngine.Evaluate(policy, d.Snapshot, Now);
-        var historicalPolicy = d.Snapshot == null ? null : await tx.GetRelease(d.Snapshot.PolicyVersion);
+        var historical = d.Snapshot == null ? null : await Release(tx, d.Snapshot.PolicyVersion);
         var last =
-            d.Snapshot == null || historicalPolicy == null
+            d.Snapshot == null || historical == null
                 ? null
-                : ReportEngine.Evaluate(
-                    Wire.Read<PolicyDocument>(historicalPolicy.Payload),
-                    d.Snapshot,
-                    d.Snapshot.CollectedAt
-                );
+                : ReportEngine.Evaluate(historical, d.Snapshot, d.Snapshot.CollectedAt);
+        var result = new Verdicts(
+            d.SnapshotSequence,
+            d.TargetPolicyVersion,
+            Now,
+            policy,
+            report,
+            last?.Verdict,
+            d.Snapshot?.CollectedAt,
+            d.Snapshot?.Simulated ?? false
+        );
+        verdicts[d.Id] = result;
+        return result;
+    }
+
+    /// <summary>Verdicts from <see cref="Evaluate"/>; online state and the other fields come from the record now.</summary>
+    DeviceSummary Summary(DeviceRecord d, Verdicts v)
+    {
         var online = Online(d);
         return new(
             d.Id,
             d.HostName,
             d.LastHeartbeat,
             online,
-            online == "Online" ? report?.Verdict ?? Verdict.UNKNOWN : Verdict.UNKNOWN,
-            last?.Verdict,
-            d.Snapshot?.CollectedAt,
-            policy.Version,
+            online == "Online" ? v.Report?.Verdict ?? Verdict.UNKNOWN : Verdict.UNKNOWN,
+            v.Last,
+            v.CollectedAt,
+            v.Policy.Version,
             d.AppliedPolicyVersion,
-            report?.ProtectionStatus ?? "未取得检查结果",
-            report?.ViolationCount ?? 0,
-            d.Snapshot?.Simulated ?? false,
+            v.Report?.ProtectionStatus ?? "未取得检查结果",
+            v.Report?.ViolationCount ?? 0,
+            v.Simulated,
             d.Note,
-            policy.PolicyId,
+            v.Policy.PolicyId,
             d.AgentVersion,
             ReleaseVersion.Older(d.AgentVersion, Version)
         );
+    }
+
+    /// <summary>One device, evaluated now; <paramref name="d"/> must include its snapshot.</summary>
+    public async Task<DeviceSummary> Summary(Transaction tx, DeviceRecord d) => Summary(d, await Evaluate(tx, d));
+
+    /// <summary>
+    /// Every device, reading and evaluating a snapshot only when it, the device's policy or
+    /// <see cref="VerdictReuse"/> has passed since it was last evaluated. Administrators' pages poll this.
+    /// </summary>
+    public async Task<List<DeviceSummary>> Summaries(Transaction tx)
+    {
+        var list = new List<DeviceSummary>();
+        var heads = await tx.AllDeviceHeads();
+        foreach (var head in heads)
+        {
+            if (
+                verdicts.TryGetValue(head.Id, out var v)
+                && v.SnapshotSequence == head.SnapshotSequence
+                && v.TargetPolicyVersion == head.TargetPolicyVersion
+                && v.ComputedAt <= Now
+                && Now - v.ComputedAt < VerdictReuse
+            )
+            {
+                list.Add(Summary(head, v));
+                continue;
+            }
+            if (await tx.GetDevice(head.Id) is { } full)
+                list.Add(Summary(full, await Evaluate(tx, full)));
+        }
+        foreach (var id in verdicts.Keys.Except(heads.Select(h => h.Id)))
+            verdicts.TryRemove(id, out _);
+        return list;
     }
 
     public static readonly TimeSpan SnapshotEventRetention = TimeSpan.FromDays(1);
