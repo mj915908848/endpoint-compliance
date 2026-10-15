@@ -74,14 +74,44 @@ public sealed class Transaction
 
     // ---- enrollment codes ----------------------------------------------------------------
 
-    public Task<CodeRecord?> GetCode(string codeHash) =>
-        Single(
-            "SELECT expires_at, used FROM enrollment_codes WHERE code_hash = @hash",
-            r => new CodeRecord(Time(r, 0), Long(r, 1) != 0),
-            ("hash", codeHash)
+    const string CodeColumns = "id, label, expires_at, max_uses, used, created_at, created_by, revoked";
+
+    static EnrollmentCode ReadCode(DbDataReader r) =>
+        new(
+            r.GetString(0),
+            r.GetString(1),
+            Time(r, 2),
+            (int)Long(r, 3),
+            (int)Long(r, 4),
+            Time(r, 5),
+            r.GetString(6),
+            Long(r, 7) != 0
         );
 
-    public Task InsertCode(string codeHash, CodeRecord code) =>
+    public Task<EnrollmentCode?> GetCode(string codeHash) =>
+        Single($"SELECT {CodeColumns} FROM enrollment_codes WHERE code_hash = @hash", ReadCode, ("hash", codeHash));
+
+    /// <summary>Codes created since multi-use codes exist, newest first.</summary>
+    public Task<List<EnrollmentCode>> RecentCodes(int limit) =>
+        Query(
+            $"SELECT {CodeColumns} FROM enrollment_codes WHERE id <> '' ORDER BY created_at DESC LIMIT {limit}",
+            ReadCode
+        );
+
+    public Task InsertCode(string codeHash, EnrollmentCode code) =>
+        Execute(
+            $"INSERT INTO enrollment_codes(code_hash, {CodeColumns}) VALUES(@hash, @id, @label, @expires, @max, 0, @created, @by, 0)",
+            ("hash", codeHash),
+            ("id", code.Id),
+            ("label", code.Label),
+            ("expires", code.ExpiresAt),
+            ("max", code.MaxUses),
+            ("created", code.CreatedAt),
+            ("by", code.CreatedBy)
+        );
+
+    /// <summary>Migration 2 imports 0.1.0 codes before migration 5 adds the other columns.</summary>
+    public Task InsertLegacyCode(string codeHash, CodeRecord code) =>
         Execute(
             "INSERT INTO enrollment_codes(code_hash, expires_at, used) VALUES(@hash, @expires, @used)",
             ("hash", codeHash),
@@ -89,8 +119,11 @@ public sealed class Transaction
             ("used", code.Used)
         );
 
-    public Task MarkCodeUsed(string codeHash) =>
-        Execute("UPDATE enrollment_codes SET used = 1 WHERE code_hash = @hash", ("hash", codeHash));
+    public Task CountCodeUse(string codeHash) =>
+        Execute("UPDATE enrollment_codes SET used = used + 1 WHERE code_hash = @hash", ("hash", codeHash));
+
+    public Task<int> RevokeCode(string id) =>
+        Execute("UPDATE enrollment_codes SET revoked = 1 WHERE id = @id AND id <> ''", ("id", id));
 
     // ---- devices -------------------------------------------------------------------------
 

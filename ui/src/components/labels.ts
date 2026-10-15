@@ -61,6 +61,7 @@ export const auditActionLabel = lookup({
   Logout: "退出登录",
   CreateUser: "创建账号",
   CreateEnrollmentCode: "生成登记码",
+  RevokeEnrollmentCode: "撤销登记码",
   EnrollDevice: "终端登记",
   RequestScan: "请求重新检查",
   DeleteDevice: "删除终端",

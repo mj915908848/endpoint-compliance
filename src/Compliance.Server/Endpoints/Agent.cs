@@ -44,7 +44,7 @@ static partial class Endpoints
                         await tx.Lock(ComplianceService.EnrollmentLock);
                         var hash = Secrets.Hash(r.Code);
                         var code = await tx.GetCode(hash);
-                        if (code == null || code.Used || code.ExpiresAt <= s.Now)
+                        if (code == null || code.Revoked || code.Uses >= code.MaxUses || code.ExpiresAt <= s.Now)
                             throw new ApiError(400, "Code invalid, expired or used");
                         if (await tx.DeviceKeyExists(publicKey))
                             throw new ApiError(400, "Key already enrolled");
@@ -60,8 +60,13 @@ static partial class Endpoints
                                 TargetPolicyVersion: target
                             )
                         );
-                        await tx.MarkCodeUsed(hash);
-                        await tx.Audit("enrollment", "EnrollDevice", id, s.Now);
+                        await tx.CountCodeUse(hash);
+                        await tx.Audit(
+                            "enrollment",
+                            "EnrollDevice",
+                            code.Label.Length > 0 ? $"{id}（登记码“{code.Label}”）" : id,
+                            s.Now
+                        );
                         return new EnrollmentResponse(id, s.PublicKey, s.KeyId);
                     });
                 }

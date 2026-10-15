@@ -23,6 +23,18 @@ public sealed record SessionRecord(string Username, string CsrfToken, DateTimeOf
 
 public sealed record CodeRecord(DateTimeOffset ExpiresAt, bool Used);
 
+/// <summary>An enrollment code; only its hash is stored, so the code itself is shown once when created.</summary>
+public sealed record EnrollmentCode(
+    string Id,
+    string Label,
+    DateTimeOffset ExpiresAt,
+    int MaxUses,
+    int Uses,
+    DateTimeOffset CreatedAt,
+    string CreatedBy,
+    bool Revoked
+);
+
 public sealed record DeviceRecord(
     string Id,
     string HostName,

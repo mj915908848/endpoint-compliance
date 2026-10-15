@@ -17,6 +17,7 @@ public static class Migrations
         new(2, "import legacy records table", ImportLegacyRecords),
         new(3, "device notes", tx => tx.Execute("ALTER TABLE devices ADD COLUMN note TEXT NOT NULL DEFAULT ''")),
         new(4, "multiple policies", MultiplePolicies),
+        new(5, "multi-use enrollment codes", MultiUseCodes),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -112,6 +113,26 @@ public static class Migrations
     ];
 
     /// <summary>Every release so far belongs to the default policy; named policies add rows to <c>policies</c>.</summary>
+    /// <summary>
+    /// "used" becomes a count of devices enrolled with the code; existing single-use codes keep max_uses 1. Codes
+    /// created before this have no id and are not listed.
+    /// </summary>
+    static async Task MultiUseCodes(Transaction tx)
+    {
+        foreach (
+            var column in new[]
+            {
+                "id TEXT NOT NULL DEFAULT ''",
+                "label TEXT NOT NULL DEFAULT ''",
+                "max_uses BIGINT NOT NULL DEFAULT 1",
+                "created_at BIGINT NOT NULL DEFAULT 0",
+                "created_by TEXT NOT NULL DEFAULT ''",
+                "revoked BIGINT NOT NULL DEFAULT 0",
+            }
+        )
+            await tx.Execute("ALTER TABLE enrollment_codes ADD COLUMN " + column);
+    }
+
     static async Task MultiplePolicies(Transaction tx)
     {
         await tx.Execute("ALTER TABLE policy_releases ADD COLUMN policy_key TEXT NOT NULL DEFAULT 'default'");
@@ -147,7 +168,7 @@ public static class Migrations
                     await tx.InsertSession(id, Wire.Read<SessionRecord>(json));
                     break;
                 case "code":
-                    await tx.InsertCode(id, Wire.Read<CodeRecord>(json));
+                    await tx.InsertLegacyCode(id, Wire.Read<CodeRecord>(json));
                     break;
                 case "device":
                     await tx.InsertDevice(Wire.Read<DeviceRecord>(json));

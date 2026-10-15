@@ -1,14 +1,16 @@
 ﻿#requires -Version 5.1
 # 把客户端安装为常驻 Windows 服务。默认连接内网 HTTP 试用管理端；-Production 连接正式的 HTTPS 管理端。
+# 管理端地址和登记码依次取自 -ServerUrl/-Code 参数、安装包根目录的“登记配置.json”（管理端“终端登记”页下载），
+# 都没有时询问。
 [CmdletBinding()]
-param([string]$PackageRoot, [switch]$Production)
+param([string]$PackageRoot, [switch]$Production, [string]$ServerUrl, [string]$Code)
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw '此脚本只能在 Windows 上运行。' }
 $scriptPath = $MyInvocation.MyCommand.Path
 if ([string]::IsNullOrWhiteSpace($PackageRoot)) { $PackageRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $scriptPath)) }
 $PackageRoot = (Resolve-Path -LiteralPath $PackageRoot).ProviderPath
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -Verb RunAs -ArgumentList ('-NoExit -NoProfile -ExecutionPolicy Bypass -File "' + $scriptPath + '" -PackageRoot "' + $PackageRoot + '"' + $(if ($Production) { ' -Production' } else { '' })) | Out-Null
+    Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -Verb RunAs -ArgumentList ('-NoExit -NoProfile -ExecutionPolicy Bypass -File "' + $scriptPath + '" -PackageRoot "' + $PackageRoot + '"' + $(if ($Production) { ' -Production' } else { '' }) + $(if ($ServerUrl) { ' -ServerUrl "' + $ServerUrl + '"' } else { '' }) + $(if ($Code) { ' -Code ' + $Code } else { '' })) | Out-Null
     Write-Host '已打开管理员窗口，请在新窗口中继续。'
     exit 0
 }
@@ -38,7 +40,20 @@ if (Get-Service ComplianceAgent -ErrorAction SilentlyContinue) {
     & $uninstall -Quiet
 }
 
-if ($Production) {
+$configPath = Join-Path $PackageRoot '登记配置.json'
+if (Test-Path -LiteralPath $configPath) {
+    try { $preset = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json }
+    catch { throw "无法读取 $configPath：$($_.Exception.Message)" }
+    if (-not $ServerUrl) { $ServerUrl = $preset.serverUrl }
+    if (-not $Code) { $Code = $preset.code }
+    Write-Host "使用安装包中的登记配置：管理端 $($preset.serverUrl)" -ForegroundColor Cyan
+}
+
+if ($ServerUrl) {
+    $serverUrl = $ServerUrl.Trim().TrimEnd('/')
+    if ($Production -and $serverUrl -notmatch '^https://[^/]+$') { throw "正式环境的管理端地址必须以 https:// 开头，只写域名（和端口）：$serverUrl" }
+}
+elseif ($Production) {
     $serverUrl = (Read-Host '管理端地址（如 https://compliance.example.com）').Trim().TrimEnd('/')
     if ($serverUrl -notmatch '^https://[^/]+$') { throw '正式环境的管理端地址必须以 https:// 开头，只写域名（和端口），不带路径。' }
 }
@@ -54,7 +69,7 @@ if ($Production) {
 }
 elseif ($status.mode -ne 'LoopbackDemo' -and $status.mode -ne 'LanHttpTrial') { throw '该管理端是正式环境，请使用“安装客户端（正式环境）.bat”。' }
 
-$code = (Read-Host '请粘贴管理端“终端登记”页面生成的新登记码').Trim()
+$code = if ($Code) { $Code.Trim() } else { (Read-Host '请粘贴管理端“终端登记”页面生成的登记码').Trim() }
 if ($code -cnotmatch '^[0-9a-f]{64}$') { throw '登记码应为 64 位小写十六进制字符。' }
 
 Write-Host '正在安装服务…'
@@ -68,7 +83,7 @@ Write-Host '正在登记终端…'
 & (Join-Path $installDir 'Compliance.Agent.exe') --config (Join-Path $dataDir 'agent.json') --enroll --code $code
 if ($LASTEXITCODE -ne 0) {
     & $uninstall -Quiet
-    throw '登记失败，已撤销安装。登记码可能已过期或已被使用，请生成新的登记码后重试。'
+    throw '登记失败，已撤销安装。登记码可能已过期、已撤销或可登记台数已用完，请向管理员索取新的登记码或登记配置后重试。'
 }
 
 Start-Service ComplianceAgent

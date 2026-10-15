@@ -455,6 +455,67 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task A_batch_code_enrolls_up_to_its_limit_until_revoked()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var created = await f.Client.PostAsJsonAsync(
+            "/api/enrollment-codes",
+            new
+            {
+                expiresMinutes = 7 * 24 * 60,
+                maxUses = 2,
+                label = "研发部",
+            }
+        );
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var body = await created.Content.ReadFromJsonAsync<JsonElement>();
+        var code = body.GetProperty("code").GetString()!;
+        var id = body.GetProperty("id").GetString()!;
+
+        async Task<HttpStatusCode> EnrollNew(string with)
+        {
+            using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            return (
+                await f.Client.PostAsJsonAsync(
+                    "/api/agent/enroll",
+                    new EnrollmentRequest(with, "pc", key.ExportSubjectPublicKeyInfoPem()),
+                    Wire.Json
+                )
+            ).StatusCode;
+        }
+        Assert.Equal(HttpStatusCode.OK, await EnrollNew(code));
+        Assert.Equal(HttpStatusCode.OK, await EnrollNew(code));
+        Assert.Equal(HttpStatusCode.BadRequest, await EnrollNew(code));
+
+        var listed = (await f.Client.GetFromJsonAsync<JsonElement>("/api/enrollment-codes")).EnumerateArray().Single();
+        Assert.Equal(
+            ("研发部", 2, 2, false),
+            (
+                listed.GetProperty("label").GetString(),
+                listed.GetProperty("maxUses").GetInt32(),
+                listed.GetProperty("uses").GetInt32(),
+                listed.GetProperty("revoked").GetBoolean()
+            )
+        );
+
+        var another = await f.Client.PostAsJsonAsync("/api/enrollment-codes", new { maxUses = 50 });
+        var second = await another.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await f.Client.DeleteAsync("/api/enrollment-codes/" + second.GetProperty("id").GetString())).StatusCode
+        );
+        Assert.Equal(HttpStatusCode.BadRequest, await EnrollNew(second.GetProperty("code").GetString()!));
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Client.DeleteAsync("/api/enrollment-codes/nope")).StatusCode);
+
+        var tooMany = await f.Client.PostAsJsonAsync("/api/enrollment-codes", new { maxUses = 501 });
+        Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
+        var tooLong = await f.Client.PostAsJsonAsync("/api/enrollment-codes", new { expiresMinutes = 7 * 24 * 60 + 1 });
+        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        Assert.NotEqual("", id);
+    }
+
+    [Fact]
     public async Task Check_intervals_set_how_long_results_stay_current()
     {
         await using var f = new Fixture();

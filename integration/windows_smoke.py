@@ -16,6 +16,9 @@ root = pathlib.Path(__file__).resolve().parents[1]
 ap = argparse.ArgumentParser()
 ap.add_argument("--dotnet", default="dotnet")
 ap.add_argument("--data", type=pathlib.Path)
+# A staged package (agent-windows-x64 + deploy/windows): installs it as a service from a downloaded
+# 登记配置.json, as an administrator would, then uninstalls it.
+ap.add_argument("--package", type=pathlib.Path)
 args = ap.parse_args()
 data = args.data or root / "artifacts" / ("windows-smoke-" + secrets.token_hex(4))
 data.mkdir(parents=True, exist_ok=False)
@@ -104,6 +107,7 @@ server_log = (data / "server.log").open("w")
 server = None
 saved_proxy = read_proxy()
 listener = socket.socket()
+installed = False
 try:
     dll = root / "src/Compliance.Server/bin/Release/net10.0/Compliance.Server.dll"
     server = subprocess.Popen(
@@ -253,8 +257,43 @@ try:
             viewer.kill()
             viewer.wait(timeout=10)
     print("PASS tray log window and notification center start")
+
+    if args.package:
+        package = args.package.resolve()
+        batch = request("/api/enrollment-codes", {"expiresMinutes": 60, "maxUses": 2, "label": "冒烟批次"})
+        (package / "登记配置.json").write_text(
+            json.dumps({"serverUrl": base, "code": batch["code"]}), encoding="utf-8"
+        )
+        install = [
+            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", str(package / "deploy/windows/Install-TrialService.ps1"), "-PackageRoot", str(package),
+        ]
+        installed = True
+        with (data / "install.log").open("w", encoding="utf-8") as log:
+            # No console input: a prompt the config should have answered fails instead of waiting.
+            result = subprocess.run(install, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                                    timeout=300)
+        print((data / "install.log").read_text(encoding="utf-8", errors="replace"))
+        assert result.returncode == 0, f"Installer exited with {result.returncode}"
+        deadline = time.monotonic() + 180
+        while True:
+            enrolled = [d for d in request("/api/devices") if d["id"] != device]
+            if enrolled and enrolled[0]["lastHeartbeat"] and enrolled[0]["lastScan"]:
+                break
+            assert time.monotonic() < deadline, "Installed service did not enroll, heartbeat and report"
+            time.sleep(2)
+        uses = [c for c in request("/api/enrollment-codes") if c["id"] == batch["id"]][0]["uses"]
+        assert uses == 1, f"batch code uses {uses}"
+        print("PASS double-click installer enrolls with the downloaded config; the service reports")
+
     print("Evidence: " + str(data))
 finally:
+    if installed:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+             str(args.package.resolve() / "deploy/windows/Uninstall-TrialService.ps1"), "-Quiet"],
+            stdin=subprocess.DEVNULL, timeout=120,
+        )
     write_proxy(saved_proxy)
     for path in planted:
         try:

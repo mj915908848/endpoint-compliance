@@ -178,3 +178,14 @@ export interface PolicyListItem {
   /** Devices this policy currently applies to. */
   devices: number;
 }
+
+export interface EnrollmentCode {
+  id: string;
+  label: string;
+  expiresAt: string;
+  maxUses: number;
+  uses: number;
+  createdAt: string;
+  createdBy: string;
+  revoked: boolean;
+}

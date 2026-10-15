@@ -158,8 +158,14 @@ jobs:
           dotnet build src/Compliance.Server -c Release
           dotnet build src/Compliance.Agent -c Release
           dotnet build src/Compliance.Tray -c Release
-      - name: Native scan against a loopback server
-        run: python integration/windows_smoke.py --data artifacts/windows-smoke
+      - name: Stage a client package
+        run: |
+          dotnet publish src/Compliance.Agent -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o artifacts/pkg/agent-windows-x64
+          dotnet publish src/Compliance.Tray -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o artifacts/pkg/agent-windows-x64
+          mkdir -p artifacts/pkg/deploy
+          cp -r deploy/windows artifacts/pkg/deploy/
+      - name: Native scan against a loopback server, then install the package as a service
+        run: python integration/windows_smoke.py --data artifacts/windows-smoke --package artifacts/pkg
       - if: always()
         uses: actions/upload-artifact@v5
         with:
