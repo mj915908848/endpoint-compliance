@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 import { Collapse, List as AntList, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { CheckCircleFilled, CloseCircleFilled, WarningOutlined } from "@ant-design/icons";
 import { Empty, time } from "./common";
@@ -40,6 +40,26 @@ function Scope({ scope, users }: { scope: string | null | undefined; users?: Use
   );
 }
 
+/**
+ * Pages of 20 rows. Changing page brings the section heading back into view; otherwise the reader is left wherever
+ * the old page's pager was, and a page of different height leaves them far from the new rows.
+ */
+function usePages(count: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const pagination =
+    count > 20
+      ? {
+          pageSize: 20,
+          showSizeChanger: false,
+          onChange: () => {
+            const target = ref.current?.closest("section") ?? ref.current;
+            target?.scrollIntoView({ block: "start" });
+          },
+        }
+      : (false as const);
+  return { ref, pagination };
+}
+
 export function EvidenceTable({
   values,
   empty,
@@ -49,47 +69,50 @@ export function EvidenceTable({
   empty?: string;
   users?: UserAccount[];
 }) {
+  const { ref, pagination } = usePages(values.length);
   return (
-    <Table<Evidence>
-      rowKey={(e, i) => `${e.objectKey}-${i}`}
-      dataSource={values}
-      size="small"
-      pagination={values.length > 20 ? { pageSize: 20 } : false}
-      scroll={{ x: 640 }}
-      locale={{ emptyText: <Empty title={empty ?? "没有相关证据"} /> }}
-      columns={[
-        {
-          title: "产品",
-          key: "product",
-          render: (_, e) => (
-            <Space orientation="vertical" size={0}>
-              <Typography.Text strong>{e.productName || e.productId}</Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {e.productId}
-              </Typography.Text>
-            </Space>
-          ),
-        },
-        {
-          title: "类型",
-          key: "kind",
-          width: 150,
-          render: (_, e) => (
-            <Tag color={e.confirmed ? "error" : "warning"}>
-              {e.confirmed ? "确认" : "线索"} · {evidenceLabel(e.kind)}
-            </Tag>
-          ),
-        },
-        { title: "说明", dataIndex: "summary" },
-        { title: "来源", dataIndex: "source", width: 160 },
-        {
-          title: "范围",
-          key: "scope",
-          width: 140,
-          render: (_, e) => <Scope scope={e.userSid} users={users} />,
-        },
-      ]}
-    />
+    <div ref={ref}>
+      <Table<Evidence>
+        rowKey={(e, i) => `${e.objectKey}-${i}`}
+        dataSource={values}
+        size="small"
+        pagination={pagination}
+        scroll={{ x: 640 }}
+        locale={{ emptyText: <Empty title={empty ?? "没有相关证据"} /> }}
+        columns={[
+          {
+            title: "产品",
+            key: "product",
+            render: (_, e) => (
+              <Space orientation="vertical" size={0}>
+                <Typography.Text strong>{e.productName || e.productId}</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {e.productId}
+                </Typography.Text>
+              </Space>
+            ),
+          },
+          {
+            title: "类型",
+            key: "kind",
+            width: 150,
+            render: (_, e) => (
+              <Tag color={e.confirmed ? "error" : "warning"}>
+                {e.confirmed ? "确认" : "线索"} · {evidenceLabel(e.kind)}
+              </Tag>
+            ),
+          },
+          { title: "说明", dataIndex: "summary" },
+          { title: "来源", dataIndex: "source", width: 160 },
+          {
+            title: "范围",
+            key: "scope",
+            width: 140,
+            render: (_, e) => <Scope scope={e.userSid} users={users} />,
+          },
+        ]}
+      />
+    </div>
   );
 }
 
@@ -103,45 +126,48 @@ export function SensitiveFileTable({
   users?: UserAccount[];
   complete: boolean;
 }) {
+  const { ref, pagination } = usePages(values.length);
   return (
-    <Table<Evidence>
-      rowKey={(e, i) => `${e.source}-${e.objectKey}-${i}`}
-      dataSource={values}
-      size="small"
-      pagination={values.length > 20 ? { pageSize: 20 } : false}
-      scroll={{ x: 640 }}
-      locale={{
-        emptyText: (
-          <Empty
-            title={
-              complete
-                ? "未发现文件名包含关键词的文件或文件夹"
-                : "暂无命中记录；扫描尚未完整完成，不能据此认定没有敏感文件"
-            }
-          />
-        ),
-      }}
-      columns={[
-        {
-          title: "路径",
-          key: "path",
-          render: (_, e) => <span className="mono">{e.objectKey}</span>,
-        },
-        { title: "说明", dataIndex: "summary" },
-        {
-          title: "所有者",
-          key: "owner",
-          width: 140,
-          render: (_, e) => (e.userSid ? <Scope scope={e.userSid} users={users} /> : "未知"),
-        },
-        {
-          title: "扫描范围",
-          key: "scope",
-          width: 140,
-          render: (_, e) => <Scope scope={e.source} users={users} />,
-        },
-      ]}
-    />
+    <div ref={ref}>
+      <Table<Evidence>
+        rowKey={(e, i) => `${e.source}-${e.objectKey}-${i}`}
+        dataSource={values}
+        size="small"
+        pagination={pagination}
+        scroll={{ x: 640 }}
+        locale={{
+          emptyText: (
+            <Empty
+              title={
+                complete
+                  ? "未发现文件名包含关键词的文件或文件夹"
+                  : "暂无命中记录；扫描尚未完整完成，不能据此认定没有敏感文件"
+              }
+            />
+          ),
+        }}
+        columns={[
+          {
+            title: "路径",
+            key: "path",
+            render: (_, e) => <span className="mono">{e.objectKey}</span>,
+          },
+          { title: "说明", dataIndex: "summary" },
+          {
+            title: "所有者",
+            key: "owner",
+            width: 140,
+            render: (_, e) => (e.userSid ? <Scope scope={e.userSid} users={users} /> : "未知"),
+          },
+          {
+            title: "扫描范围",
+            key: "scope",
+            width: 140,
+            render: (_, e) => <Scope scope={e.source} users={users} />,
+          },
+        ]}
+      />
+    </div>
   );
 }
 

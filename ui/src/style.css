@@ -144,6 +144,8 @@ body {
 .report-section {
   padding: 16px 0;
   border-top: 1px solid #eef1f3;
+  /* Leaves room for the sticky top bar when a table's pager scrolls its section into view. */
+  scroll-margin-top: 72px;
 }
 .report-section:first-of-type {
   margin-top: 12px;
