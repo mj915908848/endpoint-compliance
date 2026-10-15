@@ -1264,6 +1264,40 @@ await Check(
     }
 );
 
+await Check(
+    "service log stamps each line and keeps at most two files",
+    async () =>
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "compliance-log-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "agent.log");
+            using var log = new AgentLog(path, 200);
+            log.WriteLine("敏感文件扫描：C:\\ 通过 NTFS 文件表比对 10 个名称");
+            log.Write("partial ");
+            log.Write("line\n");
+            var lines = File.ReadAllLines(path);
+            Assert(
+                lines.Length == 2 && lines[0].EndsWith("比对 10 个名称") && lines[1].EndsWith(" partial line"),
+                "unexpected log: " + string.Join(" / ", lines)
+            );
+            Assert(
+                System.Text.RegularExpressions.Regex.IsMatch(lines[0], @"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d "),
+                "no timestamp"
+            );
+            for (var i = 0; i < 20; i++)
+                log.WriteLine("line " + i);
+            Assert(File.Exists(path + ".1") && new FileInfo(path).Length < 400, "log was not rotated");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+        await Task.CompletedTask;
+    }
+);
+
 // Native checks run on Windows only (CI runs them on windows-latest); elsewhere they are skipped.
 if (OperatingSystem.IsWindows())
 {

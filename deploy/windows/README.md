@@ -9,3 +9,11 @@ Build `Compliance.Agent` and `Compliance.Tray` as separate self-contained `win-x
 This is a pilot ZIP deployment, not a signed MSI. AppLocker precise hash rules and Edge URLBlocklist values are exported for review with `WindowsControls.WriteReviewArtifacts`; automatic OS application is intentionally not claimed. A Windows pilot must verify compatibility, existing enterprise policy merge, browser refresh, actual deny events, business allow rules, recovery and rollback. The generic network/API route is uncovered until an approved native filter or customer gateway adapter is verified. Audit mode is the default. `uninstall.ps1` retains device identity, policy cache, queue and notifications unless `-RemoveData` is explicitly supplied; review any separately applied OS controls first.
 
 For a development simulation on macOS, run the agent with `--fixture <snapshot.json> --server http://127.0.0.1:<port> --data-dir <throwaway-dir> --enroll --code <code> --once`. The fixture is forcibly marked `simulated=true`, and the temporary private key is stored unencrypted only in that explicitly selected simulation directory. The simulation cannot establish native Windows coverage or production PASS.
+
+## 日志
+
+常驻服务的运行日志写在 `%ProgramData%\ComplianceAgent\agent.log`，每行带时间；超过 1 MB 时旧内容移到 `agent.log.1`。该目录只有管理员和 SYSTEM 可读，需在管理员 PowerShell 中查看：
+
+```powershell
+Get-Content "$env:ProgramData\ComplianceAgent\agent.log" -Encoding UTF8 -Tail 50
+```

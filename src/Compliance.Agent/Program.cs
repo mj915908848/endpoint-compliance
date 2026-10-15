@@ -65,6 +65,11 @@ public static class Program
                 await runtime.RunAsync(true, CancellationToken.None);
                 return 0;
             }
+            if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
+            {
+                AgentLog.Attach(data);
+                Console.WriteLine($"客户端服务启动，服务器 {config.ServerUrl}");
+            }
             using var host = Host.CreateDefaultBuilder(args)
                 .UseWindowsService(options => options.ServiceName = "ComplianceAgent")
                 .ConfigureServices(services => services.AddSingleton(runtime).AddHostedService<AgentWorker>())
