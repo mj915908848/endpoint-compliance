@@ -1234,6 +1234,31 @@ await Check(
                 "new file missed: " + string.Join(",", Keys())
             );
 
+            // An installer fills a temporary folder and renames it (VS Code extensions do this): every name inside
+            // was created in the same window and already checked, so the rename alone does not rescan.
+            var temp = Path.Combine(docs, "ext.vsctmp");
+            Directory.CreateDirectory(temp);
+            volume.Change(temp, JournalReasons.Create, folder: true);
+            volume.Change(Path.Combine(temp, "package.json"), JournalReasons.Create);
+            Directory.Move(temp, Path.Combine(docs, "ext"));
+            volume.Change(Path.Combine(docs, "ext"), JournalReasons.RenameNewName, folder: true, renamedFrom: temp);
+            await Cycle();
+            Assert(volume.Scans == 2, "renaming a folder created in the same window caused a rescan");
+
+            // Renaming a folder that was already in view brings nothing new (VS Code renames old extensions to
+            // "<name>.vsctmp" before deleting them).
+            var old = Path.Combine(docs, "ext");
+            volume.Change(old, JournalReasons.RenameOldName, folder: true);
+            Directory.Move(old, Path.Combine(docs, "ext-1.0.vsctmp"));
+            volume.Change(
+                Path.Combine(docs, "ext-1.0.vsctmp"),
+                JournalReasons.RenameNewName,
+                folder: true,
+                renamedFrom: old
+            );
+            await Cycle();
+            Assert(volume.Scans == 2, "renaming a folder already in view caused a rescan");
+
             // Renaming an excluded folder brings the names under it into view.
             Directory.Move(Path.Combine(docs, "node_modules"), Path.Combine(docs, "vendor"));
             volume.Change(Path.Combine(docs, "vendor"), JournalReasons.RenameNewName, folder: true);
@@ -1660,13 +1685,14 @@ sealed class FakeVolume(string root) : IVolumeIndex
         return id;
     }
 
-    public void Change(string path, uint reason, bool folder = false)
+    /// <summary>Records a change; <paramref name="renamedFrom"/> keeps the file id of the old path, as a rename does.</summary>
+    public void Change(string path, uint reason, bool folder = false, string? renamedFrom = null)
     {
         if (!folder)
             File.WriteAllText(path, "");
         pending.Add(
             new(
-                Id(path),
+                Id(renamedFrom ?? path),
                 Id(Path.GetDirectoryName(path)!),
                 Path.GetFileName(path),
                 folder ? FileAttributes.Directory : FileAttributes.Normal,

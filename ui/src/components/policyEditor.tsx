@@ -75,6 +75,12 @@ const list = (values: string[]) => values.join("、");
 const added = (before: string[], after: string[]) => after.filter((x) => !before.includes(x));
 
 /** Plain-language list of what publishing `after` changes compared with `before`. */
+/** Quick and full check intervals in minutes; policies published before these settings existed use 5 and 60. */
+export const checkMinutes = (p: Policy): [number, number] => [
+  p.quickCheckMinutes ?? 5,
+  p.fullCheckMinutes ?? 60,
+];
+
 export function describeChanges(before: Policy, after: Policy): string[] {
   const changes: string[] = [];
   if (before.policyId !== after.policyId)
@@ -112,13 +118,10 @@ export function describeChanges(before: Policy, after: Policy): string[] {
   );
   diff("必需检查项", before.requiredModules, after.requiredModules);
   diff("必需防护措施", before.requiredControls, after.requiredControls, controlLabel);
-  if (
-    before.inventoryFreshMinutes !== after.inventoryFreshMinutes ||
-    before.lightweightFreshMinutes !== after.lightweightFreshMinutes
-  )
-    changes.push(
-      `检查时效：完整检查 ${after.inventoryFreshMinutes} 分钟，快速检查 ${after.lightweightFreshMinutes} 分钟`,
-    );
+  const [qb, fb] = checkMinutes(before),
+    [qa, fa] = checkMinutes(after);
+  if (qb !== qa || fb !== fa)
+    changes.push(`检查频率：快速检查每 ${qa} 分钟，完整检查每 ${fa} 分钟`);
   if (JSON.stringify(before.applicationRules) !== JSON.stringify(after.applicationRules))
     changes.push(`应用程序拦截规则：${after.applicationRules.length} 条`);
   const sb = sensitiveOf(before),
@@ -393,6 +396,39 @@ export function PolicyEditor({
       />
 
       <Panel title="检查要求">
+        <Field label="检查频率">
+          <Space wrap>
+            <span>快速检查每</span>
+            <InputNumber
+              aria-label="快速检查间隔"
+              min={1}
+              max={60}
+              value={checkMinutes(value)[0]}
+              disabled={readOnly}
+              onChange={(v) => v && set({ quickCheckMinutes: v })}
+              suffix="分钟"
+              style={{ width: 120 }}
+            />
+            <span>，完整检查每</span>
+            <InputNumber
+              aria-label="完整检查间隔"
+              min={10}
+              max={1440}
+              value={checkMinutes(value)[1]}
+              disabled={readOnly}
+              onChange={(v) => v && set({ fullCheckMinutes: v })}
+              suffix="分钟"
+              style={{ width: 130 }}
+            />
+          </Space>
+          {checkMinutes(value)[1] < checkMinutes(value)[0] && (
+            <Alert type="warning" showIcon title="完整检查的间隔不能短于快速检查。" />
+          )}
+          <Hint>
+            快速检查：运行中的程序、端口、代理设置；完整检查另外检查已安装软件、扩展和系统服务。超过两个间隔没有新结果时，该项记为“未检查”。发布新策略或点击“请求重新检查”会立即完整检查一次。“发现即结束进程”不受此设置影响，始终每
+            2 秒检查。
+          </Hint>
+        </Field>
         <Row gutter={[24, 16]}>
           <Col xs={24} lg={14}>
             <Field label="必需检查项">

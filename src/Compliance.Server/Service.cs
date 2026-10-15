@@ -587,6 +587,9 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             DenyInstalled = true,
             DenyProxy = true,
             RequiredControls = Controls.Normalize(submitted.RequiredControls),
+            // A result counts as current until two check intervals have passed.
+            LightweightFreshMinutes = submitted.QuickCheckMinutes * 2,
+            InventoryFreshMinutes = submitted.FullCheckMinutes * 2,
             TargetDeviceIds = isDefault ? [] : (submitted.TargetDeviceIds ?? []).Distinct().ToArray(),
         };
         if (

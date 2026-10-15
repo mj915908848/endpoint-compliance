@@ -596,7 +596,14 @@ public sealed class SensitiveFileScanner(
                         SensitiveIndexScan.Spelled(index, list.Where(t => t.Unavailable is null)),
                         policy
                     );
-                    if (changes.FirstOrDefault(c => Relevant(c, index, rules)) is { Name: not null } change)
+                    var seenBefore = new JournalContext(
+                        changes.Where(c => (c.Reason & JournalReasons.Create) != 0).Select(c => c.Id).ToHashSet(),
+                        changes
+                            .Where(c => (c.Reason & JournalReasons.RenameOldName) != 0)
+                            .GroupBy(c => c.Id)
+                            .ToDictionary(g => g.Key, g => g.First())
+                    );
+                    if (changes.FirstOrDefault(c => Relevant(c, index, rules, seenBefore)) is { Name: not null } change)
                     {
                         Console.WriteLine($"敏感文件扫描：{cursor.Volume} 上的“{change.Name}”有变化，重新扫描");
                         dirty.UnionWith(scopes);
@@ -644,8 +651,14 @@ public sealed class SensitiveFileScanner(
             Run(policy, hash, dirty, ct);
     }
 
+    /// <summary>
+    /// What the records since the last read say about a renamed folder's past: <see cref="Created"/> holds the ids
+    /// created in this window, <see cref="OldNames"/> each renamed id's previous parent and name.
+    /// </summary>
+    private sealed record JournalContext(HashSet<ulong> Created, Dictionary<ulong, VolumeEntry> OldNames);
+
     /// <summary>A journal record that can change what the scan reports.</summary>
-    private static bool Relevant(VolumeEntry change, IVolumeIndex index, SensitiveScopeRules rules)
+    private static bool Relevant(VolumeEntry change, IVolumeIndex index, SensitiveScopeRules rules, JournalContext past)
     {
         if ((change.Reason & JournalReasons.Names) == 0)
             return false;
@@ -654,6 +667,18 @@ public sealed class SensitiveFileScanner(
         // A folder moved or renamed into view may hold matching names that were hidden (e.g. under node_modules).
         // Folders moved out of view are caught by the reported paths no longer existing.
         if (!change.IsDirectory || (change.Reason & JournalReasons.RenameNewName) == 0)
+            return false;
+        // Installers and updaters fill a new folder and then rename it into place; every name inside it has its own
+        // record in this window and was checked above.
+        if (past.Created.Contains(change.Id))
+            return false;
+        // A folder that was already in view (VS Code renames an old extension to "<name>.vsctmp" before deleting it)
+        // shows nothing new. Reported paths under it no longer exist and cause a rescan by themselves.
+        if (
+            past.OldNames.TryGetValue(change.Id, out var old)
+            && index.PathOf(old.ParentId) is { } oldParent
+            && rules.Visible(Path.Join(oldParent, old.Name))
+        )
             return false;
         return index.PathOf(change.ParentId) is { } parent && rules.Visible(Path.Join(parent, change.Name));
     }

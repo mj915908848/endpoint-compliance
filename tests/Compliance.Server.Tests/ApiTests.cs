@@ -455,6 +455,35 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Check_intervals_set_how_long_results_stay_current()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var slower = PolicySeed.Create() with { QuickCheckMinutes = 15, FullCheckMinutes = 240 };
+        var published = await f.Client.PostAsJsonAsync("/api/policies", slower, Wire.Json);
+        Assert.Equal(HttpStatusCode.OK, published.StatusCode);
+        var doc = Wire.Read<PolicyDocument>(
+            (await published.Content.ReadFromJsonAsync<SignedPolicy>(Wire.Json))!.Payload
+        );
+        Assert.Equal(
+            (15, 240, 30, 480),
+            (doc.QuickCheckMinutes, doc.FullCheckMinutes, doc.LightweightFreshMinutes, doc.InventoryFreshMinutes)
+        );
+
+        var backwards = await f.Client.PostAsJsonAsync(
+            "/api/policies",
+            slower with
+            {
+                QuickCheckMinutes = 30,
+                FullCheckMinutes = 20,
+            },
+            Wire.Json
+        );
+        Assert.Equal(HttpStatusCode.BadRequest, backwards.StatusCode);
+        Assert.Contains("完整检查的间隔不能短于快速检查", await backwards.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Enforcement_starts_once_the_pilot_device_reports_its_measures_ready()
     {
         await using var f = new Fixture();

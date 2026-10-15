@@ -116,6 +116,8 @@ export interface Policy {
   denyProxy: boolean;
   requiredModules: string[];
   requiredControls: string[];
+  quickCheckMinutes?: number;
+  fullCheckMinutes?: number;
   inventoryFreshMinutes: number;
   lightweightFreshMinutes: number;
   products: Product[];

@@ -232,6 +232,15 @@ describe("change summary", () => {
     ]);
   });
 
+  it("names check interval changes, treating older policies as 5 and 60 minutes", () => {
+    expect(describeChanges(base, { ...base, quickCheckMinutes: 5, fullCheckMinutes: 60 })).toEqual(
+      [],
+    );
+    expect(
+      describeChanges(base, { ...base, quickCheckMinutes: 10, fullCheckMinutes: 240 }),
+    ).toEqual(["检查频率：快速检查每 10 分钟，完整检查每 240 分钟"]);
+  });
+
   it("names sensitive file keyword and action changes", () => {
     const rule = {
       id: "rule-1",

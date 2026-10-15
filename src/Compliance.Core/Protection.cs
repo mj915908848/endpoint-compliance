@@ -81,6 +81,10 @@ public static class PolicyCrypto
             throw new ArgumentException("策略不完整：至少需要一个必需检查项");
         if (doc.InventoryFreshMinutes is < 1 or > 10080 || doc.LightweightFreshMinutes is < 1 or > 1440)
             throw new ArgumentException("检查时效超出范围：完整检查 1–10080 分钟，快速检查 1–1440 分钟");
+        if (doc.QuickCheckMinutes is < 1 or > 60 || doc.FullCheckMinutes is < 10 or > 1440)
+            throw new ArgumentException("检查频率超出范围：快速检查每 1–60 分钟，完整检查每 10–1440 分钟");
+        if (doc.FullCheckMinutes < doc.QuickCheckMinutes)
+            throw new ArgumentException("完整检查的间隔不能短于快速检查");
         if (
             doc.Products.Length > 1000
             || doc.Products.Any(r =>

@@ -67,7 +67,17 @@ public record PolicyDocument
     public string[] RequiredModules { get; init; } =
     ["installed", "processes", "proxy", "extensions", "appx", "ports", "users"];
     public string[] RequiredControls { get; init; } = ["process", "browser"];
+
+    /// <summary>How often the agent checks processes, ports and proxy settings.</summary>
+    public int QuickCheckMinutes { get; init; } = 5;
+
+    /// <summary>How often the agent also checks installed software, extensions and services.</summary>
+    public int FullCheckMinutes { get; init; } = 60;
+
+    /// <summary>Results older than this count as missing; the server sets it to twice <see cref="FullCheckMinutes"/>.</summary>
     public int InventoryFreshMinutes { get; init; } = 120;
+
+    /// <summary>Results older than this count as missing; the server sets it to twice <see cref="QuickCheckMinutes"/>.</summary>
     public int LightweightFreshMinutes { get; init; } = 10;
     public ProductRule[] Products { get; init; } = [];
     public string[] BlockDomains { get; init; } = [];

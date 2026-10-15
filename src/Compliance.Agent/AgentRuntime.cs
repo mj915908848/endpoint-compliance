@@ -335,7 +335,7 @@ public sealed class AgentRuntime(
                 await enforceTask;
             try
             {
-                await Cycle(api, queue, notices, lastFull < DateTimeOffset.UtcNow.AddMinutes(-60), ct);
+                await Cycle(api, queue, notices, false, ct);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -536,8 +536,9 @@ public sealed class AgentRuntime(
             );
         if (scanCommands.Length > 0)
             forceFull = true;
-        bool full = forceFull || latest is null || lastFull < DateTimeOffset.UtcNow.AddMinutes(-60);
-        bool light = full || lastLight < DateTimeOffset.UtcNow.AddMinutes(-5);
+        bool full =
+            forceFull || latest is null || lastFull < DateTimeOffset.UtcNow.AddMinutes(-policy.FullCheckMinutes);
+        bool light = full || lastLight < DateTimeOffset.UtcNow.AddMinutes(-policy.QuickCheckMinutes);
         if (light)
         {
             if (sensitiveFiles is not null)
