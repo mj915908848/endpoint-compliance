@@ -1370,6 +1370,9 @@ if (OperatingSystem.IsWindows())
                 await store.AddAsync("n-1", sid, "Violation: Cursor：已安装", CancellationToken.None);
                 await store.AddAsync("n-2", null, "本机的检查未能完全覆盖", CancellationToken.None);
                 var server = new NotificationPipe(store).RunAsync(stop.Token);
+                await Task.Delay(500);
+                if (server.IsCompleted)
+                    await server; // surfaces why the pipe was not created
                 async Task<string> Ask(string request)
                 {
                     // Exactly as the tray connects.
