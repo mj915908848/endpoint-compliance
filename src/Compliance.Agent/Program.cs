@@ -57,6 +57,9 @@ public static class Program
             {
                 var code = Arg("--code") ?? throw new ArgumentException("--enroll requires --code");
                 await runtime.EnrollAsync(code, CancellationToken.None);
+                // The identity key and configuration were just written by the enrolling administrator's account.
+                if (!simulated)
+                    NativeDataDirectory.EnsureSecure(data);
                 if (!Has("--once"))
                     return 0;
                 config = AgentConfiguration.Read(configPath);

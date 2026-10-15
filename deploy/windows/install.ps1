@@ -17,7 +17,20 @@ if (Get-Service ComplianceAgent -ErrorAction SilentlyContinue) { throw 'Service 
 $agent = Join-Path $PackageDirectory 'Compliance.Agent.exe'
 $tray = Join-Path $PackageDirectory 'Compliance.Tray.exe'
 if (-not (Test-Path $agent) -or -not (Test-Path $tray)) { throw 'Package must include both published executables' }
+# Standard users may create folders under ProgramData. A data directory someone else created first could hold an
+# agent.json pointing at another server, and its owner can always grant themselves access again; only one left by an
+# earlier install (owned by SYSTEM or Administrators, as the service leaves it) is reused.
+if (Test-Path -LiteralPath $DataDirectory) {
+    foreach ($item in @(Get-Item -LiteralPath $DataDirectory -Force) + @(Get-ChildItem -LiteralPath $DataDirectory -Force)) {
+        $owner = (Get-Acl -LiteralPath $item.FullName).GetOwner([Security.Principal.SecurityIdentifier]).Value
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or @('S-1-5-18', 'S-1-5-32-544') -notcontains $owner) {
+            throw "$($item.FullName) is owned by $owner, not SYSTEM or Administrators: someone may have created $DataDirectory before installation. Remove it and install again."
+        }
+    }
+}
 New-Item -ItemType Directory -Path $InstallDirectory,$DataDirectory -Force | Out-Null
+& icacls.exe $DataDirectory /setowner '*S-1-5-32-544' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Data owner change failed' }
 & icacls.exe $InstallDirectory /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' 'Users:(OI)(CI)RX' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Install ACL failed' }
 & icacls.exe $DataDirectory /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null

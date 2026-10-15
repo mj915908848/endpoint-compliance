@@ -264,7 +264,7 @@ try:
         package = args.package.resolve()
         batch = request("/api/enrollment-codes", {"expiresMinutes": 60, "maxUses": 2, "label": "冒烟批次"})
 
-        def run_installer(root_dir, answer, name):
+        def run_installer(root_dir, answer, name, succeeds=True):
             (root_dir / "登记配置.json").write_text(
                 json.dumps({"serverUrl": base, "code": batch["code"]}), encoding="utf-8"
             )
@@ -277,7 +277,7 @@ try:
                 result = subprocess.run(install, input=answer, stdout=log, stderr=subprocess.STDOUT,
                                         text=True, timeout=300)
             print((data / name).read_text(encoding="utf-8", errors="replace"))
-            assert result.returncode == 0, f"Installer exited with {result.returncode}"
+            assert (result.returncode == 0) == succeeds, f"Installer exited with {result.returncode}"
 
         def wait_reporting(since=""):
             deadline = time.monotonic() + 180
@@ -288,7 +288,19 @@ try:
                 assert time.monotonic() < deadline, "Installed service did not enroll, heartbeat and report"
                 time.sleep(2)
 
+        # A standard user may create the data directory before installation, with an agent.json of their own. The
+        # installer must refuse it instead of enrolling with that file; rolling back removes the directory.
+        agent_data = pathlib.Path(os.environ["ProgramData"]) / "ComplianceAgent"
+        agent_data.mkdir()
+        (agent_data / "agent.json").write_text(json.dumps({"serverUrl": "http://10.0.0.1:1"}), encoding="utf-8")
+        subprocess.run(["icacls", str(agent_data), "/setowner", "*S-1-5-32-545", "/T"], check=True, capture_output=True)
         installed = True
+        run_installer(package, "", "foreign-data.log", succeeds=False)
+        assert "not SYSTEM or Administrators" in (data / "foreign-data.log").read_text(encoding="utf-8", errors="replace")
+        assert not agent_data.exists(), "Rolling back left the foreign data directory"
+        assert subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True).returncode != 0, \
+            "A service was installed next to a foreign data directory"
+        print("PASS the installer refuses a data directory someone else created")
         run_installer((args.old_package or args.package).resolve(), "", "install.log")
         enrolled = wait_reporting()
         uses = [c for c in request("/api/enrollment-codes") if c["id"] == batch["id"]][0]["uses"]
@@ -301,9 +313,21 @@ try:
             assert [d["id"] for d in upgraded] == [d["id"] for d in enrolled], "Upgrade enrolled a new device"
             assert "更新到" in (data / "upgrade.log").read_text(encoding="utf-8", errors="replace")
             print("PASS upgrading an earlier release in place keeps the device identity and the service reports")
+        # The installing administrator's account wrote the configuration and identity key (an earlier release left
+        # them so); the service hands everything to Administrators, since an owner can always change permissions.
+        owners = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f"(@(Get-Item -LiteralPath '{agent_data}' -Force) + @(Get-ChildItem -LiteralPath '{agent_data}' -Force)) | "
+             "ForEach-Object { $_.Name + ' ' + (Get-Acl -LiteralPath $_.FullName).GetOwner("
+             "[Security.Principal.SecurityIdentifier]).Value }"],
+            capture_output=True, text=True, timeout=60,
+        ).stdout
+        assert owners.strip() and all(
+            line.split()[-1] in ("S-1-5-18", "S-1-5-32-544") for line in owners.splitlines() if line.strip()
+        ), f"Data directory items with other owners: {owners}"
+        print("PASS the data directory and its files belong to SYSTEM or Administrators")
         # Explorer's "permanently get access" prompt grants the signed-in user access to the data directory.
         # The service must remove that grant on its next start, keep running and tell the administrator.
-        agent_data = pathlib.Path(os.environ["ProgramData"]) / "ComplianceAgent"
         before = wait_reporting()[0]["lastHeartbeat"]
         grant = subprocess.run(
             ["powershell", "-NoProfile", "-Command",

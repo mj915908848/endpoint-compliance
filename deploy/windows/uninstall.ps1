@@ -20,4 +20,10 @@ if(Test-Path $InstallDirectory) {
         catch { if ($attempt -ge 10) { throw }; Start-Sleep -Seconds 1 }
     }
 }
-if($RemoveData) { Write-Warning 'Removing device identity, signed policy cache, notifications and unsent events'; Remove-Item $DataDirectory -Recurse -Force }
+if($RemoveData -and (Test-Path -LiteralPath $DataDirectory)) {
+    Write-Warning 'Removing device identity, signed policy cache, notifications and unsent events'
+    # A directory someone created before installation (the installer refuses it) may hold junctions; rmdir removes
+    # them without following them, unlike Remove-Item in Windows PowerShell 5.1.
+    & cmd.exe /c rmdir /s /q "$DataDirectory"
+    if (Test-Path -LiteralPath $DataDirectory) { throw "Data directory $DataDirectory could not be removed" }
+}

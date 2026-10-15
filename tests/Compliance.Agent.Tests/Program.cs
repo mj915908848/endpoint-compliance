@@ -1454,6 +1454,88 @@ await Check(
 );
 if (OperatingSystem.IsWindows())
 {
+    // Only an administrator can use a directory limited to SYSTEM and Administrators; CI runners are elevated.
+    if (
+        new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent()).IsInRole(
+            System.Security.Principal.WindowsBuiltInRole.Administrator
+        )
+    )
+        await Check(
+            "data directory and its files are handed to Administrators, and a user's grant is removed and reported",
+            async () =>
+            {
+                var administrators = new System.Security.Principal.SecurityIdentifier(
+                    System.Security.Principal.WellKnownSidType.BuiltinAdministratorsSid,
+                    null
+                );
+                var me = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+                var users = new System.Security.Principal.SecurityIdentifier(
+                    System.Security.Principal.WellKnownSidType.BuiltinUsersSid,
+                    null
+                );
+                System.Security.Principal.IdentityReference? Owner(FileSystemInfo item) =>
+                    item switch
+                    {
+                        DirectoryInfo d => d.GetAccessControl()
+                            .GetOwner(typeof(System.Security.Principal.SecurityIdentifier)),
+                        FileInfo f => f.GetAccessControl()
+                            .GetOwner(typeof(System.Security.Principal.SecurityIdentifier)),
+                        _ => null,
+                    };
+                void OwnBy(FileSystemInfo item, System.Security.Principal.SecurityIdentifier owner)
+                {
+                    if (item is DirectoryInfo d)
+                    {
+                        var s = new System.Security.AccessControl.DirectorySecurity();
+                        s.SetOwner(owner);
+                        d.SetAccessControl(s);
+                    }
+                    else if (item is FileInfo f)
+                    {
+                        var s = new System.Security.AccessControl.FileSecurity();
+                        s.SetOwner(owner);
+                        f.SetAccessControl(s);
+                    }
+                }
+                var path = Path.Combine(Path.GetTempPath(), "compliance-data-" + Guid.NewGuid());
+                try
+                {
+                    // Protected permissions, but the directory and a file belong to an ordinary account, as when a
+                    // user created the folder before installation or an administrator's account wrote the file.
+                    Assert(!NativeDataDirectory.EnsureSecure(path), "a new directory reported a repair");
+                    var directory = new DirectoryInfo(path);
+                    var file = new FileInfo(Path.Combine(path, "agent.json"));
+                    File.WriteAllText(file.FullName, "{}");
+                    OwnBy(directory, me);
+                    OwnBy(file, me);
+                    Assert(Equals(Owner(directory), me) && Equals(Owner(file), me), "test could not take ownership");
+                    Assert(!NativeDataDirectory.EnsureSecure(path), "a new owner alone was reported");
+                    Assert(Equals(Owner(directory), administrators), "directory owner: " + Owner(directory));
+                    Assert(Equals(Owner(file), administrators), "file owner: " + Owner(file));
+
+                    var granted = directory.GetAccessControl();
+                    granted.AddAccessRule(
+                        new System.Security.AccessControl.FileSystemAccessRule(
+                            users,
+                            System.Security.AccessControl.FileSystemRights.Read,
+                            System.Security.AccessControl.InheritanceFlags.ContainerInherit
+                                | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                            System.Security.AccessControl.PropagationFlags.None,
+                            System.Security.AccessControl.AccessControlType.Allow
+                        )
+                    );
+                    directory.SetAccessControl(granted);
+                    Assert(NativeDataDirectory.EnsureSecure(path), "a user's grant was not reported");
+                    Assert(!NativeDataDirectory.EnsureSecure(path), "the repair did not hold");
+                }
+                finally
+                {
+                    if (Directory.Exists(path))
+                        Directory.Delete(path, true);
+                }
+                await Task.CompletedTask;
+            }
+        );
     await Check(
         "process measure ends a real confirmed process and names its owner",
         async () =>
