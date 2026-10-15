@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Compliance.Core;
@@ -75,5 +76,41 @@ static class Authentication
             return true;
         });
         c.Items["device"] = device;
+        // The signature covers the bytes as sent; a compressed body is expanded only once it is verified.
+        var encoding = c.Request.Headers.ContentEncoding.ToString();
+        if (encoding.Length > 0)
+        {
+            if (!encoding.Equals("gzip", StringComparison.OrdinalIgnoreCase))
+                throw new ApiError(415, "Unsupported content encoding");
+            c.Request.Body = Expand(raw);
+            c.Request.ContentLength = c.Request.Body.Length;
+            c.Request.Headers.ContentEncoding = default;
+        }
+    }
+
+    /// <summary>Largest body a compressed agent request may expand to.</summary>
+    public const int MaxExpandedBody = 8 * 1024 * 1024;
+
+    static MemoryStream Expand(byte[] compressed)
+    {
+        var expanded = new MemoryStream();
+        try
+        {
+            using var gzip = new GZipStream(new MemoryStream(compressed), CompressionMode.Decompress);
+            var buffer = new byte[81920];
+            int read;
+            while ((read = gzip.Read(buffer)) > 0)
+            {
+                if (expanded.Length + read > MaxExpandedBody)
+                    throw new ApiError(413, "Body too large");
+                expanded.Write(buffer, 0, read);
+            }
+        }
+        catch (InvalidDataException)
+        {
+            throw new ApiError(400, "Invalid compressed body");
+        }
+        expanded.Position = 0;
+        return expanded;
     }
 }

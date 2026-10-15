@@ -89,15 +89,28 @@ public sealed class AgentApiException(string message, HttpStatusCode status, Tim
 
 public sealed class AgentApi(HttpClient client, Uri baseUri, string? deviceId, ECDsa key)
 {
+    /// <summary>Bodies from this size on are compressed when <see cref="Gzip"/> is set.</summary>
+    public const int GzipFrom = 4096;
+
+    /// <summary>The server accepts gzip-compressed bodies; it says so in its heartbeat reply.</summary>
+    public bool Gzip { get; set; }
+
     public async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
     {
         var bytes = body is null ? Array.Empty<byte>() : Encoding.UTF8.GetBytes(Wire.Serialize(body));
+        var compress = Gzip && bytes.Length >= GzipFrom;
+        if (compress)
+            bytes = Compress(bytes);
         using var request = new HttpRequestMessage(method, new Uri(baseUri, path));
         if (body is not null)
+        {
             request.Content = new ByteArrayContent(bytes)
             {
                 Headers = { ContentType = new MediaTypeHeaderValue("application/json") },
             };
+            if (compress)
+                request.Content.Headers.ContentEncoding.Add("gzip");
+        }
         if (path != "/api/agent/enroll")
         {
             if (string.IsNullOrWhiteSpace(deviceId))
@@ -138,6 +151,14 @@ public sealed class AgentApi(HttpClient client, Uri baseUri, string? deviceId, E
             }
             return Wire.Read<T>(await response.Content.ReadAsStringAsync(ct));
         }
+    }
+
+    public static byte[] Compress(byte[] plain)
+    {
+        using var output = new MemoryStream();
+        using (var gzip = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Fastest))
+            gzip.Write(plain);
+        return output.ToArray();
     }
 }
 
@@ -472,7 +493,12 @@ public sealed class AgentRuntime(
                 signedPolicy is null ? 0 : policy?.Version ?? 0,
                 latest?.Controls ?? []
             );
-            await api.SendAsync<JsonElement>(HttpMethod.Post, "/api/agent/heartbeat", heartbeat, ct);
+            var reply = await api.SendAsync<JsonElement>(HttpMethod.Post, "/api/agent/heartbeat", heartbeat, ct);
+            // Servers before 0.2.9 do not say so and take uncompressed bodies only.
+            api.Gzip =
+                reply.ValueKind == JsonValueKind.Object
+                && reply.TryGetProperty("gzipUploads", out var gzip)
+                && gzip.ValueKind == JsonValueKind.True;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
         {

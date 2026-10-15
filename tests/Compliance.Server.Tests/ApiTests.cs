@@ -289,6 +289,43 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Compressed_uploads_are_verified_as_sent_and_expanded_within_limits()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        var heartbeat = await f.Agent(
+            "POST",
+            "/api/agent/heartbeat",
+            new HeartbeatRequest("host", "1", f.Clock.Now, 1, [])
+        );
+        Assert.True((await heartbeat.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("gzipUploads").GetBoolean());
+        var batch = new EventBatch([new("v", 1, f.Clock.Now, "Violation", "x", Detail: new string('a', 1000))]);
+        var accepted = await f.Agent("POST", "/api/agent/events", batch, encoding: "gzip");
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        Assert.Equal(["v"], (await accepted.Content.ReadFromJsonAsync<EventReceipt>(Wire.Json))!.AcceptedEventIds);
+        // Uncompressed bodies from earlier clients still work.
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (
+                await f.Agent("POST", "/api/agent/events", new EventBatch([new("w", 2, f.Clock.Now, "Violation", "y")]))
+            ).StatusCode
+        );
+        Assert.Equal(
+            HttpStatusCode.UnsupportedMediaType,
+            (await f.Agent("POST", "/api/agent/events", batch, encoding: "br")).StatusCode
+        );
+        // A small compressed body that expands past the limit.
+        var bomb = new EventBatch([
+            new("b", 3, f.Clock.Now, "Violation", "z", Detail: new string('a', 8 * 1024 * 1024)),
+        ]);
+        Assert.Equal(
+            HttpStatusCode.RequestEntityTooLarge,
+            (await f.Agent("POST", "/api/agent/events", bomb, encoding: "gzip")).StatusCode
+        );
+    }
+
+    [Fact]
     public async Task New_received_time_does_not_refresh_old_scan_or_offline_verdict()
     {
         await using var f = new Fixture();
@@ -1293,17 +1330,26 @@ public sealed class Fixture : WebApplicationFactory<Program>
         string? nonce = null,
         bool bad = false,
         string? signedPath = null,
-        string? signedBody = null
+        string? signedBody = null,
+        string? encoding = null
     )
     {
         var raw = body == null ? "" : JsonSerializer.Serialize(body, Wire.Json);
+        var wire = Encoding.UTF8.GetBytes(raw);
+        if (encoding == "gzip")
+            wire = Gzip(wire);
         var ts = Clock.Now.ToUnixTimeSeconds().ToString();
         nonce ??= Guid.NewGuid().ToString();
         var canonical =
-            $"{method}\n{signedPath ?? path}\n{ts}\n{nonce}\n{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(signedBody ?? raw)))}";
+            $"{method}\n{signedPath ?? path}\n{ts}\n{nonce}\n{Convert.ToHexString(SHA256.HashData(signedBody is null ? wire : Encoding.UTF8.GetBytes(signedBody)))}";
         var request = new HttpRequestMessage(new(method), path);
         if (body != null)
-            request.Content = new StringContent(raw, Encoding.UTF8, "application/json");
+        {
+            request.Content = new ByteArrayContent(wire);
+            request.Content.Headers.ContentType = new("application/json") { CharSet = "utf-8" };
+            if (encoding != null)
+                request.Content.Headers.ContentEncoding.Add(encoding);
+        }
         request.Headers.Add("X-Device-Id", Device);
         request.Headers.Add("X-Timestamp", ts);
         request.Headers.Add("X-Nonce", nonce);
@@ -1314,5 +1360,13 @@ public sealed class Fixture : WebApplicationFactory<Program>
                 : Convert.ToBase64String(Key.SignData(Encoding.UTF8.GetBytes(canonical), HashAlgorithmName.SHA256))
         );
         return await Client.SendAsync(request);
+    }
+
+    public static byte[] Gzip(byte[] plain)
+    {
+        using var output = new MemoryStream();
+        using (var gzip = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionLevel.Fastest))
+            gzip.Write(plain);
+        return output.ToArray();
     }
 }

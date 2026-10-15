@@ -115,7 +115,8 @@ static partial class Endpoints
                     );
                     // OfflineMonitor resolves the offline alert within 15 seconds; doing it here would make every
                     // heartbeat wait for the one global offline lock.
-                    return new { ok = true };
+                    // Clients from 0.2.9 compress larger uploads once a server says it accepts them.
+                    return new { ok = true, gzipUploads = true };
                 });
             }
         );

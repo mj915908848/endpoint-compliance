@@ -265,5 +265,6 @@ public record AlertSummary(
 );
 
 // Canonical authenticated request: method + path (without query) + timestamp + nonce + SHA256(body), separated by LF.
+// The body is hashed as sent: gzip-compressed (Content-Encoding: gzip) when the heartbeat reply had gzipUploads.
 // Header names: X-Device-Id, X-Timestamp (Unix seconds), X-Nonce (UUID), X-Signature (Base64 ECDSA SHA256).
 // Enrollment HTTPS POST /api/agent/enroll; then authenticated heartbeat, policy, events, commands endpoints.
