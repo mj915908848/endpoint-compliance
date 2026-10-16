@@ -91,6 +91,48 @@ await Check(
     }
 );
 await Check(
+    "a full outbox drops its oldest snapshots, never other events",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-full-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            await using (var q = new EventOutbox(path, 4))
+            {
+                var health = await q.EnqueueAsync("Health", "test:health", null, "kept");
+                var oldest = await q.EnqueueAsync("Snapshot", "device:a", new ScanSnapshot { HostName = "1" }, null);
+                await q.EnqueueAsync("Snapshot", "device:a", new ScanSnapshot { HostName = "2" }, null);
+                await q.EnqueueAsync("Violation", "test:violation", null, "kept");
+                var newest = await q.EnqueueAsync("Snapshot", "device:a", new ScanSnapshot { HostName = "3" }, null);
+                var pending = (await q.PendingAsync(10)).Select(e => e.EventId).ToArray();
+                Assert(pending.Length == 4, "queue did not stay at its limit");
+                Assert(!pending.Contains(oldest.EventId), "oldest snapshot kept");
+                Assert(pending.Contains(health.EventId) && pending.Contains(newest.EventId), "wrong event dropped");
+                Assert(q.Dropped == 1, "drop not counted");
+            }
+            await using (var q = new EventOutbox(path, 2))
+            {
+                // Only non-snapshot events left after dropping every snapshot: still refused.
+                bool full = false;
+                try
+                {
+                    await q.EnqueueAsync("Health", "test:more", null, "more");
+                }
+                catch (OutboxCapacityException)
+                {
+                    full = true;
+                }
+                Assert(full, "full queue of other events accepted more");
+                Assert((await q.PendingAsync(10)).Length == 4, "refused enqueue still dropped snapshots");
+            }
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+);
+await Check(
     "one-shot delivery count includes delayed retries",
     async () =>
     {

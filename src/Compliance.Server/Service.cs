@@ -498,7 +498,12 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 )
             )
             {
-                d = d with { Snapshot = EvidenceSanitizer.Sanitize(snapshot), SnapshotSequence = e.Sequence };
+                // Already sanitized above for the event row.
+                d = d with
+                {
+                    Snapshot = safe.Snapshot,
+                    SnapshotSequence = e.Sequence,
+                };
                 snapshotChanged = true;
                 await SnapshotAlerts(tx, d, e.Sequence);
             }

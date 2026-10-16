@@ -48,20 +48,22 @@ public sealed class EventOutbox : IAsyncDisposable
         try
         {
             using var tx = db.BeginTransaction();
-            using var count = db.CreateCommand();
-            count.Transaction = tx;
-            count.CommandText = "SELECT (SELECT COUNT(*) FROM events)+(SELECT COUNT(*) FROM quarantine)";
-            if (Convert.ToInt32(await count.ExecuteScalarAsync(ct)) >= maxEvents)
+            var id = Guid.NewGuid().ToString("D");
+            var when = snapshot?.CollectedAt ?? DateTimeOffset.UtcNow;
+            // The sequence is not known yet; its digits barely change the size.
+            var needed =
+                System.Text.Encoding.UTF8.GetByteCount(
+                    Wire.Serialize(new AgentEvent(id, long.MaxValue, when, type, objectKey, snapshot, detail))
+                ) + 8192L;
+            var dropped = 0;
+            while (await FullAsync(tx, needed, ct) && await DropOldestSnapshotAsync(tx, ct) is > 0 and var n)
+                dropped += n;
+            if (await CountAsync(tx, ct) >= maxEvents)
                 throw new OutboxCapacityException("Critical event cannot be durably retained: outbox capacity reached");
-            var diskBytes =
-                (File.Exists(databasePath) ? new FileInfo(databasePath).Length : 0)
-                + (File.Exists(databasePath + "-wal") ? new FileInfo(databasePath + "-wal").Length : 0);
-            if (diskBytes >= maxBytes)
+            if (await UsedBytesAsync(tx, ct) + needed >= maxBytes)
                 throw new OutboxCapacityException(
                     "Critical event cannot be durably retained: outbox byte limit reached"
                 );
-            var id = Guid.NewGuid().ToString("D");
-            var when = snapshot?.CollectedAt ?? DateTimeOffset.UtcNow;
             using var insert = db.CreateCommand();
             insert.Transaction = tx;
             insert.CommandText = "INSERT INTO events(id,json) VALUES($id,'') RETURNING seq";
@@ -71,13 +73,11 @@ public sealed class EventOutbox : IAsyncDisposable
             using var update = db.CreateCommand();
             update.Transaction = tx;
             update.CommandText = "UPDATE events SET json=$json WHERE seq=$seq";
-            var serialized = Wire.Serialize(evt);
-            if (diskBytes + System.Text.Encoding.UTF8.GetByteCount(serialized) + 8192 >= maxBytes)
-                throw new OutboxCapacityException("Critical event exceeds remaining durable outbox byte limit");
-            update.Parameters.AddWithValue("$json", serialized);
+            update.Parameters.AddWithValue("$json", Wire.Serialize(evt));
             update.Parameters.AddWithValue("$seq", seq);
             await update.ExecuteNonQueryAsync(ct);
             tx.Commit();
+            Dropped += dropped;
             return evt;
         }
         finally
@@ -85,6 +85,54 @@ public sealed class EventOutbox : IAsyncDisposable
             gate.Release();
         }
     }
+
+    private async Task<bool> FullAsync(SqliteTransaction tx, long needed, CancellationToken ct) =>
+        await CountAsync(tx, ct) >= maxEvents || await UsedBytesAsync(tx, ct) + needed >= maxBytes;
+
+    private async Task<long> CountAsync(SqliteTransaction tx, CancellationToken ct)
+    {
+        using var count = db.CreateCommand();
+        count.Transaction = tx;
+        count.CommandText = "SELECT (SELECT COUNT(*) FROM events)+(SELECT COUNT(*) FROM quarantine)";
+        return Convert.ToInt64(await count.ExecuteScalarAsync(ct));
+    }
+
+    /// <summary>
+    /// Pages holding rows plus the write-ahead log. Deleted rows leave free pages that later rows reuse, so this
+    /// rather than the file size says whether another event fits.
+    /// </summary>
+    private async Task<long> UsedBytesAsync(SqliteTransaction tx, CancellationToken ct)
+    {
+        using var pages = db.CreateCommand();
+        pages.Transaction = tx;
+        pages.CommandText =
+            "SELECT ((SELECT page_count FROM pragma_page_count())-(SELECT freelist_count FROM pragma_freelist_count()))"
+            + "*(SELECT page_size FROM pragma_page_size())";
+        var wal = File.Exists(databasePath + "-wal") ? new FileInfo(databasePath + "-wal").Length : 0;
+        return Convert.ToInt64(await pages.ExecuteScalarAsync(ct)) + wal;
+    }
+
+    /// <summary>
+    /// Makes room in a full queue, one snapshot at a time. The server keeps only the newest snapshot, so the oldest
+    /// queued ones go, those the server already refused before those still waiting; other events are never dropped.
+    /// Returns 0 when no snapshot is left to drop.
+    /// </summary>
+    private async Task<int> DropOldestSnapshotAsync(SqliteTransaction tx, CancellationToken ct)
+    {
+        using var drop = db.CreateCommand();
+        drop.Transaction = tx;
+        drop.CommandText =
+            "DELETE FROM quarantine WHERE seq IN (SELECT seq FROM quarantine WHERE json_extract(json,'$.type')='Snapshot' ORDER BY seq LIMIT 1)";
+        var dropped = await drop.ExecuteNonQueryAsync(ct);
+        if (dropped > 0)
+            return dropped;
+        drop.CommandText =
+            "DELETE FROM events WHERE seq IN (SELECT seq FROM events WHERE json_extract(json,'$.type')='Snapshot' ORDER BY seq LIMIT 1)";
+        return await drop.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Queued snapshots dropped to make room since this queue was opened.</summary>
+    public int Dropped { get; private set; }
 
     public async Task<AgentEvent[]> PendingAsync(int max, CancellationToken ct = default)
     {

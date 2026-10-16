@@ -325,7 +325,7 @@ public sealed class AgentRuntime(
         await using var notices = new NotificationStore(Path.Combine(config.DataDirectory, "notices.sqlite"));
         if (DataAclRepaired)
         {
-            await queue.EnqueueAsync("Health", "agent:data-acl", null, DataAclRepairedMessage, ct);
+            await TryEnqueueAsync(queue, notices, "Health", "agent:data-acl", null, DataAclRepairedMessage, ct);
             DataAclRepaired = false;
         }
         var pipeTask =
@@ -360,12 +360,21 @@ public sealed class AgentRuntime(
             return;
         }
         var enforceTask = processes is null ? Task.CompletedTask : EnforceAsync(queue, notices, ct);
+        var failures = new Dictionary<string, DateTimeOffset>();
         while (!ct.IsCancellationRequested)
         {
-            if (pipeTask.IsFaulted)
-                await pipeTask;
+            // A failed side task is started again on its own; checking and uploading carry on meanwhile. The loop's
+            // own delay paces restarts of a task that keeps failing.
+            if (pipeTask.IsFaulted && OperatingSystem.IsWindows())
+            {
+                await ReportTaskFailureAsync(queue, notices, failures, "notification-pipe", pipeTask.Exception!, ct);
+                pipeTask = new NotificationPipe(notices).RunAsync(ct);
+            }
             if (enforceTask.IsFaulted)
-                await enforceTask;
+            {
+                await ReportTaskFailureAsync(queue, notices, failures, "enforcement", enforceTask.Exception!, ct);
+                enforceTask = EnforceAsync(queue, notices, ct);
+            }
             try
             {
                 await Cycle(api, queue, notices, false, ct);
@@ -375,23 +384,87 @@ public sealed class AgentRuntime(
                 Console.Error.WriteLine(
                     $"Agent cycle failed: {e.GetType().Name}: {EvidenceSanitizer.Clean(e.Message)}"
                 );
-                try
-                {
-                    await queue.EnqueueAsync("Health", "agent:cycle", null, "Cycle failure: " + e.GetType().Name, ct);
-                }
-                catch (OutboxCapacityException ex)
-                {
-                    Console.Error.WriteLine(ex.Message);
-                    await notices.AddAsync(
-                        "health:outbox-capacity",
-                        null,
-                        "本机待上报的记录已达上限，新的记录可能无法保存，请联系管理员。",
-                        ct
-                    );
-                    throw;
-                }
+                await TryEnqueueAsync(
+                    queue,
+                    notices,
+                    "Health",
+                    "agent:cycle",
+                    null,
+                    "Cycle failure: " + e.GetType().Name,
+                    ct
+                );
+            }
+            if (queue.Dropped > reportedDrops)
+            {
+                Console.Error.WriteLine($"本地待上报记录已满，已丢弃 {queue.Dropped - reportedDrops} 份较早的检查结果");
+                reportedDrops = queue.Dropped;
             }
             await Task.Delay(TimeSpan.FromSeconds(55 + Random.Shared.Next(11)), ct);
+        }
+    }
+
+    private int reportedDrops;
+
+    /// <summary>
+    /// Queues an event. When the queue is full of events that cannot be dropped, the user is told and the service
+    /// carries on: it must keep uploading, which is what empties the queue.
+    /// </summary>
+    private static async Task TryEnqueueAsync(
+        EventOutbox queue,
+        NotificationStore notices,
+        string type,
+        string objectKey,
+        ScanSnapshot? snapshot,
+        string? detail,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            await queue.EnqueueAsync(type, objectKey, snapshot, detail, ct);
+        }
+        catch (OutboxCapacityException e)
+        {
+            Console.Error.WriteLine(e.Message);
+            await notices.AddAsync(
+                "health:outbox-capacity",
+                null,
+                "本机待上报的记录已达上限，新的记录可能无法保存，请联系管理员。",
+                ct
+            );
+        }
+    }
+
+    /// <summary>Logs a failed side task every time and reports it to the server at most once an hour.</summary>
+    private static async Task ReportTaskFailureAsync(
+        EventOutbox queue,
+        NotificationStore notices,
+        Dictionary<string, DateTimeOffset> reported,
+        string task,
+        AggregateException failure,
+        CancellationToken ct
+    )
+    {
+        var e = failure.Flatten().InnerException ?? failure;
+        Console.Error.WriteLine($"{task} failed, restarting: {e.GetType().Name}: {EvidenceSanitizer.Clean(e.Message)}");
+        if (reported.TryGetValue(task, out var at) && at > DateTimeOffset.UtcNow.AddHours(-1))
+            return;
+        reported[task] = DateTimeOffset.UtcNow;
+        try
+        {
+            await TryEnqueueAsync(
+                queue,
+                notices,
+                "Health",
+                "agent:" + task,
+                null,
+                "Task failure: " + e.GetType().Name,
+                ct
+            );
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Console.Error.WriteLine($"Could not report {task} failure: {ex.GetType().Name}");
         }
     }
 
@@ -429,14 +502,7 @@ public sealed class AgentRuntime(
                 reported[key] = DateTimeOffset.UtcNow;
                 var detail = $"{b.ProductName}（{b.Executable}）已被结束：单位策略禁止在本机使用该程序";
                 await notices.AddAsync(Guid.NewGuid().ToString("D"), b.UserSid, "Blocked: " + detail, ct);
-                try
-                {
-                    await queue.EnqueueAsync("BlockedAttempt", "blocked:" + b.ProductId, null, detail, ct);
-                }
-                catch (OutboxCapacityException e)
-                {
-                    Console.Error.WriteLine(e.Message);
-                }
+                await TryEnqueueAsync(queue, notices, "BlockedAttempt", "blocked:" + b.ProductId, null, detail, ct);
             }
         }
     }
@@ -631,7 +697,7 @@ public sealed class AgentRuntime(
                     Modules = moduleResults,
                 }
             );
-            await queue.EnqueueAsync("Snapshot", "device:" + config.DeviceId, latest, null, ct);
+            await TryEnqueueAsync(queue, notices, "Snapshot", "device:" + config.DeviceId, latest, null, ct);
             var report = ReportEngine.Evaluate(policy, latest, DateTimeOffset.UtcNow);
             var findings = BuildLocalFindings(policy, latest, report);
             var scopes = latest
@@ -674,7 +740,9 @@ public sealed class AgentRuntime(
                 "有一条记录超出管理端的大小限制，已单独保存；审计记录可能不完整。",
                 ct
             );
-            await queue.EnqueueAsync(
+            await TryEnqueueAsync(
+                queue,
+                notices,
                 "Health",
                 "agent:oversized-event",
                 null,
