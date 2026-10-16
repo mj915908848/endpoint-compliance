@@ -464,6 +464,8 @@ try:
         taken = wait_device(scripted["id"], since=scripted["lastHeartbeat"])
         config = subprocess.run(["sc.exe", "qc", "ComplianceAgent"], capture_output=True, text=True).stdout
         assert "--config" in config and str(program).lower() in config.lower(), f"Service not the MSI's: {config}"
+        failure = subprocess.run(["sc.exe", "qfailure", "ComplianceAgent"], capture_output=True, text=True).stdout
+        assert failure.count("RESTART") >= 3, f"Service restarts on failure not configured: {failure}"
         print(f"PASS the MSI takes over a script install and keeps its enrollment ({taken['hostName']})")
         msiexec("/x", "msi-uninstall.log")
         removed()

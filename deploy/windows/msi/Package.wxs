@@ -57,11 +57,15 @@
           Arguments="--config &quot;[CommonAppDataFolder]ComplianceAgent\agent.json&quot;"
         >
           <ServiceConfig FailureActionsWhen="failedToStopOrReturnedError" OnInstall="yes" OnReinstall="yes" />
-          <ServiceConfigFailureActions OnInstall="yes" OnReinstall="yes" ResetPeriod="86400">
-            <Failure Action="restartService" Delay="60000" />
-            <Failure Action="restartService" Delay="60000" />
-            <Failure Action="restartService" Delay="300000" />
-          </ServiceConfigFailureActions>
+          <!-- Windows Installer's own failure actions fail with error 5 for restart actions (it opens the service
+               without SERVICE_START), so the restarts go through the util extension. -->
+          <util:ServiceConfig
+            FirstFailureActionType="restart"
+            SecondFailureActionType="restart"
+            ThirdFailureActionType="restart"
+            RestartServiceDelayInSeconds="60"
+            ResetPeriodInDays="1"
+          />
         </ServiceInstall>
         <ServiceControl Id="Service" Name="ComplianceAgent" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
       </Component>
