@@ -104,7 +104,7 @@ python3 integration/e2e.py
 
 ### 持续集成
 
-每次推送和 Pull Request 都会运行 [GitHub Actions](.github/workflows/ci.yml)，按改动的文件只跑受影响的任务（只改前端时不跑 Windows、Docker 和服务端测试；只改 `.md` 和 `docs/` 时不跑），改动 CI 配置或手动触发时全部运行。任一步失败即标红：
+推送到 main 和每个 Pull Request 都会运行 [GitHub Actions](.github/workflows/ci.yml)，按改动的文件只跑受影响的任务（只改前端时不跑 Windows、Docker 和服务端测试；只改 `.md` 和 `docs/` 时不跑），改动 CI 配置或手动触发时全部运行。任一步失败即标红：
 
 | 任务 | 运行环境 | 内容 |
 | --- | --- | --- |

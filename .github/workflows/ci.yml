@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  # Other branches are checked by their pull request; running on their pushes too would test each change twice.
   push:
+    branches: [main]
     paths-ignore:
       - "**.md"
       - "docs/**"
