@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Alert as Notice, Button, Segmented, Space } from "antd";
+import { Alert as Notice, Button, Segmented, Space, Typography } from "antd";
 import { CloseCircleFilled, FileSearchOutlined } from "@ant-design/icons";
 import { request } from "../api";
 import { useResource, useRefresh } from "../useResource";
@@ -22,6 +22,9 @@ import type { Alert, DeviceSummary, Session } from "../types";
 const grouped = (a: Alert) =>
   a.state !== "Resolved" && (a.type === "Violation" || a.type === "SensitiveFile");
 
+/** The alert list holds alerts resolved in the last 30 days; older ones are fetched a page at a time. */
+const PAGE = 100;
+
 export function Alerts({
   session,
   openDevice,
@@ -33,6 +36,9 @@ export function Alerts({
   const data = useResource<Alert[]>("/api/alerts"),
     devices = useResource<DeviceSummary[]>("/api/devices");
   const [filter, setFilter] = useState("active");
+  const [older, setOlder] = useState<Alert[]>([]);
+  const [olderDone, setOlderDone] = useState(false);
+  const [olderLoading, setOlderLoading] = useState(false);
   const canAck = role(session, "Operator");
   const all = useMemo(() => data.data ?? [], [data.data]);
   const groups = useMemo(() => {
@@ -50,13 +56,30 @@ export function Alerts({
   }, [all, devices.data]);
   const notes = new Map((devices.data ?? []).map((d) => [d.id, d.note]));
   const others = sortNewestFirst(
-    all.filter(
+    [...all, ...(filter === "active" ? [] : older)].filter(
       (a) =>
         !grouped(a) &&
         (filter === "all" ||
           (filter === "active" ? a.state !== "Resolved" : a.state === "Resolved")),
     ),
   );
+  const loadOlder = async () => {
+    const resolved = [...all, ...older].filter((a) => a.state === "Resolved");
+    const last = older.at(-1);
+    // Start just before the 30-day window the list covers, or after the last page.
+    const before = last?.lastSeen ?? new Date(Date.now() - 30 * 86_400_000).toISOString();
+    setOlderLoading(true);
+    try {
+      const page = await request<Alert[]>(
+        `/api/alerts/resolved?before=${encodeURIComponent(before)}&beforeId=${encodeURIComponent(last?.id ?? "")}&limit=${PAGE}`,
+      );
+      const known = new Set(resolved.map((a) => a.id));
+      setOlder((o) => [...o, ...page.filter((a) => !known.has(a.id))]);
+      if (page.length < PAGE) setOlderDone(true);
+    } finally {
+      setOlderLoading(false);
+    }
+  };
   const ack = (id: string) =>
     request(`/api/alerts/${encodeURIComponent(id)}/ack`, {
       method: "POST",
@@ -135,6 +158,19 @@ export function Alerts({
               </Space>
             ) : (
               <Empty title="没有符合条件的告警" />
+            )}
+            {filter !== "active" && (
+              <div style={{ marginTop: 16, textAlign: "center" }}>
+                {olderDone ? (
+                  <Typography.Text type="secondary">
+                    已显示全部已恢复告警（恢复超过保留期的会自动清理，默认 180 天）
+                  </Typography.Text>
+                ) : (
+                  <Button loading={olderLoading} onClick={loadOlder}>
+                    {older.length ? "继续加载更早的已恢复告警" : "加载 30 天前恢复的告警"}
+                  </Button>
+                )}
+              </div>
             )}
           </Panel>
         </Space>

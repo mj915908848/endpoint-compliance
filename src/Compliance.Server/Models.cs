@@ -16,6 +16,9 @@ public sealed class Settings
 
     /// <summary>Days events other than snapshots are kept for; snapshot events are kept one day.</summary>
     public int EventRetentionDays { get; set; } = 90;
+
+    /// <summary>Days resolved alerts are kept for; alerts not resolved are always kept.</summary>
+    public int AlertRetentionDays { get; set; } = 180;
 }
 
 public sealed record UserRecord(string Username, string PasswordHash, string[] Roles);

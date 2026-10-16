@@ -365,8 +365,51 @@ public sealed class Transaction
     public Task<AlertSummary?> GetAlert(string id) =>
         Single($"SELECT {AlertColumns} FROM alerts WHERE id = @id", ReadAlert, ("id", id));
 
-    public Task<List<AlertSummary>> AlertsNewestFirst() =>
-        Query($"SELECT {AlertColumns} FROM alerts ORDER BY last_seen DESC", ReadAlert);
+    /// <summary>Alerts not resolved, and those resolved since <paramref name="resolvedSince"/>, newest first.</summary>
+    public Task<List<AlertSummary>> AlertsNewestFirst(DateTimeOffset resolvedSince) =>
+        Query(
+            $"SELECT {AlertColumns} FROM alerts WHERE state <> 'Resolved' OR last_seen >= @since ORDER BY last_seen DESC, id DESC",
+            ReadAlert,
+            ("since", resolvedSince)
+        );
+
+    /// <summary>
+    /// A page of resolved alerts older than the last one shown (<paramref name="before"/>, <paramref name="beforeId"/>),
+    /// newest first; the id breaks ties between alerts resolved at the same moment.
+    /// </summary>
+    public Task<List<AlertSummary>> ResolvedAlertsBefore(DateTimeOffset before, string beforeId, int limit) =>
+        Query(
+            $"""
+            SELECT {AlertColumns} FROM alerts
+            WHERE state = 'Resolved' AND (last_seen < @before OR (last_seen = @before AND id < @id))
+            ORDER BY last_seen DESC, id DESC LIMIT @limit
+            """,
+            ReadAlert,
+            ("before", before),
+            ("id", beforeId),
+            ("limit", (long)limit)
+        );
+
+    /// <summary>
+    /// Deletes at most <paramref name="limit"/> alerts resolved before <paramref name="cutoff"/>, with the records kept
+    /// for recovering them; returns how many alerts.
+    /// </summary>
+    public async Task<int> PruneResolvedAlerts(DateTimeOffset cutoff, int limit)
+    {
+        var removed = await Execute(
+            """
+            DELETE FROM alerts WHERE id IN (
+                SELECT id FROM alerts WHERE state = 'Resolved' AND last_seen < @cutoff LIMIT @limit)
+            """,
+            ("cutoff", cutoff),
+            ("limit", (long)limit)
+        );
+        if (removed > 0)
+            await Execute(
+                "DELETE FROM snapshot_incidents WHERE NOT EXISTS (SELECT 1 FROM alerts WHERE alerts.id = snapshot_incidents.id)"
+            );
+        return removed;
+    }
 
     /// <summary>
     /// An alert that becomes active, newly or again, waits to be pushed (see <see cref="PendingNotifications"/>).

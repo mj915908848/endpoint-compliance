@@ -1,10 +1,18 @@
 # 终端合规管理端：PostgreSQL + 管理端。用法见同目录 README.md。
 name: compliance
 
+# Container output is kept in rotated files: 3 × 10 MB per container, instead of one file that grows until the disk is full.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   db:
     image: postgres:18
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_DB: compliance
       POSTGRES_USER: compliance
@@ -23,6 +31,7 @@ services:
       dockerfile: deploy/docker/Dockerfile
     image: compliance-server:latest
     restart: unless-stopped
+    logging: *logging
     depends_on:
       db:
         condition: service_healthy

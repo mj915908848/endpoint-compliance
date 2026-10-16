@@ -253,6 +253,56 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Alert_list_holds_recent_resolved_alerts_older_ones_page_and_old_ones_are_pruned()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        var now = f.Clock.Now;
+        AlertSummary Alert(string id, string state, int daysAgo) =>
+            new(id, f.Device, "HOST", "Health", id, id, state, 1, now.AddDays(-daysAgo), now.AddDays(-daysAgo), false);
+        var alerts = new[]
+        {
+            Alert("active-old", "Active", 400),
+            Alert("resolved-recent", "Resolved", 3),
+            Alert("resolved-40a", "Resolved", 40),
+            Alert("resolved-40b", "Resolved", 40),
+            Alert("resolved-100", "Resolved", 100),
+            Alert("resolved-200", "Resolved", 200),
+        };
+        await service.Tx(async tx =>
+        {
+            foreach (var a in alerts)
+                await tx.UpsertAlert(a);
+            await tx.PutSnapshotIncident(new SnapshotIncident("resolved-200", f.Device, "machine", ["installed"]));
+            await tx.PutSnapshotIncident(new SnapshotIncident("active-old", f.Device, "machine", ["installed"]));
+            return true;
+        });
+        async Task<string[]> Ids(string path) =>
+            (await f.Client.GetFromJsonAsync<AlertSummary[]>(path, Wire.Json))!.Select(a => a.Id).ToArray();
+
+        Assert.Equal(["resolved-recent", "active-old"], await Ids("/api/alerts"));
+        // Paging back from the oldest alert listed, two at a time; alerts resolved at the same moment are not lost.
+        var start = Uri.EscapeDataString(now.AddDays(-30).ToString("O"));
+        var first = await Ids($"/api/alerts/resolved?before={start}&beforeId=&limit=2");
+        Assert.Equal(["resolved-40b", "resolved-40a"], first);
+        var cursor = Uri.EscapeDataString(now.AddDays(-40).ToString("O"));
+        Assert.Equal(
+            ["resolved-100", "resolved-200"],
+            await Ids($"/api/alerts/resolved?before={cursor}&beforeId=resolved-40a&limit=2")
+        );
+
+        // Alerts resolved more than 180 days ago go, with their recovery records; open alerts stay however old.
+        await service.Maintain();
+        var left = await service.Tx(async tx => (await tx.ResolvedAlertsBefore(now, "", 100)).Select(a => a.Id));
+        Assert.Equal(["resolved-recent", "resolved-40b", "resolved-40a", "resolved-100"], left);
+        Assert.NotNull(await service.Tx(tx => tx.GetAlert("active-old")));
+        Assert.Null(await service.Tx(tx => tx.GetSnapshotIncident("resolved-200")));
+        Assert.NotNull(await service.Tx(tx => tx.GetSnapshotIncident("active-old")));
+    }
+
+    [Fact]
     public async Task Device_list_shows_a_new_snapshot_at_once_and_expired_results_after_reuse()
     {
         await using var f = new Fixture();

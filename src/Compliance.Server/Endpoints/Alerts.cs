@@ -14,8 +14,19 @@ static partial class Endpoints
                 return await s.Tx(async tx =>
                 {
                     await s.UpdateOffline(tx);
-                    return (await tx.AlertsNewestFirst()).ToArray();
+                    return (await tx.AlertsNewestFirst(s.Now - ComplianceService.RecentlyResolved)).ToArray();
                 });
+            }
+        );
+
+        // Older resolved alerts, a page at a time: pass the last alert shown as before/beforeId.
+        group.MapGet(
+            "/resolved",
+            async (HttpContext c, DateTimeOffset before, string beforeId, int? limit) =>
+            {
+                Require(c, "Reader");
+                var size = Math.Clamp(limit ?? 100, 1, 500);
+                return await s.Tx(async tx => (await tx.ResolvedAlertsBefore(before, beforeId, size)).ToArray());
             }
         );
 
