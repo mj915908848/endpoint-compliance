@@ -17,7 +17,7 @@ public partial class Program
         b.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         b.Services.AddSingleton<Store>();
         b.Services.AddSingleton<ComplianceService>();
-        b.Services.AddHostedService<OfflineMonitor>();
+        b.Services.AddHostedService<StatusMonitor>();
         b.Services.AddHostedService<MaintenanceService>();
         b.Services.AddHttpClient(AlertNotifier.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
         b.Services.AddSingleton<AlertNotifier>();

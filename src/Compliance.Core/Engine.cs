@@ -9,6 +9,26 @@ public static class ReportEngine
     public static ComplianceReport Evaluate(PolicyDocument policy, ScanSnapshot snapshot, DateTimeOffset now)
     {
         snapshot = EvidenceSanitizer.Sanitize(snapshot);
+        // Every comparison with "now" goes through Within or Note, which keep the earliest later moment its outcome
+        // changes: until then the same inputs give the same report.
+        var validUntil = DateTimeOffset.MaxValue;
+        // Records the moment "offset" after t, unless it lies outside DateTimeOffset's range (timestamps an agent left
+        // unset are MinValue).
+        void Note(DateTimeOffset t, TimeSpan offset)
+        {
+            if (offset > TimeSpan.Zero ? t > DateTimeOffset.MaxValue - offset : t < DateTimeOffset.MinValue - offset)
+                return;
+            var at = t + offset;
+            if (at > now && at < validUntil)
+                validUntil = at;
+        }
+        // Data collected at t counts from two minutes before t (clock skew) until "minutes" after it, inclusive.
+        bool Within(DateTimeOffset t, double minutes)
+        {
+            Note(t, TimeSpan.FromMinutes(-2));
+            Note(t, TimeSpan.FromMinutes(minutes) + TimeSpan.FromTicks(1));
+            return t >= now.AddMinutes(-minutes) && t <= now.AddMinutes(2);
+        }
         var names = Labels.AccountNames(snapshot);
         var gaps = new List<string>();
         if (policy.SchemaVersion != 1 || snapshot.SchemaVersion != 1)
@@ -17,6 +37,8 @@ public static class ReportEngine
             gaps.Add("策略未完整定义禁用规则或必需检查项");
         if (policy.Mode is not ("Audit" or "Enforce"))
             gaps.Add("策略模式无法识别");
+        Note(policy.ExpiresAt, TimeSpan.FromTicks(1));
+        Note(policy.IssuedAt, TimeSpan.FromMinutes(-2));
         if (policy.ExpiresAt < now || policy.IssuedAt > now.AddMinutes(2))
             gaps.Add("策略已过期或签发时间异常");
         if (snapshot.PolicyVersion != policy.Serial)
@@ -25,9 +47,7 @@ public static class ReportEngine
             gaps.Add("检查数据来自模拟终端，未经 Windows 实机验证");
         if (!snapshot.Platform.Equals("Windows", StringComparison.OrdinalIgnoreCase))
             gaps.Add("终端平台不受支持");
-        bool current =
-            snapshot.CollectedAt <= now.AddMinutes(2)
-            && snapshot.CollectedAt >= now.AddMinutes(-policy.LightweightFreshMinutes);
+        bool current = Within(snapshot.CollectedAt, policy.LightweightFreshMinutes);
         if (!current)
             gaps.Add("检查结果已过期或采集时间异常");
         foreach (var module in policy.RequiredModules.Where(m => m != SensitiveFiles.Module))
@@ -42,8 +62,7 @@ public static class ReportEngine
             {
                 if (entry.Status != "Complete")
                     gaps.Add(ModuleGap(entry, names));
-                var minutes = policy.FreshMinutes(module);
-                if (entry.CollectedAt < now.AddMinutes(-minutes) || entry.CollectedAt > now.AddMinutes(2))
+                if (!Within(entry.CollectedAt, policy.FreshMinutes(module)))
                     gaps.Add($"{Labels.Module(module)}（{Labels.Scope(entry.Scope, names)}）：数据已过期或时间异常");
             }
         }
@@ -65,10 +84,7 @@ public static class ReportEngine
             {
                 if (entry.Status != "Complete")
                     sensitiveIssues.Add(ModuleGap(entry, names));
-                if (
-                    entry.CollectedAt < now.AddMinutes(-SensitiveFiles.FreshMinutes(policy))
-                    || entry.CollectedAt > now.AddMinutes(2)
-                )
+                if (!Within(entry.CollectedAt, SensitiveFiles.FreshMinutes(policy)))
                     sensitiveIssues.Add(
                         $"{Labels.Module(entry.Module)}（{Labels.Scope(entry.Scope, names)}）：数据已过期或时间异常"
                     );
@@ -107,7 +123,7 @@ public static class ReportEngine
             if (e.Kind == EvidenceKind.SensitiveFile)
             {
                 var at = e.CollectedAt ?? snapshot.CollectedAt;
-                return at >= now.AddMinutes(-SensitiveFiles.FreshMinutes(policy)) && at <= now.AddMinutes(2);
+                return Within(at, SensitiveFiles.FreshMinutes(policy));
             }
             var module = e.Kind switch
             {
@@ -124,7 +140,7 @@ public static class ReportEngine
             var minutes = e.Kind is EvidenceKind.Installation or EvidenceKind.Extension
                 ? policy.InventoryFreshMinutes
                 : policy.LightweightFreshMinutes;
-            return time >= now.AddMinutes(-minutes) && time <= now.AddMinutes(2);
+            return Within(time, minutes);
         }
         foreach (var e in snapshot.Evidence.Where(e => e.Confirmed && !EvidenceFresh(e)))
             if (e.Kind != EvidenceKind.SensitiveFile)
@@ -187,6 +203,7 @@ public static class ReportEngine
             SensitiveFileNotes = sensitiveRequired ? [] : sensitiveIssues.Distinct().ToArray(),
             PolicyName = policy.PolicyId,
             PolicyVersion = policy.Version,
+            ValidUntil = validUntil == DateTimeOffset.MaxValue ? null : validUntil,
         };
     }
 }

@@ -12,10 +12,8 @@ static partial class Endpoints
             {
                 Require(c, "Reader");
                 return await s.Tx(async tx =>
-                {
-                    await s.UpdateOffline(tx);
-                    return (await tx.AlertsNewestFirst(s.Now - ComplianceService.RecentlyResolved)).ToArray();
-                });
+                    (await tx.AlertsNewestFirst(s.Now - ComplianceService.RecentlyResolved)).ToArray()
+                );
             }
         );
 

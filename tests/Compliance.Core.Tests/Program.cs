@@ -774,5 +774,55 @@ Test(
         PolicyCrypto.Validate(old);
     }
 );
+Test(
+    "a report stays the same until its ValidUntil, whatever the timestamps",
+    () =>
+    {
+        var random = new Random(7);
+        var rule = new SensitiveFileRule("secret", "机密文件", ["机密"]) { Action = "Violation" };
+        DateTimeOffset At(int spreadMinutes) => now.AddMinutes(random.Next(-spreadMinutes, 10));
+        string Key(ComplianceReport r) =>
+            string.Join(
+                "|",
+                r.Verdict,
+                r.Summary,
+                string.Join(";", r.Reasons),
+                string.Join(";", r.CoverageGaps),
+                r.ViolationCount,
+                r.EvidenceCount,
+                r.ProtectionStatus,
+                string.Join(";", r.SensitiveFileNotes)
+            );
+        var timed = 0;
+        for (var i = 0; i < 400; i++)
+        {
+            var policy = p with
+            {
+                ExpiresAt = now.AddMinutes(random.Next(-5, 600)),
+                IssuedAt = now.AddMinutes(random.Next(-600, 5)),
+                SensitiveFiles = random.Next(2) == 0 ? new() : new() { Enabled = true, Rules = [rule] },
+            };
+            var modules = new[] { "installed", "proxy", "users", "processes", SensitiveFiles.Module }
+                .Where(_ => random.Next(4) != 0)
+                .Select(m => new ModuleResult(m, "machine", random.Next(6) == 0 ? "Failed" : "Complete", At(300)))
+                .ToArray();
+            Evidence[] evidence =
+            [
+                .. random.Next(2) == 0 ? [violation with { CollectedAt = At(300) }] : Array.Empty<Evidence>(),
+                .. random.Next(3) == 0 ? [sensitiveHit with { CollectedAt = At(2000) }] : Array.Empty<Evidence>(),
+            ];
+            var snapshot = clean with { CollectedAt = At(30), Modules = modules, Evidence = evidence };
+            var report = ReportEngine.Evaluate(policy, snapshot, now);
+            if (report.ValidUntil is not { } until)
+                continue;
+            timed++;
+            Yes(until > now);
+            var expected = Key(report);
+            foreach (var at in new[] { now + (until - now) / 2, until.AddTicks(-1) })
+                Eq(expected, Key(ReportEngine.Evaluate(policy, snapshot, at)));
+        }
+        Yes(timed > 300);
+    }
+);
 Console.WriteLine($"Core tests: {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

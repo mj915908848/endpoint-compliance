@@ -63,8 +63,39 @@ public sealed record DeviceRecord(
     string Note = "",
     string AgentVersion = "",
     NetworkAdapter[]? Network = null,
-    string SourceAddress = ""
+    string SourceAddress = "",
+    StoredVerdict? Verdict = null
 );
+
+/// <summary>
+/// A device's verdicts as last evaluated, kept on the device so lists read them instead of judging every snapshot.
+/// It holds while the device's snapshot and policy are still the ones it was computed from and time has not reached
+/// <see cref="ValidUntil"/> (when data goes stale or the policy expires).
+/// </summary>
+/// <param name="Current">The verdict of the current snapshot under the device's policy; null without a snapshot.</param>
+/// <param name="Last">The verdict at collection time, under the policy the scan used.</param>
+/// <param name="PolicyVersion">The device's policy's own version, as administrators see it.</param>
+public sealed record StoredVerdict(
+    Verdict? Current,
+    Verdict? Last,
+    DateTimeOffset? CollectedAt,
+    long PolicyVersion,
+    string PolicyName,
+    string ProtectionStatus,
+    int ViolationCount,
+    bool Simulated,
+    long SnapshotSequence,
+    long TargetPolicyVersion,
+    DateTimeOffset ComputedAt,
+    DateTimeOffset? ValidUntil
+)
+{
+    public bool HoldsFor(DeviceRecord d, DateTimeOffset now) =>
+        SnapshotSequence == d.SnapshotSequence
+        && TargetPolicyVersion == d.TargetPolicyVersion
+        && ComputedAt <= now
+        && (ValidUntil is null || now < ValidUntil);
+}
 
 public sealed record SnapshotIncident(string Id, string DeviceId, string Scope, string[] Modules);
 

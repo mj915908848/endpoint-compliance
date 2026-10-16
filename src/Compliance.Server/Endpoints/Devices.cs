@@ -16,11 +16,7 @@ static partial class Endpoints
             async (HttpContext c) =>
             {
                 Require(c, "Reader");
-                return await s.Tx(async tx =>
-                {
-                    await s.UpdateOffline(tx);
-                    return (await s.Summaries(tx)).OrderBy(d => d.HostName).ToArray();
-                });
+                return await s.Tx(async tx => (await s.Summaries(tx)).OrderBy(d => d.HostName).ToArray());
             }
         );
 
@@ -31,7 +27,6 @@ static partial class Endpoints
                 var u = Require(c, "Reader");
                 var rows = await s.Tx(async tx =>
                 {
-                    await s.UpdateOffline(tx);
                     var list = await s.Export(tx);
                     await tx.Audit(u.Username, "ExportDevices", $"{list.Count} 台", s.Now);
                     return list;
