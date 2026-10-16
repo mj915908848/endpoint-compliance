@@ -13,7 +13,11 @@ namespace Compliance.Tray;
 public sealed class LogWindow : Form
 {
     public const string Argument = "--log";
-    private const int MaxLines = 3000;
+    private const int MaxLines = 500;
+    private const string Caption = "终端合规客户端 · 运行日志";
+
+    /// <summary>Held by the process showing the log, so a second request brings that window forward instead.</summary>
+    public const string MutexName = @"Local\ComplianceAgent.LogWindow";
 
     private static readonly string Folder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -32,6 +36,8 @@ public sealed class LogWindow : Form
     /// <summary>Starts an elevated copy of the tray showing the log; nothing happens if the UAC prompt is declined.</summary>
     public static void OpenElevated()
     {
+        if (ActivateExisting())
+            return;
         try
         {
             Process.Start(
@@ -41,11 +47,32 @@ public sealed class LogWindow : Form
         catch (System.ComponentModel.Win32Exception) { }
     }
 
+    /// <summary>Brings an open log window to the front; false when none is open.</summary>
+    public static bool ActivateExisting()
+    {
+        try
+        {
+            if (!Mutex.TryOpenExisting(MutexName, out var mutex))
+                return false;
+            mutex.Dispose();
+        }
+        // The elevated process's mutex exists but a standard user's tray may not open it.
+        catch (UnauthorizedAccessException) { }
+        var window = FindWindow(null, Caption);
+        if (window != 0)
+        {
+            if (IsIconic(window))
+                ShowWindowAsync(window, SW_RESTORE);
+            SetForegroundWindow(window);
+        }
+        return true;
+    }
+
     public LogWindow()
     {
         int S(int v) => LogicalToDeviceUnits(v);
         Icon = Icons.Window(Icons.App);
-        Text = "终端合规客户端 · 运行日志";
+        Text = Caption;
         Font = Theme.Body;
         ForeColor = Theme.Text;
         BackColor = Theme.Page;
@@ -229,6 +256,20 @@ public sealed class LogWindow : Form
         public int Position;
         public int TrackPosition;
     }
+
+    private const int SW_RESTORE = 9;
+
+    [DllImport("user32.dll", EntryPoint = "FindWindowW", CharSet = CharSet.Unicode)]
+    private static extern nint FindWindow(string? className, string windowName);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(nint window);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindowAsync(nint window, int command);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(nint window);
 
     [DllImport("user32.dll", EntryPoint = "SendMessageW")]
     private static extern nint SendMessage(nint window, int message, nint wParam, ref Point lParam);

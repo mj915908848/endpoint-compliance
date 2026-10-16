@@ -267,6 +267,10 @@ try:
         try:
             time.sleep(6)
             assert viewer.poll() is None, f"Tray {argument} exited with {viewer.returncode}"
+            if argument == "--log":
+                # A second request only brings the open window forward.
+                second = subprocess.run([str(tray), argument], timeout=30)
+                assert second.returncode == 0 and viewer.poll() is None, "A second log window was opened"
             screenshot(data / shot)
         finally:
             viewer.kill()

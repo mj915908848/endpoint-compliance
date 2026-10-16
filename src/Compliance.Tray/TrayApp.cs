@@ -15,7 +15,13 @@ public static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         if (args.Contains(LogWindow.Argument))
-            Application.Run(new LogWindow());
+        {
+            using var single = new Mutex(true, LogWindow.MutexName, out var first);
+            if (first)
+                Application.Run(new LogWindow());
+            else
+                LogWindow.ActivateExisting();
+        }
         else
             Application.Run(new TrayApp(args.Contains("--notices")));
     }
