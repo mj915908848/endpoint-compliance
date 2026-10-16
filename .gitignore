@@ -16,4 +16,5 @@ artifacts/
 *.tsbuildinfo
 /deploy/docker/certs/
 /deploy/docker/backups/
+/deploy/docker/compliance-server-*.tar.gz
 __pycache__/
