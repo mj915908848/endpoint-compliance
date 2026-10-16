@@ -28,6 +28,55 @@ void Assert(bool value, string message)
         throw new Exception(message);
 }
 await Check(
+    "the network inventory reports physical adapters with reachable addresses, the gateway's first",
+    () =>
+    {
+        static NetworkInventory.Candidate Nic(
+            string name,
+            string mac,
+            bool gateway = false,
+            string description = "Intel(R) Ethernet",
+            System.Net.NetworkInformation.NetworkInterfaceType type =
+                System.Net.NetworkInformation.NetworkInterfaceType.Ethernet,
+            System.Net.NetworkInformation.OperationalStatus status = System.Net.NetworkInformation.OperationalStatus.Up,
+            params string[] addresses
+        ) =>
+            new(
+                name,
+                description,
+                type,
+                status,
+                Convert.FromHexString(mac),
+                [.. addresses.Select(System.Net.IPAddress.Parse)],
+                gateway
+            );
+        var picked = NetworkInventory.Select([
+            Nic("WLAN", "a0b1c2d3e4f5", addresses: ["fe80::1%12", "192.168.31.20"]),
+            Nic("以太网", "001122334455", gateway: true, addresses: ["fd00::5", "10.0.0.5", "169.254.3.3"]),
+            Nic(
+                "vEthernet (WSL)",
+                "00155d000001",
+                description: "Hyper-V Virtual Ethernet Adapter",
+                addresses: ["172.20.0.1"]
+            ),
+            Nic(
+                "以太网 2",
+                "665544332211",
+                status: System.Net.NetworkInformation.OperationalStatus.Down,
+                addresses: ["10.1.1.1"]
+            ),
+            Nic("本地连接", "000000000000", addresses: ["10.2.2.2"]),
+            Nic("未连接", "112233445566", addresses: ["fe80::9"]),
+        ]);
+        Assert(picked.Length == 2, "picked " + string.Join(",", picked.Select(p => p.Name)));
+        Assert(picked[0] is { Name: "以太网", Mac: "00-11-22-33-44-55", Primary: true }, "gateway adapter first");
+        Assert(picked[0].Addresses.SequenceEqual(["10.0.0.5", "fd00::5"]), string.Join(",", picked[0].Addresses));
+        Assert(picked[1] is { Name: "WLAN", Mac: "A0-B1-C2-D3-E4-F5", Primary: false }, "wireless second");
+        Assert(picked[1].Addresses.SequenceEqual(["192.168.31.20"]), "link-local dropped");
+        return Task.CompletedTask;
+    }
+);
+await Check(
     "a timed-out collector run is not started again until it ends",
     async () =>
     {

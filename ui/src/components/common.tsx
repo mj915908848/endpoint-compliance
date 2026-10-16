@@ -13,7 +13,12 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { SafetyCertificateOutlined } from "@ant-design/icons";
+import {
+  CheckCircleFilled,
+  DisconnectOutlined,
+  ExclamationCircleFilled,
+  SafetyCertificateOutlined,
+} from "@ant-design/icons";
 import type { Alert, DeviceSummary, ModuleResult, Verdict } from "../types";
 import { alertTypeLabel, onlineLabel, verdictLabels } from "./labels";
 
@@ -36,6 +41,58 @@ export function VerdictTag({ verdict }: { verdict: Verdict }) {
     </Tag>
   );
 }
+
+const online: Record<string, { color: string; icon: ReactNode }> = {
+  Online: { color: "success", icon: <CheckCircleFilled /> },
+  SuspectedOffline: { color: "warning", icon: <ExclamationCircleFilled /> },
+  Offline: { color: "default", icon: <DisconnectOutlined /> },
+};
+
+export function OnlineTag({ state }: { state: string }) {
+  const look = online[state] ?? { color: "default", icon: null };
+  return (
+    <Tag color={look.color} icon={look.icon} variant={state === "Online" ? "solid" : "filled"}>
+      {onlineLabel(state) ?? "在线状态未知"}
+    </Tag>
+  );
+}
+
+/** The primary adapter's first address and MAC, e.g. "10.0.0.5 · 00-11-22-33-44-55", with the rest on hover. */
+export function NetworkLine({ device }: { device: DeviceSummary }) {
+  const [first, ...rest] = device.network ?? [];
+  if (!first) return null;
+  const line = (
+    <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
+      {[first.addresses[0], first.mac].filter(Boolean).join(" · ")}
+      {(first.addresses.length > 1 || rest.length > 0) && " …"}
+    </Typography.Text>
+  );
+  return first.addresses.length > 1 || rest.length > 0 ? (
+    <Tooltip title={<NetworkList adapters={device.network ?? []} />}>{line}</Tooltip>
+  ) : (
+    line
+  );
+}
+
+export function NetworkList({ adapters }: { adapters: DeviceSummary["network"] & object }) {
+  return (
+    <Space orientation="vertical" size={0}>
+      {adapters.map((a) => (
+        <span key={a.mac} className="mono">
+          {a.name}：{a.addresses.join("、") || "无地址"}（{a.mac}）
+        </span>
+      ))}
+    </Space>
+  );
+}
+
+/** Lower-case text of a device's addresses and MACs, with the MACs also written with colons, for search. */
+export const networkText = (d: DeviceSummary) =>
+  (d.network ?? [])
+    .flatMap((a) => [...a.addresses, a.mac, a.mac.replaceAll("-", ":")])
+    .concat(d.sourceAddress ?? "")
+    .join(" ")
+    .toLowerCase();
 
 export function ErrorNotice({
   error,
@@ -79,10 +136,8 @@ export function DeviceState({ device }: { device: DeviceSummary }) {
   return (
     <Space orientation="vertical" size={2}>
       <Space size={4} wrap>
+        <OnlineTag state={device.onlineState} />
         <VerdictTag verdict={offline ? "UNKNOWN" : device.currentVerdict} />
-        <Tag color={offline ? "warning" : "default"}>
-          {onlineLabel(device.onlineState) ?? "在线状态未知"}
-        </Tag>
         {device.simulated && <Tag color="purple">模拟终端</Tag>}
       </Space>
       {offline && device.lastVerdict && (

@@ -26,6 +26,18 @@ export interface DeviceSummary {
   agentVersion?: string;
   /** The client is older than this server's release. */
   agentOutdated?: boolean;
+  /** Physical adapters, primary first; null for clients before 0.2.22. */
+  network?: NetworkAdapter[] | null;
+  /** Address the server last received a heartbeat from; behind NAT, the router's. */
+  sourceAddress?: string;
+}
+export interface NetworkAdapter {
+  name: string;
+  /** AA-BB-CC-DD-EE-FF */
+  mac: string;
+  addresses: string[];
+  /** Has the default gateway. */
+  primary: boolean;
 }
 export interface Evidence {
   productId: string;

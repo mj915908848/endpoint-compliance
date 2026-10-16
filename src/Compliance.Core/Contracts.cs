@@ -293,8 +293,13 @@ public record HeartbeatRequest(
     string AgentVersion,
     DateTimeOffset SourceTime,
     long PolicyVersion,
-    ControlState[] Controls
+    ControlState[] Controls,
+    NetworkAdapter[]? Network = null
 );
+
+/// <summary>A device's physical network adapter: its hardware address as AA-BB-CC-DD-EE-FF and its IP addresses.</summary>
+/// <param name="Primary">The adapter has a default gateway, so it is the one the device reaches the network by.</param>
+public record NetworkAdapter(string Name, string Mac, string[] Addresses, bool Primary = false);
 
 public record EventBatch(AgentEvent[] Events);
 
@@ -322,7 +327,9 @@ public record DeviceSummary(
     string Note = "",
     string PolicyName = "",
     string AgentVersion = "",
-    bool AgentOutdated = false
+    bool AgentOutdated = false,
+    NetworkAdapter[]? Network = null,
+    string SourceAddress = ""
 );
 
 public record AlertSummary(

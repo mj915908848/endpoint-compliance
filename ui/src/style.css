@@ -94,6 +94,11 @@ body {
   border-radius: 8px;
   padding: 4px 20px 20px;
 }
+/* Offline rows recede so the ones online stand out. */
+.device-away td {
+  opacity: 0.7;
+}
+
 .device-facts {
   display: flex;
   flex-wrap: wrap;

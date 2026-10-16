@@ -92,6 +92,47 @@ describe("deleting a device", () => {
   });
 });
 
+describe("device list", () => {
+  it("shows each device's IP and MAC, finds it by either, and counts the online ones", async () => {
+    const online: DeviceSummary = {
+      ...device,
+      id: "dev-2",
+      hostName: "NEW-PC",
+      onlineState: "Online",
+      currentVerdict: "PASS",
+      network: [
+        {
+          name: "以太网",
+          mac: "00-11-22-33-44-55",
+          addresses: ["10.0.0.5", "fd00::5"],
+          primary: true,
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url === "/api/me"
+              ? { username: "admin", roles: ["Reader"], csrfToken: "t" }
+              : url === "/api/devices"
+                ? [device, online]
+                : [],
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    renderAt("/devices");
+    expect(await screen.findByText(/10\.0\.0\.5 · 00-11-22-33-44-55/)).toBeTruthy();
+    expect(screen.getByText("在线").closest(".ant-tag")).toBeTruthy();
+    expect(screen.getByText(/共\s*2\s*台/)).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("搜索设备"), "00:11:22");
+    await waitFor(() => expect(screen.queryByText("OLD-PC")).toBeNull());
+    expect(screen.getByText("NEW-PC")).toBeTruthy();
+  });
+});
+
 describe("device detail", () => {
   it("states the verdict once and lists only the problems and their evidence", async () => {
     const failing: DeviceSummary = {

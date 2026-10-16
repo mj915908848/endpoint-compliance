@@ -223,6 +223,62 @@ public class ApiTests
         Assert.Equal("", (await Beat("0.1.0")).AgentVersion);
     }
 
+    [Fact]
+    public async Task Heartbeat_records_the_network_adapters_and_where_it_came_from()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        async Task<DeviceSummary> Beat(NetworkAdapter[]? network)
+        {
+            var r = await f.Agent(
+                "POST",
+                "/api/agent/heartbeat",
+                new HeartbeatRequest("host", "1", f.Clock.Now, 1, [], network)
+            );
+            Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+            return Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
+        }
+
+        var d = await Beat([
+            new("WLAN", "a0:b1:c2:d3:e4:f5", ["192.168.31.20", "not an address"]),
+            new("以太网", "001122334455", ["10.0.0.5", "fd00::5"], Primary: true),
+            new("bad", "00-00-00-00-00-00", ["10.9.9.9"]),
+            new("dup", "00-11-22-33-44-55", ["10.0.0.6"]),
+        ]);
+        Assert.Equal(2, d.Network!.Length);
+        Assert.Equal(
+            ("以太网", "00-11-22-33-44-55", true),
+            (d.Network[0].Name, d.Network[0].Mac, d.Network[0].Primary)
+        );
+        Assert.Equal(["10.0.0.5", "fd00::5"], d.Network[0].Addresses);
+        Assert.Equal("A0-B1-C2-D3-E4-F5", d.Network[1].Mac);
+        Assert.Equal(["192.168.31.20"], d.Network[1].Addresses);
+
+        var csv = await (await f.Client.GetAsync("/api/devices/export.csv")).Content.ReadAsStringAsync();
+        Assert.Contains("\"10.0.0.5；fd00::5；192.168.31.20\",\"00-11-22-33-44-55；A0-B1-C2-D3-E4-F5\"", csv);
+
+        // Clients before 0.2.22 do not report their adapters.
+        Assert.Null((await Beat(null)).Network);
+        Assert.Equal(
+            HttpStatusCode.BadRequest,
+            (
+                await f.Agent(
+                    "POST",
+                    "/api/agent/heartbeat",
+                    new HeartbeatRequest(
+                        "host",
+                        "1",
+                        f.Clock.Now,
+                        1,
+                        [],
+                        [.. Enumerable.Range(0, 65).Select(i => new NetworkAdapter("x", "001122334455", []))]
+                    )
+                )
+            ).StatusCode
+        );
+    }
+
     [Theory]
     [InlineData("0.2.7", "0.2.8", true)]
     [InlineData("", "0.2.8", true)]

@@ -155,6 +155,8 @@ static partial class Endpoints
         Line([
             "计算机名",
             "备注",
+            "IP 地址",
+            "MAC 地址",
             "在线状态",
             "当前结论",
             "违规对象数",
@@ -168,12 +170,15 @@ static partial class Endpoints
             "最近心跳",
             "最近检查",
             "数据来源",
+            "上报来源 IP",
             "设备 ID",
         ]);
         foreach (var (d, reasons) in rows.OrderBy(r => r.Device.HostName, StringComparer.CurrentCultureIgnoreCase))
             Line([
                 d.HostName,
                 d.Note,
+                string.Join("；", (d.Network ?? []).SelectMany(a => a.Addresses)),
+                string.Join("；", (d.Network ?? []).Select(a => a.Mac)),
                 Labels.Online(d.OnlineState),
                 Labels.Verdict(d.CurrentVerdict),
                 d.ViolationCount.ToString(),
@@ -189,6 +194,7 @@ static partial class Endpoints
                 d.LastScan == null ? ""
                 : d.Simulated ? "模拟数据"
                 : "实机采集",
+                d.SourceAddress,
                 d.Id,
             ]);
         return b.ToString();

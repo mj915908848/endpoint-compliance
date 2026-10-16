@@ -1,5 +1,5 @@
 import { Button, Space, Table, Typography, type TableColumnsType } from "antd";
-import { AgentVersion, DeviceState, Empty, time } from "./common";
+import { AgentVersion, DeviceState, Empty, NetworkLine, time } from "./common";
 import type { DeviceSummary } from "../types";
 
 export function DeviceTable({
@@ -22,15 +22,19 @@ export function DeviceTable({
         <Space orientation="vertical" size={0}>
           <Typography.Text strong>{d.hostName}</Typography.Text>
           {d.note && <Typography.Text>{d.note}</Typography.Text>}
-          {!compact && (
-            <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
-              {d.id}
-            </Typography.Text>
+          {d.network?.length ? (
+            <NetworkLine device={d} />
+          ) : (
+            !compact && (
+              <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
+                {d.id}
+              </Typography.Text>
+            )
           )}
         </Space>
       ),
     },
-    { title: "检查结论 / 在线状态", key: "state", render: (_, d) => <DeviceState device={d} /> },
+    { title: "在线状态 / 检查结论", key: "state", render: (_, d) => <DeviceState device={d} /> },
     {
       title: "策略与防护",
       key: "policy",
@@ -95,6 +99,7 @@ export function DeviceTable({
           <Empty title="暂无终端">使用一次性登记码登记终端，终端首次上报后将显示在此处。</Empty>
         ),
       }}
+      rowClassName={(d) => (d.onlineState === "Online" ? "" : "device-away")}
       onRow={(d) => ({ onClick: () => onSelect(d.id), style: { cursor: "pointer" } })}
       columns={columns.filter((c) => !hidden.includes(String(c.key)))}
     />

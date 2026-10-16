@@ -290,7 +290,9 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             d.Note,
             v.Policy.PolicyId,
             d.AgentVersion,
-            ReleaseVersion.Older(d.AgentVersion, Version)
+            ReleaseVersion.Older(d.AgentVersion, Version),
+            d.Network,
+            d.SourceAddress
         );
     }
 

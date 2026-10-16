@@ -52,7 +52,9 @@ public sealed record DeviceRecord(
     long SnapshotSequence = 0,
     long TargetPolicyVersion = 1,
     string Note = "",
-    string AgentVersion = ""
+    string AgentVersion = "",
+    NetworkAdapter[]? Network = null,
+    string SourceAddress = ""
 );
 
 public sealed record SnapshotIncident(string Id, string DeviceId, string Scope, string[] Modules);

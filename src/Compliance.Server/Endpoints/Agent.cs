@@ -92,6 +92,8 @@ static partial class Endpoints
                     || r.AgentVersion.Length > 64
                     || r.SourceTime > s.Now.AddMinutes(5)
                     || r.SourceTime < s.Now.AddMinutes(-5)
+                    || r.Network?.Length > 64
+                    || r.Network?.Any(a => a?.Addresses?.Length > 64) == true
                 )
                     throw new ApiError(400, "Invalid heartbeat");
                 return await s.Tx(async tx =>
@@ -111,7 +113,13 @@ static partial class Endpoints
                         // Clients before 0.2.8 sent a fixed "0.1.0" that was never a release.
                         r.AgentVersion == "0.1.0"
                             ? ""
-                            : EvidenceSanitizer.Clean(r.AgentVersion)
+                            : EvidenceSanitizer.Clean(r.AgentVersion),
+                        // Clients before 0.2.22 do not report their adapters.
+                        r.Network
+                            is null
+                            ? null
+                            : NetworkAdapters.Normalize(r.Network),
+                        c.Connection.RemoteIpAddress is { } remote ? NetworkAdapters.Address(remote) : ""
                     );
                     // OfflineMonitor resolves the offline alert within 15 seconds; doing it here would make every
                     // heartbeat wait for the one global offline lock.

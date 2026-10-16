@@ -1,9 +1,17 @@
 import { useState } from "react";
-import { App, Button, Input, Select, Space } from "antd";
+import { App, Button, Input, Select, Space, Typography } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { downloadFile } from "../api";
 import { useResource, useRefresh } from "../useResource";
-import { DeviceTable, errorText, Fresh, PageHeading, Panel, UpdatedAt } from "../components";
+import {
+  DeviceTable,
+  errorText,
+  Fresh,
+  networkText,
+  PageHeading,
+  Panel,
+  UpdatedAt,
+} from "../components";
 import type { DeviceSummary } from "../types";
 
 export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
@@ -13,13 +21,19 @@ export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
     [filter, setFilter] = useState("all"),
     [exporting, setExporting] = useState(false);
   const data = useResource<DeviceSummary[]>("/api/devices");
-  const visible = (data.data ?? []).filter(
+  const all = data.data ?? [];
+  const onlineCount = all.filter((d) => d.onlineState === "Online").length;
+  const visible = all.filter(
     (d) =>
       (filter === "all" ||
         (filter === "offline"
           ? d.onlineState !== "Online"
-          : d.onlineState === "Online" && d.currentVerdict === filter)) &&
-      `${d.hostName} ${d.note ?? ""} ${d.id}`.toLowerCase().includes(query.toLowerCase()),
+          : filter === "online"
+            ? d.onlineState === "Online"
+            : d.onlineState === "Online" && d.currentVerdict === filter)) &&
+      `${d.hostName} ${d.note ?? ""} ${d.id} ${networkText(d)}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
   );
   async function exportList() {
     setExporting(true);
@@ -49,16 +63,29 @@ export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
         }
       />
       <Panel
-        title={`设备清单（${visible.length}）`}
+        title={
+          <Space size={8} wrap>
+            <span>设备清单（{visible.length}）</span>
+            {all.length > 0 && (
+              <Typography.Text type="secondary" style={{ fontSize: 13, fontWeight: "normal" }}>
+                在线{" "}
+                <Typography.Text type="success" strong>
+                  {onlineCount}
+                </Typography.Text>{" "}
+                / 共 {all.length} 台
+              </Typography.Text>
+            )}
+          </Space>
+        }
         actions={
           <Space wrap>
             <Input.Search
               aria-label="搜索设备"
-              placeholder="主机名、备注或设备 ID"
+              placeholder="主机名、IP、MAC 或备注"
               allowClear
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              style={{ width: 240 }}
+              style={{ width: 260 }}
             />
             <Select
               aria-label="筛选状态"
@@ -67,6 +94,7 @@ export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
               style={{ width: 150 }}
               options={[
                 { value: "all", label: "全部状态" },
+                { value: "online", label: "在线" },
                 { value: "PASS", label: "通过" },
                 { value: "FAIL", label: "不通过" },
                 { value: "UNKNOWN", label: "无法判断" },

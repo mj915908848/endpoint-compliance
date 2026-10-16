@@ -154,16 +154,16 @@ public sealed class Transaction
 
     // ---- devices -------------------------------------------------------------------------
 
-    // Inserts leave out note and agent_version (added by migrations 3 and 6), so the legacy import in migration 2
+    // Inserts leave out note, agent_version, network and source_address (added by migrations 3, 6 and 8), so the legacy import in migration 2
     // can still insert.
     const string DeviceColumns =
         "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, controls, snapshot, snapshot_sequence, target_policy_version";
-    const string DeviceSelect = DeviceColumns + ", note, agent_version";
+    const string DeviceSelect = DeviceColumns + ", note, agent_version, network, source_address";
 
     // The same columns with controls and snapshot left out: most requests need neither, and parsing the snapshot of
     // every device is the bulk of reading one.
     const string DeviceHeadSelect =
-        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version";
+        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version, network, source_address";
 
     static DeviceRecord ReadDevice(DbDataReader r) =>
         new(
@@ -177,7 +177,9 @@ public sealed class Transaction
             Long(r, 7),
             Long(r, 8),
             r.GetString(9),
-            r.GetString(10)
+            r.GetString(10),
+            r.GetString(11) is { Length: > 0 } network ? Wire.Read<NetworkAdapter[]>(network) : null,
+            r.GetString(12)
         );
 
     public Task<DeviceRecord?> GetDevice(string id) =>
@@ -232,12 +234,16 @@ public sealed class Transaction
         DateTimeOffset at,
         long appliedPolicyVersion,
         ControlState[] controls,
-        string agentVersion
+        string agentVersion,
+        NetworkAdapter[]? network,
+        string sourceAddress
     ) =>
         Execute(
-            "UPDATE devices SET host_name = @host, last_heartbeat = @at, applied_policy_version = @applied, controls = @controls, agent_version = @version WHERE id = @id",
+            "UPDATE devices SET host_name = @host, last_heartbeat = @at, applied_policy_version = @applied, controls = @controls, agent_version = @version, network = @network, source_address = @source WHERE id = @id",
             ("host", hostName),
             ("version", agentVersion),
+            ("network", network is null ? "" : Wire.Serialize(network)),
+            ("source", sourceAddress),
             ("at", at),
             ("applied", appliedPolicyVersion),
             ("controls", Wire.Serialize(controls)),

@@ -557,7 +557,9 @@ public sealed class AgentRuntime(
                 ReleaseVersion.Of(typeof(AgentRuntime).Assembly),
                 DateTimeOffset.UtcNow,
                 signedPolicy is null ? 0 : policy?.Serial ?? 0,
-                latest?.Controls ?? []
+                latest?.Controls ?? [],
+                // A fixture stands in for another machine; this one's adapters would be wrong for it.
+                simulated ? null : NetworkInventory.Read()
             );
             var reply = await api.SendAsync<JsonElement>(HttpMethod.Post, "/api/agent/heartbeat", heartbeat, ct);
             // Servers before 0.2.9 do not say so and take uncompressed bodies only.

@@ -24,6 +24,7 @@ public static class Migrations
             tx => tx.Execute("ALTER TABLE devices ADD COLUMN agent_version TEXT NOT NULL DEFAULT ''")
         ),
         new(7, "settings and alert notifications", SettingsAndNotifications),
+        new(8, "device network addresses", DeviceNetwork),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -143,6 +144,12 @@ public static class Migrations
     /// Settings changed in the management UI, and which alerts were pushed. Alerts that exist already count as
     /// notified, so turning notifications on does not send the whole backlog.
     /// </summary>
+    static async Task DeviceNetwork(Transaction tx)
+    {
+        await tx.Execute("ALTER TABLE devices ADD COLUMN network TEXT NOT NULL DEFAULT ''");
+        await tx.Execute("ALTER TABLE devices ADD COLUMN source_address TEXT NOT NULL DEFAULT ''");
+    }
+
     static async Task SettingsAndNotifications(Transaction tx)
     {
         await tx.Execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)");

@@ -18,7 +18,8 @@ import {
   Empty,
   errorText,
   Fresh,
-  onlineLabel,
+  NetworkList,
+  OnlineTag,
   PageHeading,
   ReportFindings,
   time,
@@ -162,7 +163,23 @@ export function DeviceDetailPage({
           <Space orientation="vertical" size={16} style={{ width: "100%" }}>
             <DeviceGuide device={d}>
               <div className="device-facts">
-                <Fact label="在线状态">{onlineLabel(d.onlineState) ?? "未知"}</Fact>
+                <Fact label="在线状态">
+                  <OnlineTag state={d.onlineState} />
+                </Fact>
+                <Fact label="IP / MAC">
+                  {d.network?.length ? (
+                    <NetworkList adapters={d.network} />
+                  ) : d.network ? (
+                    "未发现已连接的物理网卡"
+                  ) : (
+                    "客户端 0.2.22 起上报"
+                  )}
+                </Fact>
+                {d.sourceAddress && (
+                  <Fact label="上报来源 IP">
+                    <span className="mono">{d.sourceAddress}</span>
+                  </Fact>
+                )}
                 <Fact label="最近检查">{time(d.lastScan)}</Fact>
                 <Fact label="最近心跳">{time(d.lastHeartbeat)}</Fact>
                 <Fact label="客户端版本">
