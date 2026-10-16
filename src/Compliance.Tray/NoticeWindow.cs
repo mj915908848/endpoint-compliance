@@ -182,6 +182,8 @@ public sealed class NoticeWindow : Form
         var hold = list.IsHandleCreated;
         if (hold)
             SendMessage(list.Handle, WM_SETREDRAW, 0, 0);
+        // Back at the top before the old items go, so the new ones are placed against a list that is not scrolled.
+        list.AutoScrollPosition = Point.Empty;
         list.SuspendLayout();
         var old = list.Controls.Cast<Control>().ToArray();
         list.Controls.Clear();
@@ -195,11 +197,19 @@ public sealed class NoticeWindow : Form
         if (hold)
         {
             SendMessage(list.Handle, WM_SETREDRAW, 1, 0);
-            list.Invalidate(true);
+            // The frame too: the scroll bar may have appeared or changed while drawing was held.
+            RedrawWindow(list.Handle, 0, 0, RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
         }
     }
 
     private const int WM_SETREDRAW = 0x000B;
+    private const int RDW_INVALIDATE = 0x0001;
+    private const int RDW_ERASE = 0x0004;
+    private const int RDW_ALLCHILDREN = 0x0080;
+    private const int RDW_FRAME = 0x0400;
+
+    [DllImport("user32.dll")]
+    private static extern bool RedrawWindow(nint window, nint update, nint region, int flags);
 
     [DllImport("user32.dll", EntryPoint = "SendMessageW")]
     private static extern nint SendMessage(nint window, int message, nint wParam, nint lParam);
@@ -237,7 +247,8 @@ public sealed class NoticeWindow : Form
         var full = list.Width - S(32);
         var width = Stack(full, false) > list.Height ? full - SystemInformation.VerticalScrollBarWidth : full;
         list.SuspendLayout();
-        Stack(Math.Max(width, S(100)), true);
+        // The scroll range comes from the measured height, not only from where the items happen to sit.
+        list.AutoScrollMinSize = new Size(0, Stack(Math.Max(width, S(100)), true));
         list.ResumeLayout();
     }
 

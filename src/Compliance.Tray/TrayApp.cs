@@ -84,7 +84,36 @@ public sealed class TrayApp : ApplicationContext
         _ = RefreshAsync();
     }
 
+    private bool refreshing;
+    private bool again;
+
+    /// <summary>
+    /// Refreshes run one at a time: clicks, the timer and acknowledgements can ask while one is waiting on the
+    /// service, and those asks become a single further refresh rather than overlapping updates of the window.
+    /// </summary>
     private async Task RefreshAsync()
+    {
+        if (refreshing)
+        {
+            again = true;
+            return;
+        }
+        refreshing = true;
+        try
+        {
+            do
+            {
+                again = false;
+                await RefreshOnceAsync();
+            } while (again);
+        }
+        finally
+        {
+            refreshing = false;
+        }
+    }
+
+    private async Task RefreshOnceAsync()
     {
         Notice[] notices;
         try
