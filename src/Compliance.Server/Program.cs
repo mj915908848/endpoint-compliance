@@ -135,7 +135,8 @@ public partial class Program
         app.Use(
             async (c, next) =>
             {
-                var path = c.Request.Path.Value ?? "";
+                // Routes match regardless of case, so these checks must too: "/API/devices" reaches the same endpoint.
+                var path = (c.Request.Path.Value ?? "").ToLowerInvariant();
                 if (path.StartsWith("/api/agent/", StringComparison.Ordinal) && path != "/api/agent/enroll")
                     await Authentication.Agent(c, service);
                 else if (

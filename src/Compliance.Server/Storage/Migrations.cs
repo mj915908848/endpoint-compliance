@@ -25,6 +25,7 @@ public static class Migrations
         ),
         new(7, "settings and alert notifications", SettingsAndNotifications),
         new(8, "device network addresses", DeviceNetwork),
+        new(9, "session idle timeout", SessionActivity),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -150,6 +151,13 @@ public static class Migrations
         await tx.Execute("ALTER TABLE devices ADD COLUMN source_address TEXT NOT NULL DEFAULT ''");
     }
 
+    /// <summary>Sessions open during the upgrade count as used now, so nobody is signed out by it.</summary>
+    static async Task SessionActivity(Transaction tx)
+    {
+        await tx.Execute("ALTER TABLE sessions ADD COLUMN last_active BIGINT NOT NULL DEFAULT 0");
+        await tx.Execute("UPDATE sessions SET last_active = @now", ("now", DateTimeOffset.UtcNow));
+    }
+
     static async Task SettingsAndNotifications(Transaction tx)
     {
         await tx.Execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)");
@@ -189,7 +197,8 @@ public static class Migrations
                     await tx.InsertUser(Wire.Read<UserRecord>(json));
                     break;
                 case "session":
-                    await tx.InsertSession(id, Wire.Read<SessionRecord>(json));
+                    // Runs before the session table has last_active, so it inserts the columns of that time.
+                    await tx.InsertLegacySession(id, Wire.Read<SessionRecord>(json));
                     break;
                 case "code":
                     await tx.InsertLegacyCode(id, Wire.Read<CodeRecord>(json));

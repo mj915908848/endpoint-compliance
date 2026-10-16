@@ -14,11 +14,25 @@ static class Authentication
         if (string.IsNullOrWhiteSpace(token))
             throw new ApiError(401, "Login required");
 
+        var hash = Secrets.Hash(token);
         var user = await s.Tx(async tx =>
         {
-            var session = await tx.GetSession(Secrets.Hash(token));
+            var session = await tx.GetSession(hash);
             if (session == null || session.ExpiresAt <= s.Now)
                 throw new ApiError(401, "Session expired");
+            if (s.SessionIdle is { } idle && s.Now - session.LastActive >= idle)
+                throw new ApiError(401, "Session idle");
+            // The page polls on its own, so a request alone does not count as use: it says how long ago the
+            // administrator last typed or clicked. Requests that do not say (downloads, scripts) count as use.
+            var active = s.Now;
+            if (
+                long.TryParse(c.Request.Headers["X-Idle-Seconds"].ToString(), out var seconds)
+                && seconds is >= 0 and < 366L * 24 * 3600
+            )
+                active -= TimeSpan.FromSeconds(seconds);
+            // Written at most once a minute, so polling does not rewrite the row on every request.
+            if (active - session.LastActive >= TimeSpan.FromMinutes(1))
+                await tx.TouchSession(hash, active);
             if (
                 !HttpMethods.IsGet(c.Request.Method)
                 && !CryptographicOperations.FixedTimeEquals(

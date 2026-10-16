@@ -117,10 +117,16 @@ static partial class Endpoints
     {
         var u = Require(c, "Publisher");
         var doc = await Body<PolicyDocument>(c);
+        // The release the editor started from. Without it a release published meanwhile would be replaced unseen.
+        long? baseVersion = c.Request.Query.TryGetValue("baseVersion", out var raw)
+            ? long.TryParse(raw.ToString(), out var v)
+                ? v
+                : throw new ApiError(400, "Invalid baseVersion")
+            : null;
         return await s.Tx(async tx =>
         {
             await tx.Lock(ComplianceService.PolicyLock);
-            var (published, signed) = await s.Publish(tx, key, doc);
+            var (published, signed) = await s.Publish(tx, key, doc, baseVersion);
             var document = Wire.Read<PolicyDocument>(signed.Payload);
             await tx.Audit(
                 u.Username,

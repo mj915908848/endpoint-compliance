@@ -3,6 +3,8 @@ export interface Session {
   username: string;
   roles: string[];
   csrfToken: string;
+  /** Minutes without use before the session ends; 0 if it does not. */
+  idleMinutes?: number;
 }
 export interface DeviceSummary {
   id: string;

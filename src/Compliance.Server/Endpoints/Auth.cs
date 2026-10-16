@@ -52,7 +52,7 @@ static partial class Endpoints
                         if (user == null || !Secrets.Check(login.Password, user.PasswordHash))
                             throw new ApiError(401, "Invalid credentials");
                         var token = Secrets.Token();
-                        var session = new SessionRecord(user.Username, Secrets.Token(), s.Now.AddHours(8));
+                        var session = new SessionRecord(user.Username, Secrets.Token(), s.Now.AddHours(8), s.Now);
                         await tx.InsertSession(Secrets.Hash(token), session);
                         await tx.Audit(user.Username, "Login", user.Username, s.Now);
                         return (user, token, session);
@@ -75,6 +75,7 @@ static partial class Endpoints
                             username = result.user.Username,
                             roles = result.user.Roles,
                             csrfToken = result.session.CsrfToken,
+                            idleMinutes = s.SessionIdle?.TotalMinutes ?? 0,
                         }
                     );
                 }
@@ -92,6 +93,7 @@ static partial class Endpoints
                     username = u.Username,
                     roles = u.Roles,
                     csrfToken = session.CsrfToken,
+                    idleMinutes = s.SessionIdle?.TotalMinutes ?? 0,
                 };
             }
         );

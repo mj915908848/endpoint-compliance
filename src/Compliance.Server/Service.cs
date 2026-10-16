@@ -12,6 +12,10 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     public string KeyId => Secrets.Hash(PublicKey)[..16];
     public DateTimeOffset Now => clock.GetUtcNow();
 
+    /// <summary>How long a management session may go without the administrator using the page; null if unlimited.</summary>
+    public TimeSpan? SessionIdle =>
+        settings.SessionIdleMinutes > 0 ? TimeSpan.FromMinutes(settings.SessionIdleMinutes) : null;
+
     /// <summary>This server's release version; clients of the same release report the same one.</summary>
     public static readonly string Version = ReleaseVersion.Of(typeof(ComplianceService).Assembly);
 
@@ -755,12 +759,14 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
 
     /// <summary>
     /// Publishes a new release of the policy <paramref name="key"/>, or creates a policy when the key is null.
-    /// The server owns the version and validity; the default policy always covers every other device.
+    /// The server owns the version and validity; the default policy always covers every other device. With
+    /// <paramref name="baseVersion"/>, publishing fails with 409 when the policy has had another release since.
     /// </summary>
     public async Task<(string Key, SignedPolicy Release)> Publish(
         Transaction tx,
         string? key,
-        PolicyDocument? submitted
+        PolicyDocument? submitted,
+        long? baseVersion = null
     )
     {
         if (submitted == null)
@@ -770,6 +776,11 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             key == null
                 ? null
                 : policies.FirstOrDefault(p => p.Key == key) ?? throw new ApiError(404, "策略不存在或已删除");
+        if (existing != null && baseVersion is { } based && based != existing.Document.Version)
+            throw new ApiError(
+                409,
+                $"“{existing.Document.PolicyId}”已被他人更新为 v{existing.Document.Version}，请载入最新版本后再修改"
+            );
         var isDefault = existing?.IsDefault ?? false;
         var doc = submitted with
         {

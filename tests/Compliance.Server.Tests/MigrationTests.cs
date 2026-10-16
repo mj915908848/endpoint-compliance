@@ -114,6 +114,16 @@ public class MigrationTests
                         ["Reader", "Operator", "Publisher", "Reviewer"]
                     )
                 );
+                await Put(
+                    "session",
+                    Secrets.Hash("legacy-token"),
+                    new
+                    {
+                        Username = "admin",
+                        CsrfToken = "c",
+                        ExpiresAt = clock.Now.AddHours(1),
+                    }
+                );
                 await Put("policy", "current", release);
                 await Put("release", "1", release);
                 await Put(

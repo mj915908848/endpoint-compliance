@@ -331,8 +331,11 @@ export function AlertCard({
 
 export function Login({
   onLogin,
+  notice,
 }: {
   onLogin: (username: string, password: string) => Promise<unknown>;
+  /** Why the administrator was signed out, shown above the form. */
+  notice?: string | null;
 }) {
   const [form] = Form.useForm<{ username: string; password: string }>();
   const [busy, setBusy] = useState(false),
@@ -359,6 +362,9 @@ export function Login({
           </Typography.Title>
           <Typography.Text type="secondary">请使用管理员分配的账号登录。</Typography.Text>
         </Space>
+        {notice && !error && (
+          <Notice type="info" showIcon title={notice} style={{ marginBottom: 16 }} />
+        )}
         <Form form={form} layout="vertical" requiredMark={false} onFinish={submit}>
           <Form.Item
             label="管理员账号"
