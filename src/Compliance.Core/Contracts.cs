@@ -271,6 +271,13 @@ public record ComplianceReport(
 
     /// <summary>That policy's own <see cref="PolicyDocument.Version"/>.</summary>
     public long PolicyVersion { get; init; }
+
+    /// <summary>
+    /// The first moment the same policy and snapshot could give a different report as time passes (data going stale,
+    /// the policy expiring); null when nothing in it depends on time. Not part of the report itself.
+    /// </summary>
+    [JsonIgnore]
+    public DateTimeOffset? ValidUntil { get; init; }
 }
 
 public record AgentEvent(

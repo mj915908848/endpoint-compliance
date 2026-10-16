@@ -175,12 +175,12 @@ public sealed class Transaction
     // can still insert.
     const string DeviceColumns =
         "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, controls, snapshot, snapshot_sequence, target_policy_version";
-    const string DeviceSelect = DeviceColumns + ", note, agent_version, network, source_address";
+    const string DeviceSelect = DeviceColumns + ", note, agent_version, network, source_address, verdict_detail";
 
     // The same columns with controls and snapshot left out: most requests need neither, and parsing the snapshot of
     // every device is the bulk of reading one.
     const string DeviceHeadSelect =
-        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version, network, source_address";
+        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version, network, source_address, verdict_detail";
 
     static DeviceRecord ReadDevice(DbDataReader r) =>
         new(
@@ -196,7 +196,8 @@ public sealed class Transaction
             r.GetString(9),
             r.GetString(10),
             r.GetString(11) is { Length: > 0 } network ? Wire.Read<NetworkAdapter[]>(network) : null,
-            r.GetString(12)
+            r.GetString(12),
+            r.IsDBNull(13) ? null : Wire.Read<StoredVerdict>(r.GetString(13))
         );
 
     public Task<DeviceRecord?> GetDevice(string id) =>
@@ -276,6 +277,42 @@ public sealed class Transaction
             ("snapshot", Wire.Serialize(snapshot)),
             ("sequence", sequence),
             ("id", id)
+        );
+
+    /// <summary>
+    /// Stores <paramref name="v"/> unless the device's snapshot or policy changed since it was computed; whoever
+    /// changed them stores or refreshes their own.
+    /// </summary>
+    public Task<int> SaveVerdict(string id, StoredVerdict v) =>
+        Execute(
+            """
+            UPDATE devices SET verdict = @verdict, violation_count = @count, verdict_valid_until = @until,
+                verdict_sequence = @sequence, verdict_policy = @policy, verdict_detail = @detail
+            WHERE id = @id AND snapshot_sequence = @sequence AND target_policy_version = @policy
+            """,
+            ("verdict", v.Current?.ToString()),
+            ("count", (long)v.ViolationCount),
+            ("until", v.ValidUntil),
+            ("sequence", v.SnapshotSequence),
+            ("policy", v.TargetPolicyVersion),
+            ("detail", Wire.Serialize(v)),
+            ("id", id)
+        );
+
+    /// <summary>
+    /// Up to <paramref name="limit"/> devices whose stored verdict no longer holds: never computed, computed for another
+    /// snapshot or policy, or past its validity.
+    /// </summary>
+    public Task<List<string>> DevicesWithStaleVerdicts(DateTimeOffset now, int limit) =>
+        Query(
+            $"""
+            SELECT id FROM devices
+            WHERE verdict_sequence <> snapshot_sequence OR verdict_policy <> target_policy_version
+                OR verdict_valid_until <= @now
+            ORDER BY id LIMIT {limit}
+            """,
+            r => r.GetString(0),
+            ("now", now)
         );
 
     public Task SetTargetPolicy(string id, long version) =>

@@ -26,6 +26,7 @@ public static class Migrations
         new(7, "settings and alert notifications", SettingsAndNotifications),
         new(8, "device network addresses", DeviceNetwork),
         new(9, "session idle timeout", SessionActivity),
+        new(10, "stored verdicts", StoredVerdicts),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -156,6 +157,27 @@ public static class Migrations
     {
         await tx.Execute("ALTER TABLE sessions ADD COLUMN last_active BIGINT NOT NULL DEFAULT 0");
         await tx.Execute("UPDATE sessions SET last_active = @now", ("now", DateTimeOffset.UtcNow));
+    }
+
+    /// <summary>
+    /// Each device's verdicts as last evaluated (see <see cref="StoredVerdict"/>). Sequence and policy start at -1, so
+    /// every existing device counts as not yet evaluated and is filled in by the background refresh.
+    /// </summary>
+    static async Task StoredVerdicts(Transaction tx)
+    {
+        foreach (
+            var column in new[]
+            {
+                "verdict TEXT NULL",
+                "violation_count BIGINT NOT NULL DEFAULT 0",
+                "verdict_valid_until BIGINT NULL",
+                "verdict_sequence BIGINT NOT NULL DEFAULT -1",
+                "verdict_policy BIGINT NOT NULL DEFAULT -1",
+                "verdict_detail TEXT NULL",
+            }
+        )
+            await tx.Execute("ALTER TABLE devices ADD COLUMN " + column);
+        await tx.Execute("CREATE INDEX IF NOT EXISTS devices_verdict_valid_until ON devices(verdict_valid_until)");
     }
 
     static async Task SettingsAndNotifications(Transaction tx)

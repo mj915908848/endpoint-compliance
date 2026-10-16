@@ -382,39 +382,83 @@ public class ApiTests
     }
 
     [Fact]
-    public async Task Device_list_shows_a_new_snapshot_at_once_and_expired_results_after_reuse()
+    public async Task Device_list_shows_a_new_snapshot_at_once_and_judges_expired_verdicts_without_storing_them()
     {
         await using var f = new Fixture();
         await f.Login();
+        var service = f.Services.GetRequiredService<ComplianceService>();
         f.Device = (await f.Enroll(await f.Code())).DeviceId;
         async Task<DeviceSummary> Listed() =>
             Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
+        async Task<StoredVerdict?> Stored() => (await service.Tx(tx => tx.GetDevice(f.Device)))!.Verdict;
+        async Task Heartbeat() =>
+            await f.Agent("POST", "/api/agent/heartbeat", new HeartbeatRequest("host", "1", f.Clock.Now, 1, []));
+        await Heartbeat();
         Assert.Null((await Listed()).LastScan);
+        var scanned = f.Clock.Now;
         var snapshot = new ScanSnapshot
         {
             DeviceId = f.Device,
             HostName = "host",
-            CollectedAt = f.Clock.Now,
+            CollectedAt = scanned,
             PolicyVersion = 1,
+            Evidence = [new("cursor", "Cursor", EvidenceKind.Installation, "Cursor", "registry", "Cursor 已安装")],
         };
         await f.Agent(
             "POST",
             "/api/agent/events",
             new EventBatch([new("s1", 1, f.Clock.Now, "Snapshot", "scan", snapshot)])
         );
-        Assert.Equal(snapshot.CollectedAt, (await Listed()).LastScan);
-        var later = snapshot with { CollectedAt = f.Clock.Now.AddSeconds(10) };
-        await f.Agent(
-            "POST",
-            "/api/agent/events",
-            new EventBatch([new("s2", 2, later.CollectedAt, "Snapshot", "scan", later)])
-        );
-        Assert.Equal(later.CollectedAt, (await Listed()).LastScan);
-        // Unchanged inputs: the same verdict, and the reused one matches a fresh evaluation.
-        var reused = await Listed();
-        f.Clock.Now += ComplianceService.VerdictReuse;
-        var fresh = await f.Client.GetFromJsonAsync<JsonElement>($"/api/devices/{f.Device}", Wire.Json);
-        Assert.Equal(reused.ProtectionStatus, fresh.GetProperty("device").GetProperty("protectionStatus").GetString());
+
+        // Receiving the snapshot stored its verdict, which holds until the scan is too old to count.
+        var stored = Assert.IsType<StoredVerdict>(await Stored());
+        Assert.Equal(Verdict.FAIL, stored.Current);
+        Assert.Equal(1, stored.SnapshotSequence);
+        Assert.Equal(scanned.AddMinutes(new PolicyDocument().LightweightFreshMinutes).AddTicks(1), stored.ValidUntil);
+        var listed = await Listed();
+        Assert.Equal(scanned, listed.LastScan);
+        Assert.Equal(Verdict.FAIL, listed.CurrentVerdict);
+        Assert.Equal(1, listed.ViolationCount);
+
+        // Past that, the list judges the device again but stores nothing; the background refresh does.
+        f.Clock.Now = stored.ValidUntil!.Value;
+        await Heartbeat();
+        Assert.Equal(Verdict.UNKNOWN, (await Listed()).CurrentVerdict);
+        var detail = await f.Client.GetFromJsonAsync<JsonElement>($"/api/devices/{f.Device}", Wire.Json);
+        Assert.Equal("UNKNOWN", detail.GetProperty("device").GetProperty("currentVerdict").GetString());
+        Assert.Equal(stored, await Stored());
+        Assert.Equal(1, await service.RefreshVerdicts());
+        Assert.Equal(Verdict.UNKNOWN, (await Stored())!.Current);
+        Assert.Equal(0, await service.RefreshVerdicts());
+        Assert.Equal(Verdict.UNKNOWN, (await Listed()).CurrentVerdict);
+    }
+
+    [Fact]
+    public async Task Publishing_a_policy_leaves_stored_verdicts_to_the_background_refresh()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        // An enrolled device has no stored verdict until the refresh stores one; the list judges it meanwhile.
+        Assert.Null((await service.Tx(tx => tx.GetDevice(f.Device)))!.Verdict);
+        Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
+        Assert.Equal(1, await service.RefreshVerdicts());
+        var before = (await service.Tx(tx => tx.GetDevice(f.Device)))!;
+        await service.Tx(async tx =>
+        {
+            await service.Publish(tx, ComplianceService.DefaultPolicy, new PolicyDocument());
+            return true;
+        });
+        var after = (await service.Tx(tx => tx.GetDevice(f.Device)))!;
+        Assert.NotEqual(before.TargetPolicyVersion, after.TargetPolicyVersion);
+        Assert.False(after.Verdict!.HoldsFor(after, f.Clock.Now));
+        var listed = Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
+        Assert.Equal(after.Verdict, (await service.Tx(tx => tx.GetDevice(f.Device)))!.Verdict);
+        Assert.Equal(1, await service.RefreshVerdicts());
+        var refreshed = (await service.Tx(tx => tx.GetDevice(f.Device)))!;
+        Assert.True(refreshed.Verdict!.HoldsFor(refreshed, f.Clock.Now));
+        Assert.Equal(listed.TargetPolicyVersion, refreshed.Verdict.PolicyVersion);
     }
 
     [Fact]
@@ -523,6 +567,17 @@ public class ApiTests
         var devices = (await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!;
         Assert.Equal("Offline", devices[0].OnlineState);
         Assert.Equal(Verdict.UNKNOWN, devices[0].CurrentVerdict);
+        // Reading pages opens no alert; the background status refresh does.
+        Assert.DoesNotContain(
+            (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!,
+            x => x.Type == "Offline"
+        );
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        await service.Tx(async tx =>
+        {
+            await service.UpdateOffline(tx);
+            return true;
+        });
         Assert.Contains(
             (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!,
             x => x.Type == "Offline" && x.State == "Active"
@@ -1485,6 +1540,9 @@ public sealed class Fixture : WebApplicationFactory<Program>
         {
             s.RemoveAll<TimeProvider>();
             s.AddSingleton<TimeProvider>(Clock);
+            // Tests run the status refresh themselves, at the times they choose.
+            foreach (var monitor in s.Where(d => d.ImplementationType == typeof(StatusMonitor)).ToList())
+                s.Remove(monitor);
             s.AddHttpClient(AlertNotifier.HttpClientName)
                 .ConfigurePrimaryHttpMessageHandler(() => Webhook)
                 .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
