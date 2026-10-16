@@ -1,7 +1,7 @@
-import { type ReactNode, useRef } from "react";
+import { type ReactNode } from "react";
 import { Collapse, List as AntList, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { CheckCircleFilled, CloseCircleFilled, WarningOutlined } from "@ant-design/icons";
-import { Empty, time } from "./common";
+import { Empty, time, usePageScroll } from "./common";
 import {
   controlLabel,
   controlStateLabel,
@@ -40,22 +40,12 @@ function Scope({ scope, users }: { scope: string | null | undefined; users?: Use
   );
 }
 
-/**
- * Pages of 20 rows. Changing page brings the section heading back into view; otherwise the reader is left wherever
- * the old page's pager was, and a page of different height leaves them far from the new rows.
- */
+/** Pages of 20 rows; changing page brings the section heading back into view. */
 function usePages(count: number) {
-  const ref = useRef<HTMLDivElement>(null);
+  const { ref, onPageChange } = usePageScroll();
   const pagination =
     count > 20
-      ? {
-          pageSize: 20,
-          showSizeChanger: false,
-          onChange: () => {
-            const target = ref.current?.closest("section") ?? ref.current;
-            target?.scrollIntoView({ block: "start" });
-          },
-        }
+      ? { pageSize: 20, showSizeChanger: false, onChange: onPageChange }
       : (false as const);
   return { ref, pagination };
 }

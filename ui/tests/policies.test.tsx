@@ -156,6 +156,26 @@ describe("policy editor", () => {
     expect(await screen.findByText("禁用产品（1）")).toBeTruthy();
   });
 
+  it("brings the products panel back into view when its page changes", async () => {
+    const products = Array.from({ length: 15 }, (_, i) => ({
+      ...base.products[0],
+      id: `p${i}`,
+      name: `产品${i}`,
+    }));
+    stub({ ...base, products }, { ...base, products });
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    renderPage();
+    expect(await screen.findByText("产品0")).toBeTruthy();
+    await userEvent.click(screen.getByTitle("2"));
+    expect(await screen.findByText("产品10")).toBeTruthy();
+    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+    expect((scroll.mock.contexts[0] as HTMLElement).classList.contains("panel")).toBe(true);
+    // A narrower list starts on its first page.
+    await userEvent.type(screen.getByLabelText("搜索产品"), "产品1");
+    expect(await screen.findByText("产品1")).toBeTruthy();
+  });
+
   it("offers the newer built-in rules and keeps the deployment's own name and mode", async () => {
     const published = { ...base, policyId: "office", mode: "Enforce", targetDeviceIds: ["d1"] };
     stub(published, { ...base, approvedNetworkAdapters: ["aTrust"] });

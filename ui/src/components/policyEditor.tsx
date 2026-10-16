@@ -27,7 +27,7 @@ import type {
   SensitiveFileRule,
 } from "../types";
 import { categoryLabel, controlLabel, moduleLabel } from "./labels";
-import { deviceName, Empty } from "./common";
+import { deviceName, Empty, usePageScroll } from "./common";
 import { Panel } from "./layout";
 
 export const modules = [
@@ -551,6 +551,7 @@ function SensitiveFilesSettings({
   noScope: boolean;
   onEdit: (index: number, rule: SensitiveFileRule) => void;
 }) {
+  const { ref, onPageChange } = usePageScroll();
   return (
     <>
       <Row gutter={[24, 16]}>
@@ -623,85 +624,87 @@ function SensitiveFilesSettings({
           </Field>
         </Col>
       </Row>
-      <Table
-        rowKey={(r) => r.id}
-        dataSource={value.rules}
-        size="middle"
-        scroll={{ x: 640 }}
-        pagination={{ pageSize: 10, hideOnSinglePage: true }}
-        locale={{ emptyText: <Empty title="还没有规则" /> }}
-        columns={[
-          {
-            title: "规则",
-            key: "name",
-            render: (_, r) => <Typography.Text strong>{r.name}</Typography.Text>,
-          },
-          {
-            title: "关键词",
-            key: "keywords",
-            render: (_, r) => (
-              <Space size={[4, 4]} wrap>
-                {r.keywords.map((k) => (
-                  <Tag key={k}>{k}</Tag>
-                ))}
-              </Space>
-            ),
-          },
-          {
-            title: "匹配",
-            key: "match",
-            width: 170,
-            render: (_, r) =>
-              [
-                r.extensions.length ? `仅 ${r.extensions.join(" ")}` : "所有文件",
-                r.matchFolders && !r.extensions.length ? "含文件夹" : "",
-              ]
-                .filter(Boolean)
-                .join("，"),
-          },
-          {
-            title: "处理方式",
-            key: "action",
-            width: 110,
-            render: (_, r) => (
-              <Tag color={r.action === "Violation" ? "error" : "warning"}>
-                {sensitiveActionLabel(r.action)}
-              </Tag>
-            ),
-          },
-          {
-            title: "操作",
-            key: "actions",
-            width: 140,
-            render: (_, r, index) => (
-              <Space>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={() => onEdit(index, r)}
-                  aria-label={`${readOnly ? "查看" : "编辑"} ${r.name}`}
-                >
-                  {readOnly ? "查看" : "编辑"}
-                </Button>
-                {!readOnly && (
-                  <Popconfirm
-                    title={`删除 ${r.name}？`}
-                    description="发布后终端不再按这条规则扫描，相关告警会在下次扫描后解除。"
-                    okText="删除"
-                    cancelText="取消"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() => set({ rules: value.rules.filter((_, i) => i !== index) })}
+      <div ref={ref}>
+        <Table
+          rowKey={(r) => r.id}
+          dataSource={value.rules}
+          size="middle"
+          scroll={{ x: 640 }}
+          pagination={{ pageSize: 10, hideOnSinglePage: true, onChange: onPageChange }}
+          locale={{ emptyText: <Empty title="还没有规则" /> }}
+          columns={[
+            {
+              title: "规则",
+              key: "name",
+              render: (_, r) => <Typography.Text strong>{r.name}</Typography.Text>,
+            },
+            {
+              title: "关键词",
+              key: "keywords",
+              render: (_, r) => (
+                <Space size={[4, 4]} wrap>
+                  {r.keywords.map((k) => (
+                    <Tag key={k}>{k}</Tag>
+                  ))}
+                </Space>
+              ),
+            },
+            {
+              title: "匹配",
+              key: "match",
+              width: 170,
+              render: (_, r) =>
+                [
+                  r.extensions.length ? `仅 ${r.extensions.join(" ")}` : "所有文件",
+                  r.matchFolders && !r.extensions.length ? "含文件夹" : "",
+                ]
+                  .filter(Boolean)
+                  .join("，"),
+            },
+            {
+              title: "处理方式",
+              key: "action",
+              width: 110,
+              render: (_, r) => (
+                <Tag color={r.action === "Violation" ? "error" : "warning"}>
+                  {sensitiveActionLabel(r.action)}
+                </Tag>
+              ),
+            },
+            {
+              title: "操作",
+              key: "actions",
+              width: 140,
+              render: (_, r, index) => (
+                <Space>
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => onEdit(index, r)}
+                    aria-label={`${readOnly ? "查看" : "编辑"} ${r.name}`}
                   >
-                    <Button size="small" type="link" danger aria-label={`删除 ${r.name}`}>
-                      删除
-                    </Button>
-                  </Popconfirm>
-                )}
-              </Space>
-            ),
-          },
-        ]}
-      />
+                    {readOnly ? "查看" : "编辑"}
+                  </Button>
+                  {!readOnly && (
+                    <Popconfirm
+                      title={`删除 ${r.name}？`}
+                      description="发布后终端不再按这条规则扫描，相关告警会在下次扫描后解除。"
+                      okText="删除"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => set({ rules: value.rules.filter((_, i) => i !== index) })}
+                    >
+                      <Button size="small" type="link" danger aria-label={`删除 ${r.name}`}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </Space>
+              ),
+            },
+          ]}
+        />
+      </div>
     </>
   );
 }
@@ -840,7 +843,8 @@ function ProductTable({
 }) {
   const [editing, setEditing] = useState<{ index: number; product: Product } | null>(null);
   const [search, setSearch] = useState(""),
-    [category, setCategory] = useState<string | null>(null);
+    [category, setCategory] = useState<string | null>(null),
+    [page, setPage] = useState(1);
   const q = search.trim().toLowerCase();
   const shown = products
     .map((p, index) => ({ p, index }))
@@ -859,6 +863,7 @@ function ProductTable({
       ["网卡", p.adapterNames?.length ?? 0],
       ["域名", p.domains.length],
     ].filter(([, n]) => n) as [string, number][];
+  const { ref, onPageChange } = usePageScroll();
 
   return (
     <Panel
@@ -880,91 +885,107 @@ function ProductTable({
           placeholder="搜索产品名称"
           aria-label="搜索产品"
           style={{ width: 220 }}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
         />
         <Radio.Group
           size="small"
           optionType="button"
           value={category ?? "all"}
-          onChange={(e) => setCategory(e.target.value === "all" ? null : e.target.value)}
+          onChange={(e) => {
+            setCategory(e.target.value === "all" ? null : e.target.value);
+            setPage(1);
+          }}
           options={[
             { value: "all", label: "全部" },
             ...categories.map((c) => ({ value: c, label: categoryLabel(c) })),
           ]}
         />
       </Space>
-      <Table
-        rowKey={({ p }) => p.id}
-        dataSource={shown}
-        size="middle"
-        scroll={{ x: 640 }}
-        pagination={{ pageSize: 10, hideOnSinglePage: true }}
-        locale={{ emptyText: <Empty title="没有符合条件的产品" /> }}
-        columns={[
-          {
-            title: "产品",
-            key: "name",
-            render: (_, { p }) => (
-              <Space orientation="vertical" size={0}>
-                <Typography.Text strong>{p.name}</Typography.Text>
-                <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
-                  {p.id}
-                </Typography.Text>
-              </Space>
-            ),
-          },
-          {
-            title: "类别",
-            key: "category",
-            width: 110,
-            render: (_, { p }) => <Tag>{categoryLabel(p.category)}</Tag>,
-          },
-          {
-            title: "识别依据",
-            key: "match",
-            render: (_, { p }) => (
-              <Space size={[4, 4]} wrap>
-                {counts(p).map(([label, n]) => (
-                  <Tag key={label} variant="filled">
-                    {label} {n}
-                  </Tag>
-                ))}
-              </Space>
-            ),
-          },
-          {
-            title: "操作",
-            key: "actions",
-            width: 140,
-            render: (_, { p, index }) => (
-              <Space>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={() => setEditing({ index, product: p })}
-                  aria-label={`${readOnly ? "查看" : "编辑"} ${p.name}`}
-                >
-                  {readOnly ? "查看" : "编辑"}
-                </Button>
-                {!readOnly && (
-                  <Popconfirm
-                    title={`删除 ${p.name}？`}
-                    description="发布后终端不再检查这个产品。"
-                    okText="删除"
-                    cancelText="取消"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() => onChange(products.filter((_, i) => i !== index))}
+      <div ref={ref}>
+        <Table
+          rowKey={({ p }) => p.id}
+          dataSource={shown}
+          size="middle"
+          scroll={{ x: 640 }}
+          pagination={{
+            pageSize: 10,
+            hideOnSinglePage: true,
+            current: page,
+            onChange: (p) => {
+              setPage(p);
+              onPageChange();
+            },
+          }}
+          locale={{ emptyText: <Empty title="没有符合条件的产品" /> }}
+          columns={[
+            {
+              title: "产品",
+              key: "name",
+              render: (_, { p }) => (
+                <Space orientation="vertical" size={0}>
+                  <Typography.Text strong>{p.name}</Typography.Text>
+                  <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
+                    {p.id}
+                  </Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: "类别",
+              key: "category",
+              width: 110,
+              render: (_, { p }) => <Tag>{categoryLabel(p.category)}</Tag>,
+            },
+            {
+              title: "识别依据",
+              key: "match",
+              render: (_, { p }) => (
+                <Space size={[4, 4]} wrap>
+                  {counts(p).map(([label, n]) => (
+                    <Tag key={label} variant="filled">
+                      {label} {n}
+                    </Tag>
+                  ))}
+                </Space>
+              ),
+            },
+            {
+              title: "操作",
+              key: "actions",
+              width: 140,
+              render: (_, { p, index }) => (
+                <Space>
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() => setEditing({ index, product: p })}
+                    aria-label={`${readOnly ? "查看" : "编辑"} ${p.name}`}
                   >
-                    <Button size="small" type="link" danger aria-label={`删除 ${p.name}`}>
-                      删除
-                    </Button>
-                  </Popconfirm>
-                )}
-              </Space>
-            ),
-          },
-        ]}
-      />
+                    {readOnly ? "查看" : "编辑"}
+                  </Button>
+                  {!readOnly && (
+                    <Popconfirm
+                      title={`删除 ${p.name}？`}
+                      description="发布后终端不再检查这个产品。"
+                      okText="删除"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => onChange(products.filter((_, i) => i !== index))}
+                    >
+                      <Button size="small" type="link" danger aria-label={`删除 ${p.name}`}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </Space>
+              ),
+            },
+          ]}
+        />
+      </div>
       {editing && (
         <ProductModal
           initial={editing.product}

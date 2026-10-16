@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Alert as Notice,
   Button,
@@ -348,4 +348,17 @@ export function AgentVersion({ device }: { device: DeviceSummary }) {
   ) : (
     <span>{device.agentVersion ? text : "客户端版本未知"}</span>
   );
+}
+
+/**
+ * For a paged table: changing page brings the enclosing section or panel back into view. Otherwise the reader is
+ * left wherever the old page's pager was, and a page of different height leaves them far from the new rows.
+ */
+export function usePageScroll() {
+  const ref = useRef<HTMLDivElement>(null);
+  const onPageChange = () => {
+    const target = ref.current?.closest("section, .panel") ?? ref.current;
+    target?.scrollIntoView({ block: "start" });
+  };
+  return { ref, onPageChange };
 }
