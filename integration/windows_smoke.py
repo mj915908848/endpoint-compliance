@@ -166,7 +166,7 @@ try:
         "ProxyServer": (f"127.0.0.1:{PROXY_PORT}", winreg.REG_SZ),
     })
 
-    agent = root / "src/Compliance.Agent/bin/Release/net10.0-windows10.0.19041.0/Compliance.Agent.dll"
+    agent = root / "src/Compliance.Agent/bin/Release/net10.0-windows/Compliance.Agent.dll"
     cmd = [args.dotnet, str(agent), "--local-demo", "--once", "--data-dir", str(data / "agent"),
            "--server", base, "--enroll", "--code", code]
     with (data / "agent.log").open("w") as log:

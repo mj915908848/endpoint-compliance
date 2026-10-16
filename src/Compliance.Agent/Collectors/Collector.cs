@@ -71,8 +71,7 @@ public sealed partial class WindowsCollector
         new ExtensionsCollector(),
         new CliCollector(),
         new ProgramFilesCollector(),
-        // PackageManager.FindPackagesForUser needs Windows 10 2004 (build 19041) or later.
-        .. (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) ? new ICollector[] { new AppxCollector() } : []),
+        new AppxCollector(),
         new UserProxyCollector(),
         new ProxyEnvironmentCollector(),
         new SystemProxyCollector(),

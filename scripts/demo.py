@@ -102,7 +102,7 @@ try:
             "modules": [{"module": m, "scope": "machine", "status": "Complete", "collectedAt": now} for m in modules],
             "users": [{"sid": "S-1-5-21-1-2-3-1001", "name": "zhangsan"}],
         }))
-        cmd = [args.dotnet, str(root / "src/Compliance.Agent/bin/Release/net10.0-windows10.0.19041.0/Compliance.Agent.dll"),
+        cmd = [args.dotnet, str(root / "src/Compliance.Agent/bin/Release/net10.0-windows/Compliance.Agent.dll"),
                "--fixture", str(folder / "snapshot.json"), "--data-dir", str(folder / "state"),
                "--server", base, "--once"]
         if not (folder / "state").exists():

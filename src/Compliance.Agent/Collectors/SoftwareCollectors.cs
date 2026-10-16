@@ -376,12 +376,12 @@ internal sealed class CliCollector : ICollector
 }
 
 /// <summary>
-/// Store (Appx/MSIX) packages per user through <c>PackageManager.FindPackagesForUser</c>, the API behind
-/// <c>Get-AppxPackage -User</c>. It needs administrator rights (the service runs as LocalSystem) and also
+/// Store (Appx/MSIX) packages per user through <c>PackageManager.FindPackagesForUser</c> (see <see cref="StorePackages"/>),
+/// the API behind <c>Get-AppxPackage -User</c>. It needs administrator rights (the service runs as LocalSystem) and also
 /// covers users who are not logged on. The AppxAllUserStore registry key is not used: on a real device it
 /// listed versions an update had replaced and missed the one actually installed.
 /// </summary>
-[SupportedOSPlatform("windows10.0.19041.0")]
+[SupportedOSPlatform("windows")]
 internal sealed class AppxCollector : ICollector
 {
     public string Module => "appx";
@@ -394,8 +394,7 @@ internal sealed class AppxCollector : ICollector
 
     public Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct)
     {
-        var manager = new Windows.Management.Deployment.PackageManager();
-        var packages = manager.FindPackagesForUser(scope.Scope).Select(p => p.Id.FullName).ToArray();
+        var packages = StorePackages.ForUser(scope.Scope);
         evidence.AddRange(WindowsCollector.ParseAppxPackages(packages, scope.Scope, context.Policy));
         return Task.CompletedTask;
     }

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net10.0-windows10.0.19041": {
+    "net10.0-windows7.0": {
       "Microsoft.Data.Sqlite": {
         "type": "Transitive",
         "resolved": "10.0.12",
@@ -357,7 +357,7 @@
       "compliance.agent": {
         "type": "Project",
         "dependencies": {
-          "Compliance.Core": "[1.0.0, )",
+          "Compliance.Core": "[0.0.0-dev, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )",
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.12, )",
