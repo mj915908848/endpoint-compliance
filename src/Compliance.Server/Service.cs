@@ -316,16 +316,18 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 && now - v.ComputedAt < VerdictReuse
             )
                 reused[head.Id] = v;
-        // Snapshots of the devices to evaluate again come in one query rather than one per device.
-        var stale = (await tx.GetDevices(heads.Where(h => !reused.ContainsKey(h.Id)).Select(h => h.Id))).ToDictionary(
-            d => d.Id
-        );
+        // Snapshots of the devices to evaluate again come a few hundred per query, and each chunk is released before
+        // the next is read, so memory does not grow with the number of devices.
+        var evaluated = new Dictionary<string, DeviceSummary>();
+        foreach (var chunk in heads.Where(h => !reused.ContainsKey(h.Id)).Select(h => h.Id).Chunk(200))
+        foreach (var full in await tx.GetDevices(chunk))
+            evaluated[full.Id] = Summary(full, await Evaluate(tx, full));
         foreach (var head in heads)
         {
             if (reused.TryGetValue(head.Id, out var v))
                 list.Add(Summary(head, v));
-            else if (stale.TryGetValue(head.Id, out var full))
-                list.Add(Summary(full, await Evaluate(tx, full)));
+            else if (evaluated.TryGetValue(head.Id, out var summary))
+                list.Add(summary);
         }
         foreach (var id in verdicts.Keys.Except(heads.Select(h => h.Id)))
             verdicts.TryRemove(id, out _);
