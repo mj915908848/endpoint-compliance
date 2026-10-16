@@ -13,7 +13,6 @@ namespace Compliance.Agent;
 internal sealed class UserProxyCollector : ICollector
 {
     public string Module => "proxy";
-    public bool Inventory => false;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) =>
         [.. CollectorScope.Users(context, needsHive: true), CollectorScope.Machine];
@@ -137,7 +136,6 @@ internal sealed class UserProxyCollector : ICollector
 internal sealed class ProxyEnvironmentCollector : ICollector
 {
     public string Module => "proxy-env";
-    public bool Inventory => false;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) => [CollectorScope.Machine];
 
@@ -173,7 +171,6 @@ internal sealed class SystemProxyCollector : ICollector
     private const string Connections = @"Software\Microsoft\Windows\CurrentVersion\Internet Settings\Connections";
 
     public string Module => "proxy-advanced";
-    public bool Inventory => false;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) => [CollectorScope.Machine];
 

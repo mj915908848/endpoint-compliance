@@ -42,7 +42,7 @@ public interface ICollector
     string Module { get; }
 
     /// <summary>Inventory modules run on full scans only; light scans reuse their previous results.</summary>
-    bool Inventory { get; }
+    bool Inventory => PolicyDocument.InventoryModules.Contains(Module);
 
     TimeSpan Timeout => TimeSpan.FromSeconds(30);
 

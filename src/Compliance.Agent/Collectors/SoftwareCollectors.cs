@@ -13,7 +13,6 @@ namespace Compliance.Agent;
 internal sealed class InstalledCollector : ICollector
 {
     public string Module => "installed";
-    public bool Inventory => true;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) =>
         [CollectorScope.Machine, .. CollectorScope.Users(context, needsHive: true)];
@@ -62,7 +61,6 @@ internal sealed class InstalledCollector : ICollector
 internal sealed class ServicesCollector : ICollector
 {
     public string Module => "services";
-    public bool Inventory => true;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) => [CollectorScope.Machine];
 
@@ -93,7 +91,6 @@ internal sealed class ServicesCollector : ICollector
 internal sealed class InstallPathsCollector : ICollector
 {
     public string Module => "installed-paths";
-    public bool Inventory => true;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) =>
         [CollectorScope.Machine, .. CollectorScope.Users(context, needsPath: true)];
@@ -135,7 +132,6 @@ internal sealed class ProgramFilesCollector : ICollector
     private const int Limit = 50;
 
     public string Module => "programs";
-    public bool Inventory => true;
     public TimeSpan Timeout => TimeSpan.FromMinutes(2);
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context)
@@ -195,7 +191,6 @@ internal sealed class ProgramFilesCollector : ICollector
 internal sealed class ExtensionsCollector : ICollector
 {
     public string Module => "extensions";
-    public bool Inventory => true;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) => CollectorScope.Users(context, needsPath: true);
 
@@ -300,7 +295,6 @@ internal sealed class ExtensionsCollector : ICollector
 internal sealed class CliCollector : ICollector
 {
     public string Module => "cli";
-    public bool Inventory => true;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) =>
         [.. CollectorScope.Users(context, needsPath: true), CollectorScope.Machine];
@@ -385,7 +379,6 @@ internal sealed class CliCollector : ICollector
 internal sealed class AppxCollector : ICollector
 {
     public string Module => "appx";
-    public bool Inventory => true;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) =>
         context.Profiles.Count == 0

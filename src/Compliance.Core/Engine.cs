@@ -42,9 +42,7 @@ public static class ReportEngine
             {
                 if (entry.Status != "Complete")
                     gaps.Add(ModuleGap(entry, names));
-                var minutes = module is "installed" or "extensions" or "appx" or "users" or "cli"
-                    ? policy.InventoryFreshMinutes
-                    : policy.LightweightFreshMinutes;
+                var minutes = policy.FreshMinutes(module);
                 if (entry.CollectedAt < now.AddMinutes(-minutes) || entry.CollectedAt > now.AddMinutes(2))
                     gaps.Add($"{Labels.Module(module)}（{Labels.Scope(entry.Scope, names)}）：数据已过期或时间异常");
             }

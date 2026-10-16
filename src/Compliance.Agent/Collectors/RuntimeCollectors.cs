@@ -10,7 +10,6 @@ namespace Compliance.Agent;
 internal sealed class ProcessesCollector : ICollector
 {
     public string Module => "processes";
-    public bool Inventory => false;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) => [CollectorScope.Machine];
 
@@ -65,7 +64,6 @@ internal sealed class ProcessesCollector : ICollector
 internal sealed class PortsCollector : ICollector
 {
     public string Module => "ports";
-    public bool Inventory => false;
 
     public IEnumerable<CollectorScope> Scopes(ScanContext context) => [CollectorScope.Machine];
 

@@ -122,6 +122,26 @@ public record PolicyDocument
 
     /// <summary>Results older than this count as missing; the server sets it to twice <see cref="QuickCheckMinutes"/>.</summary>
     public int LightweightFreshMinutes { get; init; } = 10;
+
+    /// <summary>
+    /// Modules the agent runs on full checks only; quick checks carry their last results forward, so they are judged
+    /// against <see cref="InventoryFreshMinutes"/>.
+    /// </summary>
+    public static readonly string[] InventoryModules =
+    [
+        "installed",
+        "installed-paths",
+        "services",
+        "programs",
+        "extensions",
+        "cli",
+        "appx",
+    ];
+
+    /// <summary>How old a module's results may be before they count as missing.</summary>
+    public int FreshMinutes(string module) =>
+        InventoryModules.Contains(module) ? InventoryFreshMinutes : LightweightFreshMinutes;
+
     public ProductRule[] Products { get; init; } = [];
     public string[] BlockDomains { get; init; } = [];
     public ApplicationDenyRule[] ApplicationRules { get; init; } = [];

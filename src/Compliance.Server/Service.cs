@@ -625,14 +625,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                     m.Module == module
                     && m.Scope == metadata.Scope
                     && m.Status == "Complete"
-                    && m.CollectedAt
-                        >= Now.AddMinutes(
-                            -(
-                                module is "installed" or "appx" or "extensions"
-                                    ? policy.InventoryFreshMinutes
-                                    : policy.LightweightFreshMinutes
-                            )
-                        )
+                    && m.CollectedAt >= Now.AddMinutes(-policy.FreshMinutes(module))
                     && m.CollectedAt <= Now.AddMinutes(2)
                 )
             );

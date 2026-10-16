@@ -125,6 +125,34 @@ Test(
         )
 );
 Test(
+    "every full-check module stays fresh between full checks, while quick checks keep running",
+    () =>
+    {
+        // Quick check every 10 minutes, full check every 60: a quick check 53 minutes after the last full one.
+        var policy = p with
+        {
+            RequiredModules = [.. PolicyDocument.AllModules],
+            LightweightFreshMinutes = 20,
+            InventoryFreshMinutes = 120,
+        };
+        var snapshot = clean with
+        {
+            Modules =
+            [
+                .. PolicyDocument.AllModules.Select(m => new ModuleResult(
+                    m,
+                    "machine",
+                    "Complete",
+                    PolicyDocument.InventoryModules.Contains(m) ? now.AddMinutes(-53) : now
+                )),
+            ],
+        };
+        var r = ReportEngine.Evaluate(policy, snapshot, now);
+        Eq(Verdict.PASS, r.Verdict);
+        Eq(Verdict.UNKNOWN, ReportEngine.Evaluate(policy with { InventoryFreshMinutes = 40 }, snapshot, now).Verdict);
+    }
+);
+Test(
     "old confirmed evidence no longer asserts current FAIL",
     () =>
         Eq(
