@@ -305,20 +305,26 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     {
         var list = new List<DeviceSummary>();
         var heads = await tx.AllDeviceHeads();
+        var now = Now;
+        var reused = new Dictionary<string, Verdicts>();
         foreach (var head in heads)
-        {
             if (
                 verdicts.TryGetValue(head.Id, out var v)
                 && v.SnapshotSequence == head.SnapshotSequence
                 && v.TargetPolicyVersion == head.TargetPolicyVersion
-                && v.ComputedAt <= Now
-                && Now - v.ComputedAt < VerdictReuse
+                && v.ComputedAt <= now
+                && now - v.ComputedAt < VerdictReuse
             )
-            {
+                reused[head.Id] = v;
+        // Snapshots of the devices to evaluate again come in one query rather than one per device.
+        var stale = (await tx.GetDevices(heads.Where(h => !reused.ContainsKey(h.Id)).Select(h => h.Id))).ToDictionary(
+            d => d.Id
+        );
+        foreach (var head in heads)
+        {
+            if (reused.TryGetValue(head.Id, out var v))
                 list.Add(Summary(head, v));
-                continue;
-            }
-            if (await tx.GetDevice(head.Id) is { } full)
+            else if (stale.TryGetValue(head.Id, out var full))
                 list.Add(Summary(full, await Evaluate(tx, full)));
         }
         foreach (var id in verdicts.Keys.Except(heads.Select(h => h.Id)))
@@ -330,12 +336,13 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     public async Task<List<(DeviceSummary Device, string[] Reasons)>> Export(Transaction tx)
     {
         var rows = new List<(DeviceSummary, string[])>();
-        foreach (var head in await tx.AllDeviceHeads())
-            if (await tx.GetDevice(head.Id) is { } d)
-            {
-                var v = await Evaluate(tx, d);
-                rows.Add((Summary(d, v), v.Report?.Reasons ?? []));
-            }
+        // A few hundred snapshots at a time keeps memory bounded without a query per device.
+        foreach (var chunk in (await tx.AllDeviceHeads()).Select(h => h.Id).Chunk(200))
+        foreach (var d in await tx.GetDevices(chunk))
+        {
+            var v = await Evaluate(tx, d);
+            rows.Add((Summary(d, v), v.Report?.Reasons ?? []));
+        }
         return rows;
     }
 
@@ -440,26 +447,32 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         if (batch.Events is null || batch.Events.Length is 0 or > 500 || batch.Events.Any(e => e is null))
             throw new ApiError(400, "Batch requires 1..500 events");
 
+        foreach (var e in batch.Events)
+            Validate(deviceId, e);
+
         await tx.Lock(DeviceLock(deviceId));
         var d = await Device(tx, deviceId);
         var accepted = new HashSet<string>();
         var snapshotChanged = false;
 
+        // Retries and sequence clashes are looked up for the whole batch at once; events stored below join them.
+        var fingerprints = await tx.EventFingerprints(deviceId, batch.Events.Select(e => e.EventId).Distinct());
+        var sequences = await tx.UsedSequences(deviceId, batch.Events.Select(e => e.Sequence).Distinct());
+        Dictionary<string, AlertSummary>? alerts = null;
+
         foreach (var e in batch.Events)
         {
-            Validate(deviceId, e);
-
             var fingerprint = Secrets.Hash(Wire.Serialize(e));
-            var existing = await tx.GetEventFingerprint(deviceId, e.EventId);
-            if (existing != null)
+            if (fingerprints.TryGetValue(e.EventId, out var existing))
             {
                 if (existing != fingerprint)
                     throw new ApiError(409, "Event id already has different content");
                 accepted.Add(e.EventId);
                 continue;
             }
-            if (await tx.SequenceUsed(deviceId, e.Sequence))
+            if (!sequences.Add(e.Sequence))
                 throw new ApiError(409, "Sequence already belongs to a different event");
+            fingerprints[e.EventId] = fingerprint;
 
             var safe = e with
             {
@@ -491,12 +504,14 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             if (e.Type != "Snapshot")
             {
                 var incidentId = deviceId + ":" + Secrets.Hash(e.ObjectKey);
-                var alert = await tx.GetAlert(incidentId);
+                // Snapshot alerts use other ids, so this map stays current while snapshots are handled in between.
+                alerts ??= await tx.DeviceAlerts(deviceId);
+                var alert = alerts.GetValueOrDefault(incidentId);
                 if (alert == null || e.Sequence > alert.LastSequence)
                 {
                     var type = e.Type == "Recovered" ? alert?.Type ?? "Violation" : e.Type;
                     await tx.UpsertAlert(
-                        new AlertSummary(
+                        alerts[incidentId] = new AlertSummary(
                             incidentId,
                             deviceId,
                             d.HostName,
@@ -582,16 +597,19 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 _ => "processes",
             };
 
+        // Each alert below is read and written at most once, so one read of the device's alerts serves them all.
+        var alerts = await tx.DeviceAlerts(device.Id);
+        var incidents = (await tx.SnapshotIncidents(device.Id)).ToDictionary(x => x.Id);
         var present = new HashSet<string>();
         foreach (var group in confirmed.GroupBy(ObjectId))
         {
             var id = "snapshot:" + device.Id + ":" + Secrets.Hash(group.Key);
             present.Add(id);
-            var previous = await tx.GetAlert(id);
+            var previous = alerts.GetValueOrDefault(id);
             if (previous != null && previous.LastSequence >= sequence)
                 continue;
 
-            var oldMetadata = await tx.GetSnapshotIncident(id);
+            var oldMetadata = incidents.GetValueOrDefault(id);
             var modules = group.Select(Module).Concat(oldMetadata?.Modules ?? []).Distinct().ToArray();
             await tx.PutSnapshotIncident(
                 new SnapshotIncident(id, device.Id, group.First().UserSid ?? "machine", modules)
@@ -617,12 +635,12 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         if (report.CoverageGaps.Length != 0)
             return;
         foreach (
-            var metadata in (await tx.SnapshotIncidents(device.Id)).Where(x =>
+            var metadata in incidents.Values.Where(x =>
                 !present.Contains(x.Id) && !x.Modules.Contains(SensitiveFiles.Module)
             )
         )
         {
-            var previous = await tx.GetAlert(metadata.Id);
+            var previous = alerts.GetValueOrDefault(metadata.Id);
             if (previous == null || previous.LastSequence >= sequence)
                 continue;
             var complete = metadata.Modules.All(module =>
@@ -663,6 +681,9 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             ? sensitive.Rules.ToDictionary(r => r.Id, StringComparer.Ordinal)
             : new Dictionary<string, SensitiveFileRule>();
         var fresh = Now.AddMinutes(-SensitiveFiles.FreshMinutes(policy));
+        // Each alert below is read and written at most once, so one read of the device's alerts serves them all.
+        var alerts = await tx.DeviceAlerts(device.Id);
+        var incidents = await tx.SnapshotIncidents(device.Id);
         var present = new HashSet<string>();
         foreach (
             var e in snapshot.Evidence.Where(e =>
@@ -675,7 +696,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             var id = "sensitive:" + device.Id + ":" + Secrets.Hash(e.Source + "|" + e.ObjectKey);
             if (!present.Add(id))
                 continue;
-            var previous = await tx.GetAlert(id);
+            var previous = alerts.GetValueOrDefault(id);
             if (previous != null && previous.LastSequence >= sequence)
                 continue;
             await tx.PutSnapshotIncident(new SnapshotIncident(id, device.Id, e.Source, [SensitiveFiles.Module]));
@@ -698,12 +719,10 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         }
 
         foreach (
-            var metadata in (await tx.SnapshotIncidents(device.Id)).Where(x =>
-                !present.Contains(x.Id) && x.Modules.Contains(SensitiveFiles.Module)
-            )
+            var metadata in incidents.Where(x => !present.Contains(x.Id) && x.Modules.Contains(SensitiveFiles.Module))
         )
         {
-            var previous = await tx.GetAlert(metadata.Id);
+            var previous = alerts.GetValueOrDefault(metadata.Id);
             if (previous == null || previous.State != "Active" || previous.LastSequence >= sequence)
                 continue;
             var rescanned = snapshot.Modules.Any(m =>

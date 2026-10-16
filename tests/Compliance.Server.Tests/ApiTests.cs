@@ -185,6 +185,29 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Sequence_clashes_and_conflicting_ids_reject_the_whole_batch()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        AgentEvent Event(string id, long sequence, string detail = "found") =>
+            new(id, sequence, f.Clock.Now, "Violation", "obj-" + id, Detail: detail);
+        Task<HttpResponseMessage> Send(params AgentEvent[] events) =>
+            f.Agent("POST", "/api/agent/events", new EventBatch(events));
+
+        Assert.Equal(HttpStatusCode.OK, (await Send(Event("a", 1), Event("b", 2))).StatusCode);
+        // A stored event's sequence, one sequence twice in a batch, and one id with two contents in a batch.
+        Assert.Equal(HttpStatusCode.Conflict, (await Send(Event("c", 3), Event("d", 2))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Send(Event("e", 4), Event("f", 4))).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Send(Event("g", 5), Event("g", 5, "changed"))).StatusCode);
+        // Nothing from a rejected batch was kept: its events are accepted afterwards as new.
+        var r = await Send(Event("c", 3), Event("e", 4), Event("g", 5), Event("a", 1));
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        Assert.Equal(4, (await r.Content.ReadFromJsonAsync<EventReceipt>(Wire.Json))!.AcceptedEventIds.Length);
+        Assert.Equal(5, (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!.Length);
+    }
+
+    [Fact]
     public async Task Heartbeat_records_the_client_version()
     {
         await using var f = new Fixture();

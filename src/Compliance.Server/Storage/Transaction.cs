@@ -183,6 +183,10 @@ public sealed class Transaction
     public Task<DeviceRecord?> GetDevice(string id) =>
         Single($"SELECT {DeviceSelect} FROM devices WHERE id = @id", ReadDevice, ("id", id));
 
+    /// <summary>Full records of the devices <paramref name="ids"/>, a few hundred per query.</summary>
+    public Task<List<DeviceRecord>> GetDevices(IEnumerable<string> ids) =>
+        QueryIn($"SELECT {DeviceSelect} FROM devices WHERE id IN ({{in}})", ids, ReadDevice);
+
     /// <summary>Request authentication only needs the key, not the snapshot document.</summary>
     public Task<string?> GetDevicePublicKey(string id) =>
         Single("SELECT public_key_pem FROM devices WHERE id = @id", r => r.GetString(0), ("id", id));
@@ -310,20 +314,27 @@ public sealed class Transaction
     public Task<int> PruneCommands(DateTimeOffset cutoff) =>
         Execute("DELETE FROM commands WHERE expires_at < @cutoff", ("cutoff", cutoff));
 
-    public Task<string?> GetEventFingerprint(string deviceId, string eventId) =>
-        Single(
-            "SELECT fingerprint FROM events WHERE device_id = @device AND event_id = @event",
-            r => r.GetString(0),
-            ("device", deviceId),
-            ("event", eventId)
-        );
+    /// <summary>Fingerprints of those of <paramref name="eventIds"/> the device has already sent.</summary>
+    public async Task<Dictionary<string, string>> EventFingerprints(string deviceId, IEnumerable<string> eventIds) =>
+        (
+            await QueryIn(
+                "SELECT event_id, fingerprint FROM events WHERE device_id = @device AND event_id IN ({in})",
+                eventIds,
+                r => (Id: r.GetString(0), Fingerprint: r.GetString(1)),
+                ("device", deviceId)
+            )
+        ).ToDictionary(x => x.Id, x => x.Fingerprint);
 
-    public async Task<bool> SequenceUsed(string deviceId, long sequence) =>
-        await Count(
-            "SELECT COUNT(*) FROM events WHERE device_id = @device AND sequence = @sequence",
-            ("device", deviceId),
-            ("sequence", sequence)
-        ) > 0;
+    /// <summary>Those of <paramref name="sequences"/> already taken by the device's stored events.</summary>
+    public async Task<HashSet<long>> UsedSequences(string deviceId, IEnumerable<long> sequences) =>
+        (
+            await QueryIn(
+                "SELECT sequence FROM events WHERE device_id = @device AND sequence IN ({in})",
+                sequences,
+                r => Long(r, 0),
+                ("device", deviceId)
+            )
+        ).ToHashSet();
 
     public Task InsertEvent(string deviceId, StoredEvent stored) =>
         Execute(
@@ -361,6 +372,12 @@ public sealed class Transaction
             Time(r, 9),
             Long(r, 10) != 0
         );
+
+    /// <summary>Every alert of one device, by id.</summary>
+    public async Task<Dictionary<string, AlertSummary>> DeviceAlerts(string deviceId) =>
+        (
+            await Query($"SELECT {AlertColumns} FROM alerts WHERE device_id = @device", ReadAlert, ("device", deviceId))
+        ).ToDictionary(a => a.Id);
 
     public Task<AlertSummary?> GetAlert(string id) =>
         Single($"SELECT {AlertColumns} FROM alerts WHERE id = @id", ReadAlert, ("id", id));
@@ -731,6 +748,29 @@ public sealed class Transaction
     {
         await using var command = Command(sql, args);
         return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="sql"/> once per few hundred <paramref name="values"/>, which replace "{in}" as a
+    /// parameter list; parameter counts stay well inside both databases' limits.
+    /// </summary>
+    async Task<List<T>> QueryIn<T, TValue>(
+        string sql,
+        IEnumerable<TValue> values,
+        Func<DbDataReader, T> map,
+        params (string Name, object? Value)[] args
+    )
+    {
+        var rows = new List<T>();
+        foreach (var chunk in values.Chunk(500))
+            rows.AddRange(
+                await Query(
+                    sql.Replace("{in}", string.Join(", ", chunk.Select((_, i) => "@in" + i))),
+                    map,
+                    [.. args, .. chunk.Select((value, i) => ("in" + i, (object?)value))]
+                )
+            );
+        return rows;
     }
 
     async Task<List<T>> Query<T>(string sql, Func<DbDataReader, T> map, params (string Name, object? Value)[] args)
