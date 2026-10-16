@@ -1,12 +1,9 @@
 name: Release
 
-# After CI passes on main, publishes a GitHub release v<VERSION>.<n> (n counts up from 0) with the Windows client
-# package and the management server's Docker image (docker load -i).
+# Run by hand (gh workflow run release.yml) to publish main's latest commit as a GitHub release v<VERSION>.<n>
+# (n counts up from 0) with the Windows client package and the management server's Docker image (docker load -i).
+# The commit's CI run must have passed.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -15,6 +12,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: read
 
 env:
   DOTNET_NOLOGO: true
@@ -23,7 +21,6 @@ env:
 jobs:
   release:
     name: 发布版本
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -31,8 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
+      - name: 确认 CI 已通过
+        run: |
+          sha=$(git rev-parse HEAD)
+          state=$(gh run list --workflow CI --commit "$sha" --event push --json conclusion -q '.[0].conclusion // "none"')
+          if [ "$state" != success ]; then echo "提交 $sha 的 CI 未通过（$state），不发布"; exit 1; fi
       - name: 版本号
         id: v
         run: |
