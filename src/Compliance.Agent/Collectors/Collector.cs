@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
 using Compliance.Core;
@@ -51,6 +52,37 @@ public interface ICollector
     Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct);
 }
 
+/// <summary>
+/// Collector runs that timed out and are still going. A timed-out run cannot be stopped (registry, WMI and file
+/// calls on a hung share block), so the same module and scope is not started again until it ends; otherwise every
+/// cycle would leave one more stuck thread behind.
+/// </summary>
+public sealed class AbandonedRuns
+{
+    public const string StillRunning = "上一次检查仍未结束，本项检查不完整";
+
+    private readonly ConcurrentDictionary<string, Task> runs = new();
+
+    public bool Running(string key)
+    {
+        if (!runs.TryGetValue(key, out var run))
+            return false;
+        if (!run.IsCompleted)
+            return true;
+        runs.TryRemove(key, out _);
+        return false;
+    }
+
+    public void Add(string key, Task run)
+    {
+        // Nobody awaits it any more; observe a late failure so it is not reported as unobserved.
+        _ = run.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+        runs[key] = run;
+    }
+
+    public int Count => runs.Values.Count(r => !r.IsCompleted);
+}
+
 public static class FixtureCollector
 {
     public static async Task<ScanSnapshot> LoadAsync(string path, CancellationToken ct = default)
@@ -63,6 +95,9 @@ public static class FixtureCollector
 [SupportedOSPlatform("windows")]
 public sealed partial class WindowsCollector
 {
+    // One per process: each cycle creates a new collector, and runs abandoned by earlier cycles must stay known.
+    private static readonly AbandonedRuns Abandoned = new();
+
     private static readonly ICollector[] Collectors =
     [
         new InstalledCollector(),
@@ -151,6 +186,14 @@ public sealed partial class WindowsCollector
                 modules.Add(new(collector.Module, scope.Scope, "Unknown", DateTimeOffset.UtcNow, scope.Unavailable));
                 continue;
             }
+            var key = collector.Module + "|" + scope.Scope;
+            if (Abandoned.Running(key))
+            {
+                modules.Add(
+                    new(collector.Module, scope.Scope, "Error", DateTimeOffset.UtcNow, AbandonedRuns.StillRunning)
+                );
+                continue;
+            }
             // Each scope collects into its own list so a timed-out run, which keeps going in the
             // background, cannot add evidence later. A run that failed has stopped, so whatever it
             // found before the failure is kept: an unreadable file must not hide a confirmed finding.
@@ -166,6 +209,8 @@ public sealed partial class WindowsCollector
             {
                 if (run.IsCompleted)
                     evidence.AddRange(found);
+                else
+                    Abandoned.Add(key, run);
                 modules.Add(new(collector.Module, scope.Scope, "Error", DateTimeOffset.UtcNow, Incomplete(ex)));
             }
         }

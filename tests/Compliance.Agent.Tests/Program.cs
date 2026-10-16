@@ -28,6 +28,27 @@ void Assert(bool value, string message)
         throw new Exception(message);
 }
 await Check(
+    "a timed-out collector run is not started again until it ends",
+    async () =>
+    {
+        var runs = new AbandonedRuns();
+        var release = new TaskCompletionSource();
+        Assert(!runs.Running("installed|machine"), "nothing abandoned yet");
+        runs.Add("installed|machine", release.Task);
+        Assert(runs.Running("installed|machine"), "stuck run started again");
+        Assert(!runs.Running("installed|S-1-5-21-1"), "other scope blocked");
+        Assert(runs.Count == 1, "abandoned count");
+        release.SetResult();
+        await Task.Yield();
+        Assert(!runs.Running("installed|machine"), "finished run still blocks");
+        Assert(runs.Count == 0, "finished run still counted");
+        var failed = new TaskCompletionSource();
+        runs.Add("ports|machine", failed.Task);
+        failed.SetException(new IOException("late failure"));
+        Assert(!runs.Running("ports|machine"), "failed run still blocks");
+    }
+);
+await Check(
     "outbox persists sequence and only deletes acknowledged ids",
     async () =>
     {
