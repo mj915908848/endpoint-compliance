@@ -1905,6 +1905,37 @@ if (OperatingSystem.IsWindows())
             }
         }
     );
+    await Check(
+        "Store packages read through PackageManager's binary interface match Get-AppxPackage",
+        async () =>
+        {
+            var sid = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
+            var ours = StorePackages.ForUser(sid).Order(StringComparer.Ordinal).ToArray();
+            var shell = System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(
+                    "powershell.exe",
+                    "-NoProfile -Command \"[Console]::OutputEncoding=[Text.Encoding]::UTF8; (Get-AppxPackage).PackageFullName\""
+                )
+                {
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                }
+            )!;
+            var output = await shell.StandardOutput.ReadToEndAsync();
+            await shell.WaitForExitAsync();
+            var theirs = output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+            if (ours.Length == 0 || !ours.SequenceEqual(theirs))
+                throw new Exception(
+                    $"PackageManager listed {ours.Length}, Get-AppxPackage {theirs.Length}; only ours: "
+                        + string.Join(", ", ours.Except(theirs).Take(5))
+                        + "; only theirs: "
+                        + string.Join(", ", theirs.Except(ours).Take(5))
+                );
+        }
+    );
 }
 else
     Console.WriteLine("SKIP native Windows checks (not running on Windows)");

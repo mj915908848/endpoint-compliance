@@ -11,7 +11,7 @@ namespace Compliance.Agent;
 /// (Windows.Foundation.UniversalApiContract.winmd and Windows.Foundation.FoundationContract.winmd).
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal static unsafe class StorePackages
+public static unsafe class StorePackages
 {
     private const string PackageManagerClass = "Windows.Management.Deployment.PackageManager";
     private static readonly Guid IPackageManager = new("9a7d4b65-5e8f-4fc7-a2e5-7f6925cb8b53");
