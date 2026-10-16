@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 
 namespace Compliance.Tray;
 
@@ -81,7 +82,7 @@ public sealed class NoticeWindow : Form
         footer.Controls.AddRange([note, log]);
         footer.Layout += (_, _) => log.Location = new Point(footer.Width - log.Width - S(20), S(12));
 
-        list = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+        list = new BufferedPanel { Dock = DockStyle.Fill, AutoScroll = true };
         list.Resize += (_, _) => Arrange();
 
         Controls.AddRange([list, footer, header]);
@@ -177,6 +178,10 @@ public sealed class NoticeWindow : Form
     private void Fill(params Control[] items)
     {
         var scrolled = -list.AutoScrollPosition.Y;
+        // Nothing is drawn until the new items are placed and scrolled, so the list changes in a single repaint.
+        var hold = list.IsHandleCreated;
+        if (hold)
+            SendMessage(list.Handle, WM_SETREDRAW, 0, 0);
         list.SuspendLayout();
         var old = list.Controls.Cast<Control>().ToArray();
         list.Controls.Clear();
@@ -187,6 +192,22 @@ public sealed class NoticeWindow : Form
         Arrange();
         if (scrolled > 0)
             list.AutoScrollPosition = new Point(0, scrolled);
+        if (hold)
+        {
+            SendMessage(list.Handle, WM_SETREDRAW, 1, 0);
+            list.Invalidate(true);
+        }
+    }
+
+    private const int WM_SETREDRAW = 0x000B;
+
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern nint SendMessage(nint window, int message, nint wParam, nint lParam);
+
+    /// <summary>Paints its background off screen, so scrolling and refreshes do not flash.</summary>
+    private sealed class BufferedPanel : Panel
+    {
+        public BufferedPanel() => DoubleBuffered = true;
     }
 
     /// <summary>Stacks the cards at the list's width, leaving room for the scroll bar once they overflow.</summary>

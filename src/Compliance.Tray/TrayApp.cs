@@ -34,6 +34,9 @@ public sealed class TrayApp : ApplicationContext
 
     private readonly NotifyIcon icon;
     private NoticeWindow? window;
+
+    /// <summary>The notices from the last refresh; null while the service is unreachable.</summary>
+    private Notice[]? latest;
     private readonly HashSet<string> displayed = [];
     private readonly Timer timer = new() { Interval = 20_000 };
     private string? state;
@@ -72,6 +75,9 @@ public sealed class TrayApp : ApplicationContext
         {
             window = new NoticeWindow(AcknowledgeAsync, RefreshAsync);
             window.FormClosed += (_, _) => window = null;
+            // Opens on what the tray already knows rather than flashing "connecting" first.
+            if (latest is not null)
+                window.ShowNotices(latest);
         }
         window.Show();
         window.Activate();
@@ -88,10 +94,12 @@ public sealed class TrayApp : ApplicationContext
         catch (Exception ex)
             when (ex is IOException or TimeoutException or JsonException or UnauthorizedAccessException)
         {
+            latest = null;
             SetState(Icons.Offline, "终端合规 · 未连接客户端服务");
             window?.ShowDisconnected();
             return;
         }
+        latest = notices;
         var unread = notices.Where(n => !n.Acknowledged).ToArray();
         SetState(
             unread.Length > 0 ? Icons.Alert : Icons.App,
