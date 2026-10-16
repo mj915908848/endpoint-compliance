@@ -130,7 +130,10 @@ public sealed partial class WindowsCollector
         bool full = previousInventory is null || !priorUsers!.SequenceEqual(currentUsers);
         if (!full)
         {
-            var inventory = Collectors.Where(c => c.Inventory).Select(c => c.Module).ToHashSet();
+            var inventory = Collectors
+                .Where(c => c.Inventory && policy.RequiredModules.Contains(c.Module))
+                .Select(c => c.Module)
+                .ToHashSet();
             modules.AddRange(previousInventory!.Modules.Where(m => inventory.Contains(m.Module)));
             evidence.AddRange(
                 previousInventory.Evidence.Where(e => e.Kind is EvidenceKind.Installation or EvidenceKind.Extension)
@@ -138,7 +141,10 @@ public sealed partial class WindowsCollector
         }
 
         var context = new ScanContext(policy, profiles);
-        foreach (var collector in Collectors.Where(c => full || !c.Inventory))
+        // Modules the policy leaves out are not run at all.
+        foreach (
+            var collector in Collectors.Where(c => (full || !c.Inventory) && policy.RequiredModules.Contains(c.Module))
+        )
         foreach (var scope in collector.Scopes(context))
         {
             if (scope.Unavailable is not null)

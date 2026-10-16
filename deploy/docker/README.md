@@ -167,7 +167,7 @@ docker compose up -d
 
 ## 版本与升级
 
-每次改动推送到 main 且 CI 通过后，GitHub 自动发布一个版本（Releases 页，版本号从 `0.2.0` 起每次加一），附带：
+积累一批改动后手动发布一个版本（Releases 页，版本号从 `0.2.0` 起每次加一），附带：
 
 - `compliance-server-<版本>.tar.gz`：管理端 Docker 镜像，服务器上直接加载，不用在服务器上构建；
 - `compliance-client-<版本>-windows.zip`：Windows 客户端安装包。

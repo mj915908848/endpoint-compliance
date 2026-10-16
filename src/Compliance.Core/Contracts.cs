@@ -70,8 +70,30 @@ public record PolicyDocument
     public DateTimeOffset ExpiresAt { get; init; } = DateTimeOffset.UtcNow.AddDays(365);
     public bool DenyInstalled { get; init; } = true;
     public bool DenyProxy { get; init; } = true;
-    public string[] RequiredModules { get; init; } =
-    ["installed", "processes", "proxy", "extensions", "appx", "ports", "users"];
+
+    /// <summary>Every module the agent can run, in the order the management UI lists them.</summary>
+    public static readonly string[] AllModules =
+    [
+        "installed",
+        "installed-paths",
+        "services",
+        "processes",
+        "proxy",
+        "proxy-env",
+        "proxy-advanced",
+        "extensions",
+        "appx",
+        "ports",
+        "users",
+        "cli",
+        "programs",
+    ];
+
+    /// <summary>
+    /// Modules the agent runs; each must complete for a pass. Modules left out are not run at all. User accounts are
+    /// always read, since per-user modules need them, but only count toward the verdict when listed.
+    /// </summary>
+    public string[] RequiredModules { get; init; } = [.. AllModules];
     public string[] RequiredControls { get; init; } = ["process", "browser"];
 
     /// <summary>How often the agent checks processes, ports and proxy settings.</summary>

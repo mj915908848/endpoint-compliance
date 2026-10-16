@@ -422,7 +422,9 @@ export function PolicyEditor({
                 onChange={(v) => set({ requiredModules: modules.filter((m) => v.includes(m)) })}
                 options={modules.map((m) => ({ value: m, label: moduleLabel(m) }))}
               />
-              <Hint>这些检查项都成功读取后，结论才可能是“通过”。至少选择一项。</Hint>
+              <Hint>
+                只执行勾选的检查项，没勾选的不检查。勾选的检查项都成功读取后，结论才可能是“通过”。至少选择一项。
+              </Hint>
             </Field>
           </Col>
           <Col xs={24} lg={10}>

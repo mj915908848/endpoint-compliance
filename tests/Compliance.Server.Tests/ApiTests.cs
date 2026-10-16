@@ -522,8 +522,8 @@ public class ApiTests
             HostName = "host",
             CollectedAt = f.Clock.Now.AddHours(-4),
             PolicyVersion = 1,
-            Modules = new[] { "installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli" }
-                .Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now.AddHours(-4)))
+            Modules = PolicyDocument
+                .AllModules.Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now.AddHours(-4)))
                 .ToArray(),
         };
         await f.Agent(
@@ -858,8 +858,8 @@ public class ApiTests
             HostName = "host",
             PolicyVersion = 1,
             CollectedAt = f.Clock.Now,
-            Modules = new[] { "installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli" }
-                .Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now))
+            Modules = PolicyDocument
+                .AllModules.Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now))
                 .ToArray(),
             Evidence =
             [
@@ -971,8 +971,8 @@ public class ApiTests
             HostName = "host",
             PolicyVersion = 2,
             CollectedAt = f.Clock.Now,
-            Modules = new[] { "installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli" }
-                .Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now))
+            Modules = PolicyDocument
+                .AllModules.Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now))
                 .Append(new ModuleResult(SensitiveFiles.Module, user, "Complete", f.Clock.Now))
                 .ToArray(),
             Evidence =
@@ -1167,8 +1167,8 @@ public class ApiTests
             HostName = "host",
             CollectedAt = f.Clock.Now,
             PolicyVersion = 1,
-            Modules = new[] { "installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli" }
-                .Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now))
+            Modules = PolicyDocument
+                .AllModules.Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now))
                 .ToArray(),
         };
         await f.Agent(

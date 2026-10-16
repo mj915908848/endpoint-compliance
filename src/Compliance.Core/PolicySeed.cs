@@ -309,7 +309,7 @@ public static class PolicySeed
         };
         return new PolicyDocument
         {
-            RequiredModules = ["installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli"],
+            RequiredModules = [.. PolicyDocument.AllModules],
             Products = rules,
             BlockDomains = rules.SelectMany(r => r.Domains).Distinct().ToArray(),
             // Sangfor aTrust is a common enterprise zero-trust VPN; customers adjust this list to their own.
