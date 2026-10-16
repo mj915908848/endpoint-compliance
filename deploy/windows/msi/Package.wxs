@@ -1,0 +1,154 @@
+<!--
+  Installs the client service and tray. The service starts at once and waits until the device is enrolled:
+  - interactively, the MSI then opens the tray's enrollment window (address and code, 登记配置.json beside the MSI
+    fills them in);
+  - silently, msiexec /i compliance-client.msi SERVERURL=https://... CODE=... /qn enrolls during the install and
+    rolls it back when the enrollment fails.
+  An upgrade keeps the data directory and so the enrollment; it also takes over a client installed by the earlier
+  install scripts. Uninstalling removes the service, the files and the data directory.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package
+    Name="终端合规客户端"
+    Manufacturer="终端合规"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="9F8E1BD6-8B65-451C-A804-EC10B87F4500"
+    Scope="perMachine"
+    Language="2052"
+    Codepage="936"
+    Compressed="yes"
+  >
+    <SummaryInformation Codepage="936" Description="终端合规客户端" />
+    <MajorUpgrade
+      DowngradeErrorMessage="本机已安装更新版本的终端合规客户端。"
+      AllowSameVersionUpgrades="yes"
+    />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="app.ico" SourceFile="$(var.AssetsDir)\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="app.ico" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <!-- The tray is closed below; Restart Manager would only ask about it. -->
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
+    <Property Id="SERVERURL" Secure="yes" />
+    <Property Id="CODE" Secure="yes" Hidden="yes" />
+    <!-- The enrollment's command line holds the code. -->
+    <Property Id="EnrollAgent" Hidden="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="ComplianceAgent" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="Client" Directory="INSTALLFOLDER">
+      <Files Include="$(var.ClientDir)\**">
+        <Exclude Files="$(var.ClientDir)\Compliance.Agent.exe" />
+      </Files>
+      <Component Id="Service">
+        <File Id="AgentExe" Source="$(var.ClientDir)\Compliance.Agent.exe" KeyPath="yes" />
+        <ServiceInstall
+          Name="ComplianceAgent"
+          DisplayName="Compliance Agent"
+          Description="终端合规客户端服务"
+          Type="ownProcess"
+          Start="auto"
+          ErrorControl="normal"
+          Account="LocalSystem"
+          Arguments="--config &quot;[CommonAppDataFolder]ComplianceAgent\agent.json&quot;"
+        >
+          <ServiceConfig FailureActionsWhen="failedToStopOrReturnedError" OnInstall="yes" OnReinstall="yes" />
+          <ServiceConfigFailureActions OnInstall="yes" OnReinstall="yes" ResetPeriod="86400">
+            <Failure Action="restartService" Delay="60000" />
+            <Failure Action="restartService" Delay="60000" />
+            <Failure Action="restartService" Delay="300000" />
+          </ServiceConfigFailureActions>
+        </ServiceInstall>
+        <ServiceControl Id="Service" Name="ComplianceAgent" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      </Component>
+      <Component Id="TrayAtSignIn">
+        <RegistryValue
+          Root="HKLM"
+          Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+          Name="ComplianceTray"
+          Type="string"
+          Value="&quot;[INSTALLFOLDER]Compliance.Tray.exe&quot;"
+          KeyPath="yes"
+        />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="终端合规客户端">
+      <ComponentGroupRef Id="Client" />
+    </Feature>
+
+    <!-- The tray runs in every signed-in session; it would hold its files open. -->
+    <util:CloseApplication Id="CloseTray" Target="Compliance.Tray.exe" TerminateProcess="1" RebootPrompt="no" />
+
+    <!-- Before the service first starts: a data directory a standard user created is removed, not used. -->
+    <SetProperty
+      Id="PrepareAgentData"
+      Value="&quot;[#AgentExe]&quot; --prepare-install"
+      Before="PrepareAgentData"
+      Sequence="execute"
+    />
+    <CustomAction
+      Id="PrepareAgentData"
+      BinaryRef="Wix4UtilCA_X64"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check"
+    />
+
+    <SetProperty
+      Id="EnrollAgent"
+      Value="&quot;[#AgentExe]&quot; --config &quot;[CommonAppDataFolder]ComplianceAgent\agent.json&quot; --server &quot;[SERVERURL]&quot; --enroll --code &quot;[CODE]&quot;"
+      Before="EnrollAgent"
+      Sequence="execute"
+      Condition="SERVERURL AND CODE"
+    />
+    <CustomAction
+      Id="EnrollAgent"
+      BinaryRef="Wix4UtilCA_X64"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check"
+      HideTarget="yes"
+    />
+
+    <SetProperty
+      Id="RemoveAgentData"
+      Value="&quot;[System64Folder]cmd.exe&quot; /c rd /s /q &quot;[CommonAppDataFolder]ComplianceAgent&quot;"
+      Before="RemoveAgentData"
+      Sequence="execute"
+    />
+    <CustomAction
+      Id="RemoveAgentData"
+      BinaryRef="Wix4UtilCA_X64"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore"
+    />
+
+    <InstallExecuteSequence>
+      <Custom Action="PrepareAgentData" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="EnrollAgent" After="PrepareAgentData" Condition="NOT REMOVE AND SERVERURL AND CODE" />
+      <!-- Not when an upgrade removes this version: the next one keeps the enrollment. -->
+      <Custom Action="RemoveAgentData" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+    <!-- In the signed-in user's process, not elevated; the window asks for elevation when it enrolls. -->
+    <CustomAction
+      Id="LaunchSetup"
+      Directory="INSTALLFOLDER"
+      ExeCommand="&quot;[INSTALLFOLDER]Compliance.Tray.exe&quot; --setup &quot;[OriginalDatabase]&quot;"
+      Return="asyncNoWait"
+      Impersonate="yes"
+    />
+    <InstallUISequence>
+      <Custom Action="LaunchSetup" After="ExecuteAction" Condition="NOT Installed AND NOT REMOVE" />
+    </InstallUISequence>
+  </Package>
+</Wix>

@@ -2,7 +2,8 @@
 """Build the Windows packages: a client package for production installs and, with --trial, the full trial package.
 
 Releases pass --version; without it the build is the next release number with a -dev suffix.
-Writes artifacts/compliance-client-<version>-windows.zip (and compliance-trial-<version>-windows.zip).
+Writes artifacts/compliance-client-<version>-windows.zip (and compliance-trial-<version>-windows.zip); with --msi, on
+Windows, artifacts/compliance-client-<version>-windows-x64.msi instead.
 """
 from __future__ import annotations
 
@@ -111,11 +112,27 @@ def stage_client(stage: Path, published: Path) -> None:
     copy(windows / "README.md", stage / "deploy" / "windows" / "README.md")
 
 
+def build_msi(client: Path, ver: str) -> Path:
+    """The client as an MSI (deploy/windows/msi). WiX builds on Windows only. MSI versions are numbers only."""
+    output = ARTIFACTS / "msi-build"
+    shutil.rmtree(output, ignore_errors=True)
+    subprocess.run(
+        [DOTNET, "build", "deploy/windows/msi/ComplianceClient.wixproj", "-c", "Release", "--nologo", "-v", "q",
+         f"-p:ClientDir={client.resolve()}", f"-p:ProductVersion={ver.split('-')[0]}", "-o", str(output)],
+        cwd=ROOT, check=True,
+    )
+    destination = ARTIFACTS / f"compliance-client-{ver}-windows-x64.msi"
+    shutil.copy2(output / "compliance-client.msi", destination)
+    print(f"{destination.relative_to(ROOT)}  {destination.stat().st_size / 1048576:.0f} MB")
+    return destination
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", help="release version; defaults to the next one with a -dev suffix")
     parser.add_argument("--trial", action="store_true", help="also build the full trial package with the Windows server")
     parser.add_argument("--stage", type=Path, help="only stage the client package (no zip) into this folder")
+    parser.add_argument("--msi", action="store_true", help="build the client MSI (Windows only) instead of the zip")
     args = parser.parse_args()
     ver = args.version or next_version() + "-dev"
     published = ARTIFACTS / "publish"
@@ -124,6 +141,9 @@ def main() -> None:
     if args.stage:
         shutil.rmtree(args.stage, ignore_errors=True)
         stage_client(args.stage, published)
+    if args.msi:
+        build_msi(published / "client", ver)
+    if args.stage or args.msi:
         return
 
     stage = ARTIFACTS / "stage"

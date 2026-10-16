@@ -129,7 +129,7 @@ python3 integration/e2e.py
 ## 生产部署
 
 - 管理端：推荐用 Docker 部署（含 PostgreSQL），可经网关反向代理，见 `deploy/docker/README.md`；不用 Docker 时需要 PostgreSQL、客户信任的 HTTPS 证书、持久的策略签名密钥和独立的管理账号，见 `deploy/server/README.md`。
-- 客户端：用发布的客户端包，放入“终端登记”页下载的登记配置，在各台电脑双击 `安装客户端（正式环境）.bat`；升级时再次双击并选“仅更新程序”。正式部署只连接 HTTPS 管理端，不支持跳过证书校验。见 `deploy/windows/客户端安装说明.md` 和 `deploy/windows/README.md`。
+- 客户端：双击发布的 MSI，装完在弹出的窗口填写管理端地址和登记码（MSI 旁放“终端登记”页下载的登记配置时自动填好），或用 `msiexec /i … SERVERURL=… CODE=… /qn` 批量静默安装；升级直接装新版本 MSI。也可以继续用 zip 包里的 `安装客户端（正式环境）.bat`。正式部署只连接 HTTPS 管理端，不支持跳过证书校验。见 `deploy/windows/客户端安装说明.md` 和 `deploy/windows/README.md`。
 - 初始策略为审计模式。强制模式只能发布给新建策略中指定的终端，且这些终端必须先报告所需防护措施「可启用」。
 
 ## 当前边界

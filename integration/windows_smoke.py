@@ -21,6 +21,8 @@ ap.add_argument("--data", type=pathlib.Path)
 ap.add_argument("--package", type=pathlib.Path)
 # An earlier release's package: installed first, then upgraded in place with --package ("1 仅更新程序").
 ap.add_argument("--old-package", type=pathlib.Path)
+# The client MSI: takes over a script install, enrolls silently, and waits for an enrollment when installed without one.
+ap.add_argument("--msi", type=pathlib.Path)
 args = ap.parse_args()
 data = args.data or root / "artifacts" / ("windows-smoke-" + secrets.token_hex(4))
 data.mkdir(parents=True, exist_ok=False)
@@ -113,6 +115,7 @@ server = None
 saved_proxy = read_proxy()
 listener = socket.socket()
 installed = False
+msi_installed = False
 try:
     dll = root / "src/Compliance.Server/bin/Release/net10.0/Compliance.Server.dll"
     server = subprocess.Popen(
@@ -407,8 +410,119 @@ try:
             f"Uninstall left {installed_tray.parent}: {result.stdout}{result.stderr}"
         print("PASS uninstall stops the tray and service and removes the install folder")
 
+    if args.msi:
+        msi = args.msi.resolve()
+        program = pathlib.Path(os.environ["ProgramFiles"]) / "ComplianceAgent"
+        agent_data = pathlib.Path(os.environ["ProgramData"]) / "ComplianceAgent"
+        code = request("/api/enrollment-codes", {"expiresMinutes": 60, "maxUses": 5, "label": "MSI"})["code"]
+
+        def msiexec(action, name, *properties):
+            global msi_installed
+            log = data / name
+            result = subprocess.run(["msiexec", action, str(msi), "/qn", "/l*v", str(log), *properties], timeout=600)
+            raw = log.read_bytes() if log.exists() else b""
+            text = raw.decode("utf-16", errors="replace") if raw[:2] == b"\xff\xfe" else raw.decode("mbcs", errors="replace")
+            assert result.returncode == 0, f"msiexec {action} exited with {result.returncode}: {text[-3000:]}"
+            msi_installed = action == "/i"
+            return text
+
+        def wait_device(device_id=None, known=(), since=""):
+            """The device with this id, or the first one not in known, once it has a newer heartbeat and a scan."""
+            deadline = time.monotonic() + 180
+            while True:
+                for d in request("/api/devices"):
+                    if (d["id"] == device_id if device_id else d["id"] not in known) and \
+                            (d["lastHeartbeat"] or "") > since and d["lastScan"]:
+                        return d
+                assert time.monotonic() < deadline, "The MSI-installed service did not report"
+                time.sleep(2)
+
+        def removed():
+            assert subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True).returncode != 0, \
+                "Uninstalling the MSI left the service"
+            assert not program.exists(), f"Uninstalling the MSI left {program}"
+            assert not agent_data.exists(), f"Uninstalling the MSI left {agent_data}"
+
+        def pipe(request_line):
+            with open(r"\\.\pipe\ComplianceAgent.Notifications.v1", "r+b", buffering=0) as p:
+                p.write(request_line.encode() + b"\n")
+                return p.readline().decode()
+
+        # A client the install scripts put there: the MSI takes the service over and keeps the enrollment.
+        known = {d["id"] for d in request("/api/devices")}
+        (package / "登记配置.json").write_text(json.dumps({"serverUrl": base, "code": code}), encoding="utf-8")
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+             str(package / "deploy/windows/Install-TrialService.ps1"), "-PackageRoot", str(package)],
+            input="", stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, text=True, timeout=300,
+        )
+        installed = True
+        assert result.returncode == 0, "Script install before the MSI failed"
+        scripted = wait_device(known=known)
+        msiexec("/i", "msi-takeover.log")
+        installed = False
+        taken = wait_device(scripted["id"], since=scripted["lastHeartbeat"])
+        config = subprocess.run(["sc.exe", "qc", "ComplianceAgent"], capture_output=True, text=True).stdout
+        assert "--config" in config and str(program).lower() in config.lower(), f"Service not the MSI's: {config}"
+        print(f"PASS the MSI takes over a script install and keeps its enrollment ({taken['hostName']})")
+        msiexec("/x", "msi-uninstall.log")
+        removed()
+        print("PASS uninstalling the MSI removes the service, the program folder and the data directory")
+
+        # A data directory a standard user created is removed; a silent install enrolls with SERVERURL and CODE.
+        agent_data.mkdir()
+        (agent_data / "agent.json").write_text(json.dumps({"serverUrl": "http://10.0.0.1:1", "dataDirectory": str(agent_data), "deviceId": "planted"}), encoding="utf-8")
+        subprocess.run(["icacls", str(agent_data), "/setowner", "*S-1-5-32-545", "/T"], check=True, capture_output=True)
+        known = {d["id"] for d in request("/api/devices")}
+        text = msiexec("/i", "msi-silent.log", f"SERVERURL={base}", f"CODE={code}")
+        assert code not in text, "The MSI log holds the enrollment code"
+        silent = wait_device(known=known)
+        assert json.loads((agent_data / "agent.json").read_text(encoding="utf-8"))["serverUrl"] == base
+        print("PASS a silent MSI install removes a foreign data directory and enrolls with SERVERURL and CODE")
+        msiexec("/x", "msi-uninstall-2.log")
+        removed()
+
+        # Installed without an enrollment, the service waits and tells the tray; enrolling as the window does
+        # (elevated) starts it reporting without a restart.
+        msiexec("/i", "msi-waiting.log")
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                reply = pipe('{"action":"list"}')
+                break
+            except OSError:
+                assert time.monotonic() < deadline, "The waiting service does not answer the tray"
+                time.sleep(1)
+        assert "not-enrolled" in reply, f"Waiting service replied {reply}"
+        setup_dir = data / "setup"
+        setup_dir.mkdir()
+        (setup_dir / "登记配置.json").write_text(json.dumps({"serverUrl": base, "code": code}), encoding="utf-8")
+        viewer = subprocess.Popen([str(program / "Compliance.Tray.exe"), "--setup", str(setup_dir / "client.msi")])
+        try:
+            time.sleep(8)
+            assert viewer.poll() is None, f"Tray --setup exited with {viewer.returncode}"
+            screenshot(data / "tray-setup.png")
+        finally:
+            viewer.kill()
+            viewer.wait(timeout=10)
+        known = {d["id"] for d in request("/api/devices")}
+        outcome = data / "enroll-result.txt"
+        result = subprocess.run(
+            [str(program / "Compliance.Agent.exe"), "--config", str(agent_data / "agent.json"), "--server", base,
+             "--enroll", "--code", code, "--result", str(outcome)],
+            capture_output=True, text=True, timeout=120,
+        )
+        assert result.returncode == 0, f"Enrollment failed: {outcome.read_text(encoding='utf-8') if outcome.exists() else result.stdout}"
+        assert "登记成功" in outcome.read_text(encoding="utf-8")
+        wait_device(known=known)
+        print("PASS an MSI installed without enrollment waits, tells the tray, and reports once enrolled")
+        msiexec("/x", "msi-uninstall-3.log")
+        removed()
+
     print("Evidence: " + str(data))
 finally:
+    if msi_installed:
+        subprocess.run(["msiexec", "/x", str(args.msi.resolve()), "/qn"], timeout=300)
     if installed:
         subprocess.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",

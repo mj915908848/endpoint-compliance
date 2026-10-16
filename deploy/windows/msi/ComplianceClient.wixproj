@@ -1,0 +1,15 @@
+<!--
+  The client as an MSI: dotnet build deploy/windows/msi -p:ClientDir=<published client folder> -p:ProductVersion=1.2.3
+  Builds on Windows only; scripts/package.py runs it when asked for the MSI.
+-->
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <OutputName>compliance-client</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <DefineConstants>ClientDir=$(ClientDir);ProductVersion=$(ProductVersion);AssetsDir=$(MSBuildThisFileDirectory)..\..\..\src\Compliance.Tray\Assets</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

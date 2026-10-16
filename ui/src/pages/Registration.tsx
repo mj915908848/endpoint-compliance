@@ -170,8 +170,8 @@ export function Registration({ session }: { session: Session }) {
                   </Typography.Text>
                   <div>
                     <Typography.Text strong>省去逐台输入：</Typography.Text>
-                    下载登记配置，放进解压后的安装包根目录（与“安装客户端（正式环境）.bat”同一层），
-                    之后每台电脑双击安装即可，无需再输入地址和登记码。
+                    下载登记配置，和 MSI 安装包放在同一个文件夹（或放进解压后的脚本安装包根目录），
+                    之后每台电脑安装时地址和登记码会自动填好。
                   </div>
                   <Space wrap>
                     <Input

@@ -131,28 +131,8 @@ public sealed class NoticeWindow : Form
 
     public void ShowDisconnected()
     {
-        shown = [];
-        listed = false;
-        status.Text = "未连接客户端服务";
-        status.ForeColor = Theme.Danger;
-        readAll.Visible = false;
-        var retry = new Button
-        {
-            Text = "重试",
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Theme.Primary,
-            ForeColor = Color.White,
-            AutoSize = true,
-            Padding = new Padding(
-                LogicalToDeviceUnits(12),
-                LogicalToDeviceUnits(2),
-                LogicalToDeviceUnits(12),
-                LogicalToDeviceUnits(2)
-            ),
-            Cursor = Cursors.Hand,
-            UseMnemonic = false,
-        };
-        retry.FlatAppearance.BorderSize = 0;
+        ShowState("未连接客户端服务");
+        var retry = ActionButton("重试");
         retry.Click += async (_, _) =>
         {
             ShowLoading();
@@ -166,6 +146,53 @@ public sealed class NoticeWindow : Form
                 retry
             )
         );
+    }
+
+    /// <summary>The service is installed and waits for an enrollment.</summary>
+    public void ShowNotEnrolled(Action enroll)
+    {
+        ShowState("尚未登记");
+        var button = ActionButton("登记到管理端");
+        button.Click += (_, _) => enroll();
+        Fill(
+            new StateView(
+                Icons.Offline,
+                "本机尚未登记到管理端",
+                "填写 IT 管理员提供的管理端地址和登记码完成登记后，客户端才会开始检查和上报。",
+                button
+            )
+        );
+    }
+
+    private void ShowState(string text)
+    {
+        shown = [];
+        listed = false;
+        status.Text = text;
+        status.ForeColor = Theme.Danger;
+        readAll.Visible = false;
+    }
+
+    private Button ActionButton(string text)
+    {
+        var button = new Button
+        {
+            Text = text,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Primary,
+            ForeColor = Color.White,
+            AutoSize = true,
+            Padding = new Padding(
+                LogicalToDeviceUnits(12),
+                LogicalToDeviceUnits(2),
+                LogicalToDeviceUnits(12),
+                LogicalToDeviceUnits(2)
+            ),
+            Cursor = Cursors.Hand,
+            UseMnemonic = false,
+        };
+        button.FlatAppearance.BorderSize = 0;
+        return button;
     }
 
     private async Task Acknowledge(string id)

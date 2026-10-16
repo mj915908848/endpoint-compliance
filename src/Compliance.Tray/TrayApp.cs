@@ -23,7 +23,19 @@ public static class Program
                 LogWindow.ActivateExisting();
         }
         else
-            Application.Run(new TrayApp(args.Contains("--notices")));
+        {
+            // --setup [the MSI's path]: opened by the MSI after installing; enrolls unless the service already is.
+            var setup = Array.IndexOf(args, "--setup");
+            Application.Run(
+                new TrayApp(
+                    args.Contains("--notices"),
+                    setup < 0 ? null
+                        : setup + 1 < args.Length && !args[setup + 1].StartsWith("--", StringComparison.Ordinal)
+                            ? args[setup + 1]
+                        : ""
+                )
+            );
+        }
     }
 }
 
@@ -34,6 +46,12 @@ public sealed class TrayApp : ApplicationContext
 
     private readonly NotifyIcon icon;
     private NoticeWindow? window;
+    private SetupWindow? setup;
+    private readonly ToolStripItem enrollItem;
+
+    /// <summary>Opening the enrollment window was asked for and waits for the first refresh; null otherwise.</summary>
+    private string? setupSource;
+    private bool notEnrolledShown;
 
     /// <summary>The notices from the last refresh; null while the service is unreachable.</summary>
     private Notice[]? latest;
@@ -41,9 +59,12 @@ public sealed class TrayApp : ApplicationContext
     private readonly Timer timer = new() { Interval = 20_000 };
     private string? state;
 
-    public TrayApp(bool showNotices)
+    public TrayApp(bool showNotices, string? setupSource = null)
     {
+        this.setupSource = setupSource;
         var menu = new ContextMenuStrip { Font = Theme.Body };
+        enrollItem = menu.Items.Add("登记到管理端…", null, (_, _) => ShowSetup(null));
+        enrollItem.Visible = false;
         menu.Items.Add("打开通知中心", null, (_, _) => ShowWindow());
         menu.Items.Add("运行日志", null, (_, _) => LogWindow.Open());
         menu.Items.Add(new ToolStripSeparator());
@@ -60,7 +81,13 @@ public sealed class TrayApp : ApplicationContext
             if (args.Button == MouseButtons.Left)
                 ShowWindow();
         };
-        icon.BalloonTipClicked += (_, _) => ShowWindow();
+        icon.BalloonTipClicked += (_, _) =>
+        {
+            if (enrollItem.Visible)
+                ShowSetup(null);
+            else
+                ShowWindow();
+        };
         timer.Tick += async (_, _) => await RefreshAsync();
         timer.Start();
         // Opened at start for a quick look (and for screenshots in CI).
@@ -82,6 +109,18 @@ public sealed class TrayApp : ApplicationContext
         window.Show();
         window.Activate();
         _ = RefreshAsync();
+    }
+
+    private void ShowSetup(string? source)
+    {
+        if (setup is null)
+        {
+            setup = new SetupWindow(source);
+            setup.FormClosed += (_, _) => setup = null;
+            setup.Enrolled += async (_, _) => await RefreshAsync();
+        }
+        setup.Show();
+        setup.Activate();
     }
 
     private bool refreshing;
@@ -115,7 +154,7 @@ public sealed class TrayApp : ApplicationContext
 
     private async Task RefreshOnceAsync()
     {
-        Notice[] notices;
+        Notice[]? notices;
         try
         {
             notices = Parse(await PipeRequestAsync("{\"action\":\"list\"}"));
@@ -124,10 +163,31 @@ public sealed class TrayApp : ApplicationContext
             when (ex is IOException or TimeoutException or JsonException or UnauthorizedAccessException)
         {
             latest = null;
+            enrollItem.Visible = false;
             SetState(Icons.Offline, "终端合规 · 未连接客户端服务");
             window?.ShowDisconnected();
+            // Enrolling does not need the service running; it picks the enrollment up when it starts.
+            OpenRequestedSetup();
             return;
         }
+        enrollItem.Visible = notices is null;
+        if (notices is null)
+        {
+            latest = null;
+            SetState(Icons.Offline, "终端合规 · 尚未登记到管理端");
+            window?.ShowNotEnrolled(() => ShowSetup(null));
+            if (!OpenRequestedSetup() && !notEnrolledShown && setup is null)
+                icon.ShowBalloonTip(
+                    10000,
+                    "终端合规 · 尚未登记",
+                    "本机尚未登记到管理端，点这里填写管理端地址和登记码。",
+                    ToolTipIcon.Info
+                );
+            notEnrolledShown = true;
+            return;
+        }
+        setupSource = null;
+        notEnrolledShown = false;
         latest = notices;
         var unread = notices.Where(n => !n.Acknowledged).ToArray();
         SetState(
@@ -147,9 +207,25 @@ public sealed class TrayApp : ApplicationContext
         window?.ShowNotices(notices);
     }
 
-    private static Notice[] Parse(string reply)
+    private bool OpenRequestedSetup()
+    {
+        if (setupSource is null)
+            return false;
+        ShowSetup(setupSource);
+        setupSource = null;
+        return true;
+    }
+
+    /// <summary>The notices, or null when the service waits for an enrollment.</summary>
+    private static Notice[]? Parse(string reply)
     {
         using var json = JsonDocument.Parse(reply);
+        if (
+            json.RootElement.ValueKind == JsonValueKind.Object
+            && json.RootElement.TryGetProperty("error", out var error)
+            && error.GetString() == "not-enrolled"
+        )
+            return null;
         if (json.RootElement.ValueKind != JsonValueKind.Array)
             throw new JsonException("Service refused the request: " + reply);
         return json
@@ -204,6 +280,7 @@ public sealed class TrayApp : ApplicationContext
     {
         timer.Stop();
         window?.Close();
+        setup?.Close();
         icon.Visible = false;
         icon.Icon?.Dispose();
         icon.Dispose();

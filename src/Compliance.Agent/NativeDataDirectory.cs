@@ -56,6 +56,37 @@ public static class NativeDataDirectory
     }
 
     /// <summary>
+    /// Deletes a data directory someone other than SYSTEM or Administrators created, before the MSI first starts the
+    /// service. Standard users may create folders under ProgramData, and one with an agent.json and identity key of
+    /// their own would otherwise point the service, which runs as SYSTEM, at a server they chose; <see
+    /// cref="EnsureSecure"/> takes such a folder over rather than refusing it. What the service or an earlier install
+    /// left belongs to SYSTEM or Administrators and stays, so an upgrade keeps the device's enrollment. Links are
+    /// removed, never followed. Returns whether the directory was deleted.
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public static bool RemoveIfForeign(string path)
+    {
+        var directory = new DirectoryInfo(Path.GetFullPath(path));
+        if (!directory.Exists)
+            return false;
+        var items = new FileSystemInfo[] { directory }.Concat(directory.EnumerateFileSystemInfos());
+        if (
+            items.All(item =>
+                !item.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                && TrustedOwner(
+                    item is DirectoryInfo d
+                        ? d.GetAccessControl(AccessControlSections.Owner)
+                        : ((FileInfo)item).GetAccessControl(AccessControlSections.Owner)
+                )
+            )
+        )
+            return false;
+        // Deleting a link removes the link itself; a recursive delete does not descend into links inside.
+        directory.Delete(!directory.Attributes.HasFlag(FileAttributes.ReparsePoint));
+        return true;
+    }
+
+    /// <summary>
     /// Creates the logs folder inside the data directory, which every local user may read but not change, so the tray
     /// shows the log without asking for administrator rights. Its permissions are set on every start and are not
     /// inherited, so the data directory's stay as they are. Logs an earlier version wrote next to the key move here.

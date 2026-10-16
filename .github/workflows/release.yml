@@ -19,12 +19,15 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  release:
-    name: 发布版本
+  version:
+    name: 确认版本
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      exists: ${{ steps.v.outputs.exists }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -41,35 +44,76 @@ jobs:
           v=$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import package; print(package.next_version())')
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "版本 $v"
+
+  # WiX builds MSIs on Windows only.
+  msi:
+    name: 客户端 MSI
+    needs: version
+    if: needs.version.outputs.exists != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
       - uses: actions/setup-dotnet@v5
-        if: steps.v.outputs.exists != 'true'
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python scripts/package.py --version ${{ needs.version.outputs.version }} --msi
+      - uses: actions/upload-artifact@v5
+        with:
+          name: msi
+          path: artifacts/*.msi
+          if-no-files-found: error
+
+  release:
+    name: 发布版本
+    needs: [version, msi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
           cache: true
           cache-dependency-path: "**/packages.lock.json"
       - name: Windows 客户端包
-        if: steps.v.outputs.exists != 'true'
-        run: python3 scripts/package.py --version ${{ steps.v.outputs.version }}
+        run: python3 scripts/package.py --version ${{ needs.version.outputs.version }}
+      - uses: actions/download-artifact@v5
+        with:
+          name: msi
+          path: artifacts
       - name: Docker 镜像
-        if: steps.v.outputs.exists != 'true'
         run: |
-          v=${{ steps.v.outputs.version }}
+          v=${{ needs.version.outputs.version }}
           docker build -f deploy/docker/Dockerfile --build-arg VERSION=$v -t compliance-server:$v -t compliance-server:latest .
           docker run --rm --entrypoint sh compliance-server:$v -c 'test -f /app/wwwroot/index.html'
           docker save compliance-server:$v compliance-server:latest | gzip > artifacts/compliance-server-$v.tar.gz
-          ls -lh artifacts/*.zip artifacts/*.tar.gz
+          ls -lh artifacts/*.zip artifacts/*.msi artifacts/*.tar.gz
       - name: 发布
-        if: steps.v.outputs.exists != 'true'
         run: |
-          v=${{ steps.v.outputs.version }}
+          v=${{ needs.version.outputs.version }}
           previous=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
           {
             echo "## 改动"
             git log --no-merges --format='- %s' ${previous:+$previous..}HEAD | head -50
             echo
-            echo "## 升级"
+            echo "## 安装与升级"
             echo "- 管理端：下载 \`compliance-server-$v.tar.gz\`，在服务器上先 \`./backup.sh\`，再 \`docker load -i compliance-server-$v.tar.gz && docker compose up -d\`。"
-            echo "- 客户端：解压 \`compliance-client-$v-windows.zip\`，在已安装的电脑上双击“安装客户端（正式环境）.bat”，选“1 仅更新程序”。"
+            echo "- 客户端（推荐）：双击 \`compliance-client-$v-windows-x64.msi\` 安装或升级，装完在弹出的窗口中填写管理端地址和登记码；升级保留登记。批量部署：\`msiexec /i compliance-client-$v-windows-x64.msi SERVERURL=https://管理端域名 CODE=登记码 /qn\`。"
+            echo "- 客户端（脚本方式）：解压 \`compliance-client-$v-windows.zip\`，在已安装的电脑上双击“安装客户端（正式环境）.bat”，选“1 仅更新程序”。"
           } > notes.md
           gh release create "v$v" --target "$(git rev-parse HEAD)" --title "$v" --notes-file notes.md \
+            "artifacts/compliance-client-$v-windows-x64.msi" \
             "artifacts/compliance-client-$v-windows.zip" "artifacts/compliance-server-$v.tar.gz"

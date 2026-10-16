@@ -28,6 +28,43 @@ void Assert(bool value, string message)
         throw new Exception(message);
 }
 await Check(
+    "an enrollment failure is described in words the person enrolling can act on",
+    () =>
+    {
+        string Describe(Exception e) => EnrollmentFailure.Describe(e);
+        Assert(
+            Describe(new AgentApiException("x", System.Net.HttpStatusCode.BadRequest, null)).Contains("登记码无效"),
+            "rejected code"
+        );
+        Assert(
+            Describe(
+                    new HttpRequestException(
+                        "ssl",
+                        new System.Security.Authentication.AuthenticationException("bad cert")
+                    )
+                )
+                .Contains("证书"),
+            "certificate"
+        );
+        Assert(Describe(new HttpRequestException("No such host")).Contains("无法连接管理端"), "unreachable");
+        Assert(
+            Describe(new InvalidOperationException("The HTTP server has not enabled trial mode")).Contains("试用模式"),
+            "trial"
+        );
+        Assert(
+            Describe(
+                    new InvalidOperationException(
+                        "Agent server requires HTTPS; HTTP is allowed only for explicit loopback fixture simulation"
+                    )
+                )
+                .Contains("https://"),
+            "https"
+        );
+        Assert(Describe(new EnrollmentRefusedException("已登记")) == "已登记", "refusal kept");
+        return Task.CompletedTask;
+    }
+);
+await Check(
     "the network inventory reports physical adapters with reachable addresses, the gateway's first",
     () =>
     {

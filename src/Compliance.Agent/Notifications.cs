@@ -107,10 +107,15 @@ public sealed class NotificationStore : IAsyncDisposable
     }
 }
 
+/// <summary>
+/// The tray's pipe to the service. Without a store the service is waiting to be enrolled, and every request is
+/// answered with <c>{"error":"not-enrolled"}</c>.
+/// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-public sealed class NotificationPipe(NotificationStore store)
+public sealed class NotificationPipe(NotificationStore? store)
 {
     public const string PipeName = "ComplianceAgent.Notifications.v1";
+    public const string NotEnrolled = "not-enrolled";
 
     public async Task RunAsync(CancellationToken ct)
     {
@@ -200,17 +205,19 @@ public sealed class NotificationPipe(NotificationStore store)
                 return;
             using var doc = JsonDocument.Parse(line);
             var action = doc.RootElement.TryGetProperty("action", out var a) ? a.GetString() : null;
-            object reply = action switch
-            {
-                "list" => await store.ListAsync(sid, ct),
-                "ack"
-                    when doc.RootElement.TryGetProperty("eventId", out var id)
-                        && id.GetString() is { Length: > 0 } eventId => new
+            object reply = store is null
+                ? new { error = NotEnrolled }
+                : action switch
                 {
-                    ok = await store.AckAsync(sid, eventId, ct),
-                },
-                _ => new { error = "Unsupported notification request" },
-            };
+                    "list" => await store.ListAsync(sid, ct),
+                    "ack"
+                        when doc.RootElement.TryGetProperty("eventId", out var id)
+                            && id.GetString() is { Length: > 0 } eventId => new
+                    {
+                        ok = await store.AckAsync(sid, eventId, ct),
+                    },
+                    _ => new { error = "Unsupported notification request" },
+                };
             await writer.WriteLineAsync(Compliance.Core.Wire.Serialize(reply));
         }
         catch (Exception ex) when (ex is OperationCanceledException && stop.IsCancellationRequested) { }
