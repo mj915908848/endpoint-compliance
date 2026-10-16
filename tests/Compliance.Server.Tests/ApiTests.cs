@@ -418,6 +418,41 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Heartbeat_reports_the_highest_sequence_held_even_after_events_are_pruned()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        async Task<long> LastSequence() =>
+            (
+                await (
+                    await f.Agent("POST", "/api/agent/heartbeat", new HeartbeatRequest("host", "1", f.Clock.Now, 1, []))
+                ).Content.ReadFromJsonAsync<JsonElement>()
+            )
+                .GetProperty("lastSequence")
+                .GetInt64();
+        Assert.Equal(0, await LastSequence());
+        var snapshot = new ScanSnapshot
+        {
+            DeviceId = f.Device,
+            HostName = "host",
+            CollectedAt = f.Clock.Now,
+            PolicyVersion = 1,
+        };
+        var batch = new EventBatch([
+            new("scan", 7, f.Clock.Now, "Snapshot", "scan", snapshot),
+            new("violation", 9, f.Clock.Now, "Violation", "x", Detail: "confirmed"),
+        ]);
+        Assert.Equal(HttpStatusCode.OK, (await f.Agent("POST", "/api/agent/events", batch)).StatusCode);
+        Assert.Equal(9, await LastSequence());
+
+        // Once the events are pruned, the device's snapshot and alerts still hold their sequences.
+        f.Clock.Now = f.Clock.Now.AddDays(200);
+        await f.Services.GetRequiredService<ComplianceService>().Maintain();
+        Assert.Equal(9, await LastSequence());
+    }
+
+    [Fact]
     public async Task Compressed_uploads_are_verified_as_sent_and_expanded_within_limits()
     {
         await using var f = new Fixture();

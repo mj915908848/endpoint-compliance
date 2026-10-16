@@ -123,8 +123,15 @@ static partial class Endpoints
                     );
                     // OfflineMonitor resolves the offline alert within 15 seconds; doing it here would make every
                     // heartbeat wait for the one global offline lock.
-                    // Clients from 0.2.9 compress larger uploads once a server says it accepts them.
-                    return new { ok = true, gzipUploads = true };
+                    // Clients from 0.2.9 compress larger uploads once a server says it accepts them. The highest
+                    // sequence held lets a client whose local queue file was lost carry on after it: a snapshot
+                    // numbered below the current one is ignored.
+                    return new
+                    {
+                        ok = true,
+                        gzipUploads = true,
+                        lastSequence = await tx.LastSequence(deviceId),
+                    };
                 });
             }
         );

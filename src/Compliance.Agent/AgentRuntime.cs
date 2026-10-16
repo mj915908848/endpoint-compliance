@@ -352,7 +352,8 @@ public sealed class AgentRuntime(
         if (once)
         {
             waitForSensitiveFiles = true;
-            await Cycle(api, queue, notices, true, ct);
+            await CheckAsync(api, queue, notices, true, ct);
+            await UploadAsync(api, queue, notices, ct);
             if (localDemo && await queue.UnsentCountAsync(ct) > 0)
                 throw new InvalidOperationException(
                     "Local scan finished but upload is still queued; keep the demo server running and retry this scan"
@@ -375,24 +376,38 @@ public sealed class AgentRuntime(
                 await ReportTaskFailureAsync(queue, notices, failures, "enforcement", enforceTask.Exception!, ct);
                 enforceTask = EnforceAsync(queue, notices, ct);
             }
+            // A failed check must not stop the upload, which is what empties the queue.
             try
             {
-                await Cycle(api, queue, notices, false, ct);
+                await CheckAsync(api, queue, notices, false, ct);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 Console.Error.WriteLine(
                     $"Agent cycle failed: {e.GetType().Name}: {EvidenceSanitizer.Clean(e.Message)}"
                 );
-                await TryEnqueueAsync(
-                    queue,
-                    notices,
-                    "Health",
-                    "agent:cycle",
-                    null,
-                    "Cycle failure: " + e.GetType().Name,
-                    ct
-                );
+                // A failure that repeats every cycle is reported at most once an hour.
+                if (!failures.TryGetValue("cycle", out var at) || at <= DateTimeOffset.UtcNow.AddHours(-1))
+                {
+                    failures["cycle"] = DateTimeOffset.UtcNow;
+                    await TryEnqueueAsync(
+                        queue,
+                        notices,
+                        "Health",
+                        "agent:cycle",
+                        null,
+                        "Cycle failure: " + e.GetType().Name,
+                        ct
+                    );
+                }
+            }
+            try
+            {
+                await UploadAsync(api, queue, notices, ct);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Upload failed: {e.GetType().Name}: {EvidenceSanitizer.Clean(e.Message)}");
             }
             if (queue.Dropped > reportedDrops)
             {
@@ -540,7 +555,7 @@ public sealed class AgentRuntime(
         );
     }
 
-    private async Task Cycle(
+    private async Task CheckAsync(
         AgentApi api,
         EventOutbox queue,
         NotificationStore notices,
@@ -567,8 +582,16 @@ public sealed class AgentRuntime(
                 reply.ValueKind == JsonValueKind.Object
                 && reply.TryGetProperty("gzipUploads", out var gzip)
                 && gzip.ValueKind == JsonValueKind.True;
+            // Servers from 0.2.23 say the highest event sequence they hold for this device.
+            if (
+                reply.ValueKind == JsonValueKind.Object
+                && reply.TryGetProperty("lastSequence", out var last)
+                && last.TryGetInt64(out var sequence)
+                && await queue.AdvanceSequenceAsync(sequence, ct)
+            )
+                Console.Error.WriteLine($"本地上报序号落后于管理端，已改为从 {sequence + 1} 继续");
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
         {
             Console.Error.WriteLine("Heartbeat pending: " + e.GetType().Name);
         }
@@ -633,17 +656,15 @@ public sealed class AgentRuntime(
         {
             commands = await api.SendAsync<DeviceCommand[]>(HttpMethod.Get, "/api/agent/commands", null, ct);
         }
-        catch (HttpRequestException) { }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            Console.Error.WriteLine("Commands pending: " + e.GetType().Name);
+        }
         var scanCommands = commands.Where(x => x.Type == "ScanNow" && x.ExpiresAt > DateTimeOffset.UtcNow).ToArray();
         if (scanCommands.Length > 0)
             Console.WriteLine("管理端请求重新检查，开始完整检查");
         foreach (var unsupported in commands.Except(scanCommands))
-            await api.SendAsync<JsonElement>(
-                HttpMethod.Post,
-                $"/api/agent/commands/{Uri.EscapeDataString(unsupported.Id)}/ack",
-                new CommandReply(false, "Unsupported or expired command"),
-                ct
-            );
+            await AckAsync(api, unsupported, new CommandReply(false, "Unsupported or expired command"), ct);
         if (scanCommands.Length > 0)
             forceFull = true;
         bool full =
@@ -726,13 +747,33 @@ public sealed class AgentRuntime(
             if (full)
                 lastFull = lastLight;
             foreach (var command in scanCommands)
-                await api.SendAsync<JsonElement>(
-                    HttpMethod.Post,
-                    $"/api/agent/commands/{Uri.EscapeDataString(command.Id)}/ack",
-                    new CommandReply(true, "Full scan completed and queued"),
-                    ct
-                );
+                await AckAsync(api, command, new CommandReply(true, "Full scan completed and queued"), ct);
         }
+    }
+
+    /// <summary>
+    /// Answers a command. A reply the server does not take is logged and the command comes again; it never stops the
+    /// check or the upload that follow.
+    /// </summary>
+    private static async Task AckAsync(AgentApi api, DeviceCommand command, CommandReply reply, CancellationToken ct)
+    {
+        try
+        {
+            await api.SendAsync<JsonElement>(
+                HttpMethod.Post,
+                $"/api/agent/commands/{Uri.EscapeDataString(command.Id)}/ack",
+                reply,
+                ct
+            );
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            Console.Error.WriteLine($"Command {command.Type} reply pending: {e.GetType().Name}");
+        }
+    }
+
+    private async Task UploadAsync(AgentApi api, EventOutbox queue, NotificationStore notices, CancellationToken ct)
+    {
         var pending = await queue.PendingBatchAsync(100, 1_500_000, ct);
         if (queue.OversizedInLastBatch > 0)
         {
@@ -754,41 +795,35 @@ public sealed class AgentRuntime(
             if (pending.Length == 0)
                 pending = await queue.PendingBatchAsync(100, 1_500_000, ct);
         }
-        if (pending.Length > 0)
+        if (pending.Length == 0)
+            return;
+        var result = await EventUpload.SendAsync(
+            queue,
+            pending,
+            (batch, token) => api.SendAsync<EventReceipt>(HttpMethod.Post, "/api/agent/events", batch, token),
+            ct
+        );
+        if (result.Accepted > 0 || result.Refused > 0)
+            Console.WriteLine(
+                $"已上报 {result.Accepted} 条记录"
+                    + (result.Refused > 0 ? $"，{result.Refused} 条未被接收，稍后重试" : "")
+            );
+        if (result.Failure is { } failure && result.Quarantined == 0)
+            Console.WriteLine(
+                $"上报失败（{failure.Message}），{pending.Length - result.Accepted - result.Refused} 条记录保存在本地，稍后重试"
+            );
+        if (result.Quarantined > 0)
         {
-            try
-            {
-                var receipt = await api.SendAsync<EventReceipt>(
-                    HttpMethod.Post,
-                    "/api/agent/events",
-                    new EventBatch(pending),
-                    ct
-                );
-                await queue.AcknowledgeAsync(receipt.AcceptedEventIds.Intersect(pending.Select(x => x.EventId)), ct);
-                var refused = pending.Select(x => x.EventId).Except(receipt.AcceptedEventIds).ToArray();
-                Console.WriteLine(
-                    $"已上报 {pending.Length - refused.Length} 条记录"
-                        + (refused.Length > 0 ? $"，{refused.Length} 条未被接收，稍后重试" : "")
-                );
-                if (refused.Length > 0)
-                    await queue.RetryAsync(refused, TimeSpan.FromMinutes(1), "Server did not accept event", false, ct);
-            }
-            catch (HttpRequestException ex)
-            {
-                var permanent =
-                    ex.StatusCode
-                    is HttpStatusCode.BadRequest
-                        or HttpStatusCode.UnprocessableEntity
-                        or HttpStatusCode.Conflict;
-                var retry =
-                    ex is AgentApiException apiError
-                    && apiError.RetryAfter is { } serverDelay
-                    && serverDelay > TimeSpan.Zero
-                        ? serverDelay
-                        : TimeSpan.FromSeconds(30 + Random.Shared.Next(30));
-                Console.WriteLine($"上报失败（{ex.Message}），{pending.Length} 条记录保存在本地，稍后重试");
-                await queue.RetryAsync(pending.Select(x => x.EventId), retry, ex.Message, permanent, ct);
-            }
+            Console.Error.WriteLine($"管理端拒收 {result.Quarantined} 条记录，已单独保存，不再重试");
+            await TryEnqueueAsync(
+                queue,
+                notices,
+                "Health",
+                "agent:refused-event",
+                null,
+                $"{result.Quarantined} event(s) refused by the server were quarantined",
+                ct
+            );
         }
     }
 

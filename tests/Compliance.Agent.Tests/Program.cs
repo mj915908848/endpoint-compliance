@@ -529,6 +529,145 @@ await Check(
     }
 );
 await Check(
+    "a refused batch is sent again event by event and only the refused event is quarantined",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-refused-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            await using var queue = new EventOutbox(path);
+            await queue.EnqueueAsync("Violation", "good", null, "deliver");
+            var bad = await queue.EnqueueAsync("Health", "bad", null, "refused");
+            await queue.EnqueueAsync("Health", "later", null, "deliver");
+            var requests = new List<int>();
+            var result = await EventUpload.SendAsync(
+                queue,
+                await queue.PendingBatchAsync(100, 1_500_000),
+                (batch, _) =>
+                {
+                    requests.Add(batch.Events.Length);
+                    if (batch.Events.Any(e => e.EventId == bad.EventId))
+                        throw new AgentApiException("invalid", System.Net.HttpStatusCode.BadRequest, null);
+                    return Task.FromResult(new EventReceipt(batch.Events.Select(e => e.EventId).ToArray()));
+                },
+                CancellationToken.None
+            );
+            Assert(requests.SequenceEqual([3, 1, 1, 1]), "requests: " + string.Join(",", requests));
+            Assert(result is { Accepted: 2, Quarantined: 1, Failure: null }, "result: " + result);
+            Assert(await queue.UnsentCountAsync() == 0, "accepted or quarantined events left in the queue");
+            using var db = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + path);
+            db.Open();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = "SELECT group_concat(id) FROM quarantine";
+            Assert((string)cmd.ExecuteScalar()! == bad.EventId, "wrong events quarantined");
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+);
+await Check(
+    "a network failure keeps the whole batch for a retry, and a lost connection mid-isolation keeps the rest",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-offline-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            await using var queue = new EventOutbox(path);
+            for (var i = 0; i < 3; i++)
+                await queue.EnqueueAsync("Health", "e" + i, null, "x");
+            var offline = await EventUpload.SendAsync(
+                queue,
+                await queue.PendingBatchAsync(100, 1_500_000),
+                (_, _) => throw new HttpRequestException("offline"),
+                CancellationToken.None
+            );
+            Assert(offline is { Accepted: 0, Quarantined: 0, Failure: not null }, "offline: " + offline);
+            Assert(await queue.UnsentCountAsync() == 3, "offline lost events");
+
+            var path2 = path + "-2";
+            await using var second = new EventOutbox(path2);
+            for (var i = 0; i < 3; i++)
+                await second.EnqueueAsync("Health", "e" + i, null, "x");
+            var calls = 0;
+            var cut = await EventUpload.SendAsync(
+                second,
+                await second.PendingBatchAsync(100, 1_500_000),
+                (batch, _) =>
+                    ++calls switch
+                    {
+                        1 => throw new AgentApiException("conflict", System.Net.HttpStatusCode.Conflict, null),
+                        2 => Task.FromResult(new EventReceipt([batch.Events[0].EventId])),
+                        _ => throw new HttpRequestException("offline"),
+                    },
+                CancellationToken.None
+            );
+            Assert(cut is { Accepted: 1, Quarantined: 0, Failure: not null }, "cut: " + cut);
+            Assert(await second.UnsentCountAsync() == 2, "events after the lost connection were not kept");
+            await second.DisposeAsync();
+            DeleteDatabase(path2);
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+);
+await Check(
+    "quarantined events are kept 30 days at most and do not fill the queue",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-prune-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            await using var queue = new EventOutbox(path, 3);
+            var old = await queue.EnqueueAsync("Health", "old", null, "x");
+            var recent = await queue.EnqueueAsync("Health", "recent", null, "x");
+            await queue.RetryAsync([old.EventId, recent.EventId], TimeSpan.Zero, "refused", true);
+            using (var db = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + path))
+            {
+                db.Open();
+                using var age = db.CreateCommand();
+                age.CommandText = "UPDATE quarantine SET at=$at WHERE id=$id";
+                age.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.AddDays(-31).ToString("O"));
+                age.Parameters.AddWithValue("$id", old.EventId);
+                age.ExecuteNonQuery();
+            }
+            // The queue holds 3; the expired quarantined event makes room for a second new one.
+            await queue.EnqueueAsync("Health", "a", null, "x");
+            await queue.EnqueueAsync("Health", "b", null, "x");
+            Assert(await queue.UnsentCountAsync() == 2, "expired quarantine still counted against the limit");
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+);
+await Check(
+    "a new queue file carries on after the highest sequence the server holds",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-sequence-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            await using var queue = new EventOutbox(path);
+            Assert(await queue.AdvanceSequenceAsync(41), "a new file was not advanced");
+            Assert((await queue.EnqueueAsync("Health", "a", null, "x")).Sequence == 42, "sequence not advanced");
+            Assert(!await queue.AdvanceSequenceAsync(10), "a lower sequence moved the queue back");
+            Assert(!await queue.AdvanceSequenceAsync(0), "zero changed the sequence");
+            Assert((await queue.EnqueueAsync("Health", "b", null, "x")).Sequence == 43, "sequence moved back");
+            Assert(await queue.AdvanceSequenceAsync(100), "a higher sequence was not taken");
+            Assert((await queue.EnqueueAsync("Health", "c", null, "x")).Sequence == 101, "sequence not advanced again");
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+);
+await Check(
     "Store package evidence stays scoped to the owning user, one record per app",
     async () =>
     {
