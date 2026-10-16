@@ -272,16 +272,9 @@ jobs:
         working-directory: deploy/docker
     steps:
       - uses: actions/checkout@v5
-      - name: 自签证书和配置
-        run: |
-          mkdir certs
-          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=*.example.test" \
-            -addext "subjectAltName=DNS:*.example.test" -keyout certs/key.pem -out certs/cert.pem
-          sudo chown -R 1654:1654 certs && sudo chmod 600 certs/*
-          cp .env.example .env
-          sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=ci$(openssl rand -hex 12)/; s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=ci-admin-password-1234/; s/^HTTPS_PORT=.*/HTTPS_PORT=8443/" .env
-      - name: 构建并启动
-        run: docker compose up -d --build --wait --wait-timeout 120 || (docker compose logs; exit 1)
+      # The one-step install: generates .env and a self-signed certificate, builds the image and waits until it answers.
+      - name: 一键部署
+        run: ./install.sh --domain ci.example.test --port 8443 --build
       - name: 登录、读取策略、重启后签名密钥不变、备份
         run: |
           set -e
@@ -292,13 +285,14 @@ jobs:
             done
             curl -sfk --resolve ci.example.test:8443:127.0.0.1 "$url/" | grep -q '<div id="root">'
             curl -sfk --resolve ci.example.test:8443:127.0.0.1 -c jar -H 'Content-Type: application/json' \
-              -d '{"username":"admin","password":"ci-admin-password-1234"}' "$url/api/auth/login" > /dev/null
+              -d "{\"username\":\"admin\",\"password\":\"$(sed -n 's/^ADMIN_PASSWORD=//p' .env)\"}" "$url/api/auth/login" > /dev/null
             curl -sfk --resolve ci.example.test:8443:127.0.0.1 -b jar "$url/api/policies" | grep -q '"isDefault":true'
           }
           check
           docker compose restart server
           check
-          ./backup.sh
+          ./install.sh
+          check
           test -s backups/*/compliance.dump && grep -q 'BEGIN EC PRIVATE KEY' backups/*/signing.key
       - if: failure()
         run: docker compose logs

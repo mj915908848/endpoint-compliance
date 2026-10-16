@@ -1,16 +1,41 @@
 # Docker 部署管理端
 
-一台装有 Docker（含 `docker compose`）的 Linux 服务器即可，PostgreSQL 一起在容器里运行。
+## 一键部署
 
-## 首次部署
+一台装有 Docker（含 `docker compose` 插件）的 Linux 服务器即可，PostgreSQL 一起在容器里运行。
 
-1. 把仓库放到服务器上（`git clone`，或在本机 `git archive -o compliance.tar.gz HEAD` 后拷过去解压），进入本目录：
+1. 在 Releases 页面下载 `compliance-server-<版本>-deploy.tar.gz`（脚本和镜像都在里面），拷到服务器上解压并进入目录：
 
    ```bash
-   cd deploy/docker
+   tar xzf compliance-server-<版本>-deploy.tar.gz
+   cd compliance-server-<版本>
    ```
 
-2. 放证书（经网关转发到 HTTP 时不需要，见下文“经网关反向代理”方式二）。泛域名证书（如 `*.example.com`）放进 `certs` 目录：
+   也可以直接用仓库里的本目录（`git clone` 后 `cd deploy/docker`），没有镜像包时脚本会从源码构建，需要几分钟和外网访问 Docker Hub、npm、NuGet。
+
+2. 运行，`--domain` 填客户端访问管理端用的域名，证书用客户信任的泛域名证书（如 `*.example.com`，证书文件必须包含中间证书）：
+
+   ```bash
+   sudo ./install.sh --domain compliance.example.com --cert /path/to/fullchain.pem --key /path/to/privkey.key
+   ```
+
+   PFX 证书用 `--pfx 证书.pfx --pfx-password 密码`；端口不是 443 时加 `--port 8443`。先试用时可以不给证书，脚本会生成自签证书，之后再用 `--cert`、`--key` 运行一次即换成正式证书。
+
+   脚本会生成 `.env`（随机的数据库密码和管理员密码）、放好证书、加载镜像、启动并确认能访问，最后显示地址、管理员账号和密码。密码同时保存在 `.env` 里，登录后请在右上角「修改密码」。
+
+3. 给服务器加内网 DNS 记录，例如 `compliance.example.com` 指向这台服务器，浏览器打开显示的地址登录。
+
+4. 立即做一次备份（见下）。
+
+经网关转发到 HTTP（见下文“经网关反向代理”方式二）时不放证书，改为：`sudo ./install.sh --http --trusted-proxy 网关的IP --port 8443`。
+
+`./install.sh --help` 列出全部选项。再次运行 `./install.sh` 是安全的：已有的 `.env`、证书、数据和签名密钥都保留，运行中的管理端会先自动备份。
+
+### 手动部署
+
+不用脚本时，按以下步骤操作（脚本做的就是这些）：
+
+1. 放证书（经网关转发到 HTTP 时不需要）：
 
    ```bash
    mkdir certs
@@ -21,30 +46,9 @@
 
    容器内以 uid 1654（非 root）运行，私钥要让它读得到。PFX 格式的证书见 `.env.example`。
 
-3. 写配置：
+2. 写配置：`cp .env.example .env && vi .env`。必填：`DB_PASSWORD`（只用字母数字）、`ADMIN_PASSWORD`（至少 16 位）。证书文件名不同时修改证书那两行。
 
-   ```bash
-   cp .env.example .env
-   vi .env
-   ```
-
-   必填：`DB_PASSWORD`（只用字母数字）、`ADMIN_PASSWORD`（至少 16 位）。证书文件名不同时修改证书那两行。
-
-4. 启动。用 Releases 页面发布的镜像（推荐，服务器上不用构建）：
-
-   ```bash
-   docker load -i compliance-server-<版本>.tar.gz
-   docker compose up -d
-   docker compose logs -f server
-   ```
-
-   或在服务器上从源码构建（需要几分钟和外网访问 Docker Hub、npm、NuGet）：`docker compose up -d --build`。
-
-   日志出现 `Now listening on` 即启动完成。
-
-5. 给服务器加内网 DNS 记录，例如 `compliance.example.com` 指向这台服务器，然后浏览器打开 `https://compliance.example.com` 用管理员账号登录。端口不是 443 时加上 `:端口`。
-
-6. 立即做一次备份（见下）。
+3. 启动：`docker load -i compliance-server-<版本>.tar.gz && docker compose up -d`（或从源码构建 `docker compose up -d --build`），`docker compose logs -f server` 出现 `Now listening on` 即启动完成。
 
 ## 客户端
 
@@ -158,7 +162,7 @@ docker compose restart server
 
 在 `backups/<时间>/` 下生成数据库备份 `compliance.dump` 和策略签名密钥 `signing.key`，请拷贝到别的机器保存。**签名密钥丢失后，所有已登记终端都会拒收新策略，只能逐台重新登记。**
 
-恢复到新服务器：先按上面完成第 1–3 步但不要启动，然后：
+恢复到新服务器：先按“手动部署”完成第 1–2 步但不要启动，然后：
 
 ```bash
 docker compose up -d db
@@ -177,7 +181,13 @@ docker compose up -d
 
 管理端当前版本显示在“系统”页。
 
-**升级管理端**：在能访问 GitHub 的电脑上下载镜像（或用 `gh release download v<版本> -p 'compliance-server-*'`），拷到服务器的本目录，然后：
+**升级管理端**：在能访问 GitHub 的电脑上下载镜像 `compliance-server-<版本>.tar.gz`（或用 `gh release download v<版本> -p 'compliance-server-*'`），拷到服务器上的部署目录，然后：
+
+```bash
+sudo ./install.sh
+```
+
+脚本先备份，再加载目录里版本最新的镜像包并换成新版本；数据库结构在启动时自动升级。旧的镜像包可以删掉。还没有 `install.sh` 的部署（0.2.21 及以前），从新版本的 `-deploy.tar.gz` 里把 `install.sh` 拷到部署目录即可，已有的 `.env` 和证书照常使用；也可以照旧手动升级：
 
 ```bash
 ./backup.sh
@@ -185,9 +195,9 @@ docker load -i compliance-server-<版本>.tar.gz
 docker compose up -d
 ```
 
-`docker load` 会把镜像标记为 `compliance-server:latest`，`up -d` 即换成新版本；数据库结构在启动时自动升级。不要加 `--build`，否则会用服务器上的源码重新构建。
+`docker load` 会把镜像标记为 `compliance-server:latest`，`up -d` 即换成新版本。不要加 `--build`，否则会用服务器上的源码重新构建。
 
-在服务器上从源码构建（第 4 步的方式）同样可用：更新源码后 `docker compose up -d --build`。
+在服务器上从源码构建同样可用：更新源码后 `./install.sh --build`（或 `docker compose up -d --build`）。
 
 **数据保留**：管理端每小时自动清理一次：检查结果的上报记录保留 1 天（每台设备最新的检查结果另存，不受影响），告警、违规等其他上报记录保留 90 天，已恢复的告警保留 180 天（未恢复的一直保留），过期的登录会话和检查请求也一并删除。保留天数可在 `compose.yml` 的 `server` 环境变量里调整，例如加 `Compliance__EventRetentionDays: "180"`、`Compliance__AlertRetentionDays: "365"`。管理页面 30 分钟未操作会自动退出（页面自动刷新不算操作），可用 `Compliance__SessionIdleMinutes` 调整，设为 `0` 关闭；无论是否操作，登录 8 小时后都需重新登录。告警中心默认列出未恢复的告警和最近 30 天恢复的，更早的在“已恢复”筛选下点“加载 30 天前恢复的告警”查看。
 

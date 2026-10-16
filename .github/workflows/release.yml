@@ -100,6 +100,15 @@ jobs:
           docker build -f deploy/docker/Dockerfile --build-arg VERSION=$v -t compliance-server:$v -t compliance-server:latest .
           docker run --rm --entrypoint sh compliance-server:$v -c 'test -f /app/wwwroot/index.html'
           docker save compliance-server:$v compliance-server:latest | gzip > artifacts/compliance-server-$v.tar.gz
+      # One download for a new server: the deploy scripts and the image, run with ./install.sh after extracting.
+      - name: 管理端一键部署包
+        run: |
+          v=${{ needs.version.outputs.version }}
+          d=artifacts/deploy/compliance-server-$v
+          mkdir -p $d
+          cp deploy/docker/{compose.yml,.env.example,install.sh,backup.sh,README.md} $d/
+          cp artifacts/compliance-server-$v.tar.gz $d/
+          tar -C artifacts/deploy -czf artifacts/compliance-server-$v-deploy.tar.gz compliance-server-$v
           ls -lh artifacts/*.zip artifacts/*.msi artifacts/*.tar.gz
       - name: 发布
         run: |
@@ -110,10 +119,12 @@ jobs:
             git log --no-merges --format='- %s' ${previous:+$previous..}HEAD | head -50
             echo
             echo "## 安装与升级"
-            echo "- 管理端：下载 \`compliance-server-$v.tar.gz\`，在服务器上先 \`./backup.sh\`，再 \`docker load -i compliance-server-$v.tar.gz && docker compose up -d\`。"
+            echo "- 管理端首次部署：下载 \`compliance-server-$v-deploy.tar.gz\`，在装有 Docker 的 Linux 服务器上解压，进入目录运行 \`sudo ./install.sh --domain 管理端域名 --cert 证书.pem --key 私钥.key\`。"
+            echo "- 管理端升级：下载 \`compliance-server-$v.tar.gz\`，放进服务器上的部署目录，运行 \`sudo ./install.sh\`（自动先备份再升级）。"
             echo "- 客户端（推荐）：双击 \`compliance-client-$v-windows-x64.msi\` 安装或升级，装完在弹出的窗口中填写管理端地址和登记码；升级保留登记。批量部署：\`msiexec /i compliance-client-$v-windows-x64.msi SERVERURL=https://管理端域名 CODE=登记码 /qn\`。"
             echo "- 客户端（脚本方式）：解压 \`compliance-client-$v-windows.zip\`，在已安装的电脑上双击“安装客户端（正式环境）.bat”，选“1 仅更新程序”。"
           } > notes.md
           gh release create "v$v" --target "$(git rev-parse HEAD)" --title "$v" --notes-file notes.md \
             "artifacts/compliance-client-$v-windows-x64.msi" \
-            "artifacts/compliance-client-$v-windows.zip" "artifacts/compliance-server-$v.tar.gz"
+            "artifacts/compliance-client-$v-windows.zip" "artifacts/compliance-server-$v.tar.gz" \
+            "artifacts/compliance-server-$v-deploy.tar.gz"
