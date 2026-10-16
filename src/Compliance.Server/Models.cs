@@ -19,13 +19,22 @@ public sealed class Settings
 
     /// <summary>Days resolved alerts are kept for; alerts not resolved are always kept.</summary>
     public int AlertRetentionDays { get; set; } = 180;
+
+    /// <summary>Minutes without keyboard or mouse use after which a management session ends; 0 turns this off.</summary>
+    public int SessionIdleMinutes { get; set; } = 30;
 }
 
 public sealed record UserRecord(string Username, string PasswordHash, string[] Roles);
 
 public sealed record BootstrapUser(string Username, string Password, string[] Roles);
 
-public sealed record SessionRecord(string Username, string CsrfToken, DateTimeOffset ExpiresAt);
+/// <summary>A management sign-in. LastActive is the last time the administrator used the page, not the last request.</summary>
+public sealed record SessionRecord(
+    string Username,
+    string CsrfToken,
+    DateTimeOffset ExpiresAt,
+    DateTimeOffset LastActive = default
+);
 
 public sealed record CodeRecord(DateTimeOffset ExpiresAt, bool Used);
 

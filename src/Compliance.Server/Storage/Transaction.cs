@@ -55,18 +55,35 @@ public sealed class Transaction
 
     public Task<SessionRecord?> GetSession(string tokenHash) =>
         Single(
-            "SELECT username, csrf_token, expires_at FROM sessions WHERE token_hash = @hash",
-            r => new SessionRecord(r.GetString(0), r.GetString(1), Time(r, 2)),
+            "SELECT username, csrf_token, expires_at, last_active FROM sessions WHERE token_hash = @hash",
+            r => new SessionRecord(r.GetString(0), r.GetString(1), Time(r, 2), Time(r, 3)),
             ("hash", tokenHash)
         );
 
     public Task InsertSession(string tokenHash, SessionRecord session) =>
+        Execute(
+            "INSERT INTO sessions(token_hash, username, csrf_token, expires_at, last_active) VALUES(@hash, @username, @csrf, @expires, @active)",
+            ("hash", tokenHash),
+            ("username", session.Username),
+            ("csrf", session.CsrfToken),
+            ("expires", session.ExpiresAt),
+            ("active", session.LastActive)
+        );
+
+    public Task InsertLegacySession(string tokenHash, SessionRecord session) =>
         Execute(
             "INSERT INTO sessions(token_hash, username, csrf_token, expires_at) VALUES(@hash, @username, @csrf, @expires)",
             ("hash", tokenHash),
             ("username", session.Username),
             ("csrf", session.CsrfToken),
             ("expires", session.ExpiresAt)
+        );
+
+    public Task TouchSession(string tokenHash, DateTimeOffset lastActive) =>
+        Execute(
+            "UPDATE sessions SET last_active = @active WHERE token_hash = @hash AND last_active < @active",
+            ("hash", tokenHash),
+            ("active", lastActive)
         );
 
     public Task DeleteSession(string tokenHash) =>

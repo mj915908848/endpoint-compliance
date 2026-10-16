@@ -63,14 +63,23 @@ export function Policies({ session }: { session: Session }) {
   const policy = creating ? null : (entry?.doc ?? null);
   const isDefault = !creating && (entry?.isDefault ?? true);
   const [draft, setDraft] = useState<Policy | null>(null),
+    // The release the draft was started from; null while creating a policy.
+    [base, setBase] = useState<Policy | null>(null),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
     [json, setJson] = useState<string | null>(null),
     [history, setHistory] = useState(false);
+  function edit(release: Policy | null) {
+    setDraft(release);
+    setBase(release);
+  }
+  const dirty = creating ? !!draft : !!base && !!draft && !sameContent(base, draft);
+  // Someone published this policy after the draft was started from an earlier release.
+  const stale = !creating && !!policy && !!base && policy.version !== base.version;
   useEffect(() => {
-    if (policy && !draft) setDraft(policy);
-  }, [policy, draft]);
-  const dirty = creating ? !!draft : !!policy && !!draft && !sameContent(policy, draft);
+    // Nothing edited yet: follow the newest release instead of keeping the old one on screen.
+    if (policy && (!draft || (stale && !dirty))) edit(policy);
+  }, [policy, draft, stale, dirty]);
   // Devices another named policy already lists cannot be chosen here.
   const takenBy = new Map(
     policies
@@ -82,8 +91,9 @@ export function Policies({ session }: { session: Session }) {
     const go = () => {
       setSelected(key);
       setError(null);
-      if (key === NEW && defaultDoc)
+      if (key === NEW && defaultDoc) {
         // A new policy starts from the default policy's rules, in audit mode, with no devices or measures.
+        setBase(null);
         setDraft({
           ...defaultDoc,
           policyId: "",
@@ -91,7 +101,7 @@ export function Policies({ session }: { session: Session }) {
           targetDeviceIds: [],
           requiredControls: [],
         });
-      else setDraft(policies.find((p) => p.key === key)?.doc ?? null);
+      } else edit(policies.find((p) => p.key === key)?.doc ?? null);
     };
     if (!dirty) return go();
     modal.confirm({
@@ -130,7 +140,7 @@ export function Policies({ session }: { session: Session }) {
   }
 
   function publish() {
-    if (!draft || (!policy && !creating)) return;
+    if (!draft || (!policy && !creating) || stale) return;
     const changes = creating
       ? [
           `新建策略“${draft.policyId || "（未命名）"}”，适用 ${draft.targetDeviceIds.length} 台终端`,
@@ -159,16 +169,19 @@ export function Policies({ session }: { session: Session }) {
         setError(null);
         try {
           const published = await request<PolicyListItem>(
-            `/api/policies/${creating ? "new" : encodeURIComponent(selected)}`,
+            creating
+              ? "/api/policies/new"
+              : `/api/policies/${encodeURIComponent(selected)}?baseVersion=${base!.version}`,
             { method: "POST", body: draft, csrfToken: session.csrfToken },
           );
           const doc = parse(published.release);
           setSelected(published.key);
-          setDraft(doc);
+          edit(doc);
           message.success(`“${doc?.policyId}” v${doc?.version} 已发布。`);
           refresh();
         } catch (e) {
           setError(errorText(e));
+          refresh();
         } finally {
           setBusy(false);
         }
@@ -192,7 +205,7 @@ export function Policies({ session }: { session: Session }) {
           });
           message.success(`已删除“${entry.doc.policyId}”。`);
           setSelected("default");
-          setDraft(defaultDoc);
+          edit(defaultDoc);
           refresh();
         } catch (e) {
           message.error(errorText(e));
@@ -250,8 +263,10 @@ export function Policies({ session }: { session: Session }) {
               </Button>
             )}
             {canPublish && (
-              <Tooltip title={dirty ? undefined : "没有需要保存的修改"}>
-                <Button type="primary" disabled={!dirty} loading={busy} onClick={publish}>
+              <Tooltip
+                title={stale ? "请先载入最新版本" : dirty ? undefined : "没有需要保存的修改"}
+              >
+                <Button type="primary" disabled={!dirty || stale} loading={busy} onClick={publish}>
                   保存并发布
                 </Button>
               </Tooltip>
@@ -285,6 +300,15 @@ export function Policies({ session }: { session: Session }) {
         {!canPublish && (
           <Alert type="info" showIcon title="当前账号只能查看策略，修改和发布需要发布权限。" />
         )}
+        {stale && canPublish && (
+          <Alert
+            type="warning"
+            showIcon
+            title={`这份策略已被他人更新为 v${policy!.version}，你的修改基于 v${base!.version}`}
+            description="为免覆盖对方的修改，需要先载入最新版本，再重新做你的修改。"
+            action={<Button onClick={() => edit(policy)}>载入最新版本</Button>}
+          />
+        )}
         {outdated && canPublish && (
           <Alert
             type="info"
@@ -312,10 +336,10 @@ export function Policies({ session }: { session: Session }) {
         <div className="policy-bar" role="region" aria-label="未发布的修改">
           <Typography.Text>有未保存的修改，发布后终端才会按新策略检查</Typography.Text>
           <Space>
-            <Button onClick={() => (creating ? select("default") : setDraft(policy))}>
+            <Button onClick={() => (creating ? select("default") : edit(policy))}>
               {creating ? "取消新建" : "放弃修改"}
             </Button>
-            <Button type="primary" loading={busy} onClick={publish}>
+            <Button type="primary" disabled={stale} loading={busy} onClick={publish}>
               保存并发布
             </Button>
           </Space>

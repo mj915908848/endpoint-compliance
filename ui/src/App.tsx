@@ -9,7 +9,7 @@ import {
   useParams,
 } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Avatar, Button, Flex, Layout, Menu, Space, Typography } from "antd";
+import { Alert, Avatar, Button, Flex, Layout, Menu, Space, Typography } from "antd";
 import {
   AlertOutlined,
   AuditOutlined,
@@ -20,7 +20,7 @@ import {
   KeyOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
-import { HttpError, request } from "./api";
+import { HttpError, idleMs, markUse, onSessionLost, request } from "./api";
 import { ErrorNotice, errorText, Loading, Login, PasswordDialog } from "./components";
 import { Alerts } from "./pages/Alerts";
 import { AuditPage } from "./pages/Audit";
@@ -68,7 +68,9 @@ export function App() {
     [authLoading, setAuthLoading] = useState(true),
     [authError, setAuthError] = useState<string | null>(null),
     [logoutBusy, setLogoutBusy] = useState(false),
-    [passwordOpen, setPasswordOpen] = useState(false);
+    [passwordOpen, setPasswordOpen] = useState(false),
+    [signedOut, setSignedOut] = useState<string | null>(null),
+    [idleWarning, setIdleWarning] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const queries = useQueryClient();
@@ -87,6 +89,48 @@ export function App() {
   useEffect(() => {
     void check();
   }, []);
+  // Any request the server refuses for want of a session returns to the login screen.
+  useEffect(() => {
+    if (!session) return;
+    onSessionLost(() => {
+      queries.clear();
+      setSession(null);
+      setSignedOut("登录已过期，请重新登录。");
+    });
+    return () => onSessionLost(null);
+  }, [session, queries]);
+  // Signs out after the configured minutes without typing, clicking or scrolling in any tab; a warning shows
+  // for the last minute. The server enforces the same limit, so a closed or sleeping tab is covered too.
+  const idleMinutes = session?.idleMinutes ?? 0;
+  useEffect(() => {
+    if (!session || idleMinutes <= 0) return;
+    const limit = idleMinutes * 60_000;
+    const events = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"] as const;
+    const use = () => markUse();
+    events.forEach((e) => window.addEventListener(e, use, { passive: true }));
+    markUse();
+    const timer = window.setInterval(() => {
+      const idle = idleMs();
+      setIdleWarning(idle >= limit - 60_000);
+      if (idle < limit) return;
+      window.clearInterval(timer);
+      // Best effort: the server ends the session by itself anyway.
+      void request("/api/auth/logout", {
+        method: "POST",
+        body: {},
+        csrfToken: session.csrfToken,
+      }).catch(() => undefined);
+      onSessionLost(null);
+      queries.clear();
+      setSession(null);
+      setSignedOut(`${idleMinutes} 分钟未操作，已自动退出。`);
+    }, 5_000);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, use));
+      window.clearInterval(timer);
+      setIdleWarning(false);
+    };
+  }, [session, idleMinutes, queries]);
   async function login(username: string, password: string) {
     const result = await request<Session>("/api/auth/login", {
       method: "POST",
@@ -94,6 +138,7 @@ export function App() {
     });
     // Stay on the requested URL so a shared device link opens after login.
     queries.clear();
+    setSignedOut(null);
     setSession(result);
   }
   async function logout() {
@@ -126,7 +171,7 @@ export function App() {
         <Button onClick={check}>重新连接</Button>
       </Flex>
     );
-  if (!session) return <Login onLogin={login} />;
+  if (!session) return <Login onLogin={login} notice={signedOut} />;
   const page = currentPage(location.pathname);
   return (
     <Layout className="app-shell">
@@ -184,6 +229,14 @@ export function App() {
         </Layout.Header>
         <Layout.Content className="content">
           <ErrorNotice error={authError} />
+          {idleWarning && (
+            <Alert
+              type="warning"
+              showIcon
+              title={`${idleMinutes} 分钟未操作将自动退出，移动鼠标或按任意键继续使用。`}
+              style={{ marginBottom: 16 }}
+            />
+          )}
           <Routes>
             <Route
               path="/"

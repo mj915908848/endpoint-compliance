@@ -138,9 +138,45 @@ describe("policy editor", () => {
     const dialog = screen.getByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "发布" }));
     await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts.posted).toEqual(["/api/policies/default?baseVersion=1"]);
     expect(posts[0].policyId).toBe("研发部终端规范");
     expect(posts[0].products).toHaveLength(1);
     await waitFor(() => expect(screen.queryByRole("region", { name: "未发布的修改" })).toBeNull());
+  });
+
+  it("will not publish over a release someone else published meanwhile", async () => {
+    let current = base;
+    const release = (doc: Policy) => ({ payload: JSON.stringify(doc), signature: "s", keyId: "k" });
+    vi.stubGlobal("fetch", async (url: string) => {
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+      if (url === "/api/policies")
+        return json([{ key: "default", isDefault: true, release: release(current), devices: 3 }]);
+      if (url === "/api/policies/template") return json(base);
+      return json([]);
+    });
+    renderPage();
+    const name = await screen.findByLabelText("策略名称");
+    await userEvent.type(name, "-mine");
+    current = { ...base, version: 2, blockDomains: ["example.com"] };
+    await userEvent.click(screen.getByRole("button", { name: "刷新" }));
+    expect(await screen.findByText("这份策略已被他人更新为 v2，你的修改基于 v1")).toBeTruthy();
+    const bar = screen.getByRole("region", { name: "未发布的修改" });
+    expect(
+      (within(bar).getByRole("button", { name: "保存并发布" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "载入最新版本" }));
+    expect((screen.getByLabelText("策略名称") as HTMLInputElement).value).toBe("Default");
+    expect(screen.queryByRole("region", { name: "未发布的修改" })).toBeNull();
+    expect(screen.queryByText(/已被他人更新/)).toBeNull();
+
+    // With nothing edited, the page simply follows the newer release.
+    current = { ...base, version: 3, policyId: "Renamed" };
+    await userEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() =>
+      expect((screen.getByLabelText("策略名称") as HTMLInputElement).value).toBe("Renamed"),
+    );
+    expect(screen.queryByText(/已被他人更新/)).toBeNull();
   });
 
   it("shows result validity as twice the check intervals, without an input", async () => {

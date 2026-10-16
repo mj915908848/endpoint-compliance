@@ -674,6 +674,70 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Publishing_from_an_older_release_is_refused_so_nothing_is_overwritten_unseen()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var doc = new PolicyDocument { PolicyId = "office-pcs", RequiredControls = [] };
+        Task<HttpResponseMessage> Publish(string query) =>
+            f.Client.PostAsJsonAsync("/api/policies/default" + query, doc, Wire.Json);
+
+        Assert.Equal(HttpStatusCode.OK, (await Publish("?baseVersion=1")).StatusCode);
+        var stale = await Publish("?baseVersion=1");
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.Contains("已被他人更新为 v2", await stale.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, (await Publish("?baseVersion=2")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Publish("?baseVersion=x")).StatusCode);
+        // Callers that do not say which release they started from publish as before.
+        Assert.Equal(HttpStatusCode.OK, (await Publish("")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Session_ends_after_idle_minutes_and_polling_alone_does_not_keep_it()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        Assert.Contains("\"idleMinutes\":30", await f.Client.GetStringAsync("/api/me"));
+        Task<HttpResponseMessage> Poll(int idleSeconds)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "/api/devices");
+            request.Headers.Add("X-Idle-Seconds", idleSeconds.ToString());
+            return f.Client.SendAsync(request);
+        }
+
+        // The page keeps polling but nobody touches it.
+        f.Clock.Now = f.Clock.Now.AddMinutes(20);
+        Assert.Equal(HttpStatusCode.OK, (await Poll(20 * 60)).StatusCode);
+        f.Clock.Now = f.Clock.Now.AddMinutes(11);
+        var idle = await Poll(31 * 60);
+        Assert.Equal(HttpStatusCode.Unauthorized, idle.StatusCode);
+        Assert.Contains("Session idle", await idle.Content.ReadAsStringAsync());
+
+        // Use reported by the page, or a request that does not report (a download), keeps it.
+        await f.Login();
+        f.Clock.Now = f.Clock.Now.AddMinutes(20);
+        Assert.Equal(HttpStatusCode.OK, (await Poll(5)).StatusCode);
+        f.Clock.Now = f.Clock.Now.AddMinutes(20);
+        Assert.Equal(HttpStatusCode.OK, (await f.Client.GetAsync("/api/devices")).StatusCode);
+        f.Clock.Now = f.Clock.Now.AddMinutes(25);
+        Assert.Equal(HttpStatusCode.OK, (await Poll(25 * 60)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Authentication_applies_whatever_the_case_of_the_path()
+    {
+        await using var f = new Fixture();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await f.Client.GetAsync("/API/devices")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await f.Client.GetAsync("/Api/Me")).StatusCode);
+        var unsigned = await f.Client.PostAsJsonAsync(
+            "/API/Agent/heartbeat",
+            new HeartbeatRequest("host", "1", f.Clock.Now, 1, []),
+            Wire.Json
+        );
+        Assert.Equal(HttpStatusCode.Unauthorized, unsigned.StatusCode);
+    }
+
+    [Fact]
     public async Task Historical_scan_stays_unknown_and_offline_report_cannot_claim_current_pass()
     {
         await using var f = new Fixture();

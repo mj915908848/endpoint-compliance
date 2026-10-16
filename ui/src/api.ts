@@ -7,6 +7,37 @@ export class HttpError extends Error {
     this.name = "HttpError";
   }
 }
+// When the administrator last typed, clicked or scrolled, shared between tabs so working in one keeps the
+// others signed in. The server ends a session after a period without use, so requests report it.
+const USE_KEY = "compliance-last-use";
+let lastUse = Date.now(),
+  lastSaved = 0;
+export function markUse() {
+  lastUse = Date.now();
+  if (lastUse - lastSaved < 5_000) return;
+  lastSaved = lastUse;
+  try {
+    localStorage.setItem(USE_KEY, String(lastUse));
+  } catch {
+    // Storage may be unavailable; this tab still counts its own use.
+  }
+}
+export function idleMs() {
+  let shared = 0;
+  try {
+    shared = Number(localStorage.getItem(USE_KEY)) || 0;
+  } catch {
+    shared = 0;
+  }
+  return Math.max(0, Date.now() - Math.max(lastUse, shared));
+}
+
+// Called when the server no longer accepts the session, from any request.
+let sessionLost: (() => void) | null = null;
+export function onSessionLost(handler: (() => void) | null) {
+  sessionLost = handler;
+}
+
 export async function request<T>(
   path: string,
   options: {
@@ -20,6 +51,7 @@ export async function request<T>(
   const headers = new Headers();
   if (options.body !== undefined) headers.set("Content-Type", "application/json");
   if (options.csrfToken) headers.set("X-CSRF-Token", options.csrfToken);
+  headers.set("X-Idle-Seconds", String(Math.floor(idleMs() / 1000)));
   let response: Response;
   try {
     response = await fetch(path, {
@@ -46,6 +78,10 @@ export async function request<T>(
       payload && typeof payload === "object" && "error" in payload
         ? (payload as { error?: unknown }).error
         : null;
+    if (response.status === 401 && path !== "/api/auth/login") {
+      sessionLost?.();
+      throw new HttpError("登录已过期，请重新登录", 401);
+    }
     const message = typeof error === "string" ? error : `请求失败（HTTP ${response.status}）`;
     throw new HttpError(message, response.status);
   }
