@@ -201,6 +201,14 @@ export interface PolicyListItem {
   devices: number;
 }
 
+export interface PolicyHistoryItem {
+  version: number;
+  publishedAt: string;
+  /** Empty once the publication's audit record has been pruned. */
+  publishedBy: string;
+  release: SignedPolicy;
+}
+
 export interface EnrollmentCode {
   id: string;
   label: string;

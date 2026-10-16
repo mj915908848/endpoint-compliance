@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, App, Button, Input, Modal, Segmented, Space, Tag, Tooltip, Typography } from "antd";
+import {
+  Alert,
+  App,
+  Button,
+  Input,
+  Modal,
+  Segmented,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { request } from "../api";
 import { useResource, useRefresh } from "../useResource";
@@ -15,7 +27,7 @@ import {
   time,
 } from "../components";
 import { role } from "../session";
-import type { DeviceSummary, Policy, PolicyListItem, Session } from "../types";
+import type { DeviceSummary, Policy, PolicyHistoryItem, PolicyListItem, Session } from "../types";
 
 const parse = (signed: { payload: string } | null | undefined) => {
   try {
@@ -53,7 +65,8 @@ export function Policies({ session }: { session: Session }) {
   const [draft, setDraft] = useState<Policy | null>(null),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
-    [json, setJson] = useState<string | null>(null);
+    [json, setJson] = useState<string | null>(null),
+    [history, setHistory] = useState(false);
   useEffect(() => {
     if (policy && !draft) setDraft(policy);
   }, [policy, draft]);
@@ -102,6 +115,12 @@ export function Policies({ session }: { session: Session }) {
       targetDeviceIds: draft.targetDeviceIds,
     });
     message.info("已载入内置最新规则，核对后点击“保存并发布”即可生效。");
+  }
+
+  function restore(old: Policy) {
+    setDraft(old);
+    setHistory(false);
+    message.info(`已载入 v${old.version} 的内容，核对后点击“保存并发布”即可恢复。`);
   }
 
   function publish() {
@@ -217,6 +236,7 @@ export function Policies({ session }: { session: Session }) {
                 以 JSON 编辑
               </Button>
             )}
+            {entry && !creating && <Button onClick={() => setHistory(true)}>历史版本</Button>}
             <Button onClick={refresh}>刷新</Button>
             {canPublish && entry && !entry.isDefault && !creating && (
               <Button danger onClick={remove}>
@@ -295,6 +315,15 @@ export function Policies({ session }: { session: Session }) {
           </Space>
         </div>
       )}
+      {history && policy && (
+        <PolicyHistory
+          policyKey={selected}
+          current={policy}
+          canRestore={canPublish}
+          onRestore={restore}
+          onClose={() => setHistory(false)}
+        />
+      )}
       <Modal
         open={json !== null}
         title="以 JSON 编辑策略"
@@ -317,5 +346,101 @@ export function Policies({ session }: { session: Session }) {
         />
       </Modal>
     </>
+  );
+}
+
+/** A policy's earlier releases; restoring one loads it into the editor to be published as a new version. */
+function PolicyHistory({
+  policyKey,
+  current,
+  canRestore,
+  onRestore,
+  onClose,
+}: {
+  policyKey: string;
+  current: Policy;
+  canRestore: boolean;
+  onRestore: (doc: Policy) => void;
+  onClose: () => void;
+}) {
+  const items = useResource<PolicyHistoryItem[]>(
+    `/api/policies/${encodeURIComponent(policyKey)}/history`,
+  );
+  const rows = (items.data ?? []).flatMap((item) => {
+    const doc = parse(item.release);
+    return doc ? [{ ...item, doc }] : [];
+  });
+  return (
+    <Modal
+      open
+      title={`“${current.policyId}”的历史版本`}
+      footer={null}
+      width={760}
+      onCancel={onClose}
+    >
+      <Typography.Paragraph type="secondary">
+        恢复会把所选版本的内容载入编辑器，核对后“保存并发布”，作为新版本下发给终端。展开一行可查看它与当前版本的差别。
+      </Typography.Paragraph>
+      <Fresh error={items.error} loading={items.loading}>
+        <Table
+          rowKey="version"
+          dataSource={rows}
+          size="small"
+          pagination={rows.length > 10 ? { pageSize: 10, showSizeChanger: false } : false}
+          expandable={{
+            rowExpandable: (r) => r.version !== current.version,
+            expandedRowRender: (r) => {
+              const changes = describeChanges(current, r.doc);
+              return changes.length ? (
+                <ul className="report-list">
+                  {changes.map((c) => (
+                    <li key={c}>恢复后 {c}</li>
+                  ))}
+                </ul>
+              ) : (
+                <Typography.Text type="secondary">内容与当前版本相同</Typography.Text>
+              );
+            },
+          }}
+          columns={[
+            {
+              title: "版本",
+              key: "version",
+              width: 120,
+              render: (_, r) => (
+                <Space size={4}>
+                  <span>v{r.version}</span>
+                  {r.version === current.version && <Tag color="success">当前</Tag>}
+                </Space>
+              ),
+            },
+            { title: "发布时间", key: "at", render: (_, r) => time(r.publishedAt) },
+            { title: "发布人", key: "by", render: (_, r) => r.publishedBy || "—" },
+            {
+              title: "内容",
+              key: "content",
+              render: (_, r) =>
+                `${modeLabel(r.doc.mode)} · 产品 ${r.doc.products.length} 个` +
+                (r.doc.targetDeviceIds.length ? ` · 终端 ${r.doc.targetDeviceIds.length} 台` : ""),
+            },
+            ...(canRestore
+              ? [
+                  {
+                    title: "",
+                    key: "restore",
+                    width: 110,
+                    render: (_: unknown, r: (typeof rows)[number]) =>
+                      r.version !== current.version && (
+                        <Button size="small" onClick={() => onRestore(r.doc)}>
+                          恢复此版本
+                        </Button>
+                      ),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </Fresh>
+    </Modal>
   );
 }

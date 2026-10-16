@@ -41,7 +41,7 @@ const base: Policy = {
   applicationRules: [],
 };
 
-function stub(published: Policy, template: Policy, devices: object[] = []) {
+function stub(published: Policy, template: Policy, devices: object[] = [], history: Policy[] = []) {
   let named: Policy[] = [];
   const posts: Policy[] = [];
   const posted: string[] = [];
@@ -72,6 +72,15 @@ function stub(published: Policy, template: Policy, devices: object[] = []) {
         })),
       ]);
     if (url === "/api/policies/template") return json(template);
+    if (url === "/api/policies/default/history")
+      return json(
+        history.map((doc) => ({
+          version: doc.version,
+          publishedAt: doc.issuedAt,
+          publishedBy: "admin",
+          release: release(doc),
+        })),
+      );
     if (url === "/api/devices") return json(devices);
     return json([]);
   });
@@ -174,6 +183,23 @@ describe("policy editor", () => {
     // A narrower list starts on its first page.
     await userEvent.type(screen.getByLabelText("搜索产品"), "产品1");
     expect(await screen.findByText("产品1")).toBeTruthy();
+  });
+
+  it("restores an earlier version by publishing its content again", async () => {
+    const current = { ...base, version: 2, blockDomains: ["new.example"] };
+    const old = { ...base, version: 1, blockDomains: ["old.example"] };
+    const posts = stub(current, current, [], [current, old]);
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "历史版本" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("当前")).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "恢复此版本" }));
+    const bar = await screen.findByRole("region", { name: "未发布的修改" });
+    await userEvent.click(within(bar).getByRole("button", { name: "保存并发布" }));
+    const confirm = await screen.findByRole("dialog");
+    await userEvent.click(within(confirm).getByRole("button", { name: "发布" }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0].blockDomains).toEqual(["old.example"]);
   });
 
   it("offers the newer built-in rules and keeps the deployment's own name and mode", async () => {

@@ -506,6 +506,28 @@ public sealed class Transaction
             ("policy", policy)
         );
 
+    /// <summary>A policy's releases, newest first.</summary>
+    public Task<List<(long Version, DateTimeOffset PublishedAt, SignedPolicy Release)>> PolicyReleases(
+        string key,
+        int limit
+    ) =>
+        Query(
+            """
+            SELECT version, published_at, payload, signature, key_id FROM policy_releases
+            WHERE policy_key = @key ORDER BY version DESC LIMIT @limit
+            """,
+            r => (r.GetInt64(0), Time(r, 1), new SignedPolicy(r.GetString(2), r.GetString(3), r.GetString(4))),
+            ("key", key),
+            ("limit", (long)limit)
+        );
+
+    /// <summary>Audit records of policy publications, whose target ends in " v{version}".</summary>
+    public Task<List<AuditRecord>> PolicyPublications() =>
+        Query(
+            "SELECT id, actor, action, target, at FROM audit WHERE action IN ('CreatePolicy', 'PublishPolicy')",
+            r => new AuditRecord(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), Time(r, 4))
+        );
+
     /// <summary>The newest release of every policy that is not deleted.</summary>
     public Task<List<(string Key, SignedPolicy Release)>> LatestReleases() =>
         Query(
