@@ -32,6 +32,9 @@ public sealed class NoticeWindow : Form
     private readonly Func<Task> refresh;
     private Notice[] shown = [];
 
+    /// <summary>Whether the list shows <see cref="shown"/> rather than the disconnected view.</summary>
+    private bool listed;
+
     public NoticeWindow(Func<string, Task> acknowledge, Func<Task> refresh)
     {
         this.acknowledge = acknowledge;
@@ -94,12 +97,16 @@ public sealed class NoticeWindow : Form
 
     public void ShowNotices(Notice[] notices)
     {
-        shown = notices;
         var unread = notices.Count(n => !n.Acknowledged);
         status.Text = unread > 0 ? $"客户端运行正常 · {unread} 条未读" : "客户端运行正常";
         status.ForeColor = Theme.Muted;
         readAll.Visible = unread > 0;
         readAll.Enabled = true;
+        // The tray refreshes every 20 seconds; rebuilding an unchanged list would scroll the reader back to the top.
+        if (listed && notices.SequenceEqual(shown))
+            return;
+        shown = notices;
+        listed = true;
         if (notices.Length == 0)
         {
             Fill(
@@ -124,6 +131,7 @@ public sealed class NoticeWindow : Form
     public void ShowDisconnected()
     {
         shown = [];
+        listed = false;
         status.Text = "未连接客户端服务";
         status.ForeColor = Theme.Danger;
         readAll.Visible = false;
@@ -165,8 +173,10 @@ public sealed class NoticeWindow : Form
         await refresh();
     }
 
+    /// <summary>Replaces the list's items, keeping the reader's scroll position where the new items allow.</summary>
     private void Fill(params Control[] items)
     {
+        var scrolled = -list.AutoScrollPosition.Y;
         list.SuspendLayout();
         var old = list.Controls.Cast<Control>().ToArray();
         list.Controls.Clear();
@@ -175,6 +185,8 @@ public sealed class NoticeWindow : Form
         list.Controls.AddRange(items);
         list.ResumeLayout();
         Arrange();
+        if (scrolled > 0)
+            list.AutoScrollPosition = new Point(0, scrolled);
     }
 
     /// <summary>Stacks the cards at the list's width, leaving room for the scroll bar once they overflow.</summary>
