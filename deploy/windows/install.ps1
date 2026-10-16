@@ -19,13 +19,23 @@ $tray = Join-Path $PackageDirectory 'Compliance.Tray.exe'
 if (-not (Test-Path $agent) -or -not (Test-Path $tray)) { throw 'Package must include both published executables' }
 # Standard users may create folders under ProgramData. A data directory someone else created first could hold an
 # agent.json pointing at another server, and its owner can always grant themselves access again; only one left by an
-# earlier install (owned by SYSTEM or Administrators, as the service leaves it) is reused.
-if (Test-Path -LiteralPath $DataDirectory) {
-    foreach ($item in @(Get-Item -LiteralPath $DataDirectory -Force) + @(Get-ChildItem -LiteralPath $DataDirectory -Force)) {
-        $owner = (Get-Acl -LiteralPath $item.FullName).GetOwner([Security.Principal.SecurityIdentifier]).Value
-        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or @('S-1-5-18', 'S-1-5-32-544') -notcontains $owner) {
-            throw "$($item.FullName) is owned by $owner, not SYSTEM or Administrators: someone may have created $DataDirectory before installation. Remove it and install again."
-        }
+# earlier install (owned by SYSTEM or Administrators, as the service leaves it) is reused. A new one is created with its
+# owner and permissions in one step, so no one can create it, or open it, between this check and the ACL change below.
+if (-not (Test-Path -LiteralPath $DataDirectory)) {
+    $security = New-Object Security.AccessControl.DirectorySecurity
+    $security.SetOwner([Security.Principal.SecurityIdentifier]'S-1-5-32-544')
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($sid in 'S-1-5-18', 'S-1-5-32-544') {
+        $security.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule([Security.Principal.SecurityIdentifier]$sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+    }
+    # Windows PowerShell 5.1 has the overload; PowerShell 7 moved it to FileSystemAclExtensions.
+    if ($PSVersionTable.PSEdition -eq 'Desktop') { [IO.Directory]::CreateDirectory($DataDirectory, $security) | Out-Null }
+    else { [IO.FileSystemAclExtensions]::Create([IO.DirectoryInfo]::new($DataDirectory), $security) }
+}
+foreach ($item in @(Get-Item -LiteralPath $DataDirectory -Force) + @(Get-ChildItem -LiteralPath $DataDirectory -Force)) {
+    $owner = (Get-Acl -LiteralPath $item.FullName).GetOwner([Security.Principal.SecurityIdentifier]).Value
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or @('S-1-5-18', 'S-1-5-32-544') -notcontains $owner) {
+        throw "$($item.FullName) is owned by $owner, not SYSTEM or Administrators: someone may have created $DataDirectory before installation. Remove it and install again."
     }
 }
 New-Item -ItemType Directory -Path $InstallDirectory,$DataDirectory -Force | Out-Null

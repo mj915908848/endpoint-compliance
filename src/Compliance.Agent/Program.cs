@@ -35,8 +35,8 @@ public static class Program
             var configPath = Arg("--config") ?? Path.Combine(data, "agent.json");
             if (Has("--prepare-install"))
             {
-                // Run by the MSI as SYSTEM before the service first starts; see NativeDataDirectory.RemoveIfForeign.
-                if (!simulated && NativeDataDirectory.RemoveIfForeign(data))
+                // Run by the MSI as SYSTEM before the service first starts; see NativeDataDirectory.PrepareInstall.
+                if (!simulated && NativeDataDirectory.PrepareInstall(data))
                     Console.WriteLine($"已删除非管理员创建的数据目录 {data}");
                 return 0;
             }

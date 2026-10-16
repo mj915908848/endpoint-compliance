@@ -342,6 +342,19 @@ public sealed class Transaction
             )
         ).ToHashSet();
 
+    /// <summary>The highest event sequence the device's snapshot, stored events and alerts hold; 0 if none.</summary>
+    public Task<long> LastSequence(string deviceId) =>
+        Count(
+            """
+            SELECT MAX(s) FROM (
+                SELECT COALESCE(MAX(sequence), 0) AS s FROM events WHERE device_id = @device
+                UNION ALL SELECT COALESCE(MAX(last_sequence), 0) FROM alerts WHERE device_id = @device
+                UNION ALL SELECT snapshot_sequence FROM devices WHERE id = @device
+            ) AS sequences
+            """,
+            ("device", deviceId)
+        );
+
     public Task InsertEvent(string deviceId, StoredEvent stored) =>
         Execute(
             """

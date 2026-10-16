@@ -5,6 +5,96 @@ namespace Compliance.Agent;
 
 public sealed class OutboxCapacityException(string message) : Exception(message);
 
+/// <summary>What one upload of queued events came to.</summary>
+/// <param name="Failure">Set when the upload stopped at a failure that is retried later.</param>
+public sealed record UploadResult(int Accepted, int Refused, int Quarantined, HttpRequestException? Failure);
+
+public static class EventUpload
+{
+    /// <summary>Refusals that sending the same request again cannot change.</summary>
+    public static bool Permanent(HttpRequestException e) =>
+        e.StatusCode
+            is System.Net.HttpStatusCode.BadRequest
+                or System.Net.HttpStatusCode.UnprocessableEntity
+                or System.Net.HttpStatusCode.Conflict;
+
+    private static TimeSpan RetryDelay(HttpRequestException e) =>
+        e is AgentApiException { RetryAfter: { } serverDelay } && serverDelay > TimeSpan.Zero
+            ? serverDelay
+            : TimeSpan.FromSeconds(30 + Random.Shared.Next(30));
+
+    /// <summary>
+    /// Sends <paramref name="pending"/> and removes what the server accepts. A batch the server refuses as invalid does
+    /// not say which event is at fault, so it is sent again one event at a time, and only an event refused on its own
+    /// is quarantined; the others are delivered. A network or server failure keeps every unsent event for a retry.
+    /// </summary>
+    public static async Task<UploadResult> SendAsync(
+        EventOutbox queue,
+        AgentEvent[] pending,
+        Func<EventBatch, CancellationToken, Task<EventReceipt>> send,
+        CancellationToken ct
+    )
+    {
+        async Task<(int Accepted, int Refused)> Deliver(AgentEvent[] events)
+        {
+            var receipt = await send(new EventBatch(events), ct);
+            var ids = events.Select(x => x.EventId).ToArray();
+            var accepted = receipt.AcceptedEventIds.Intersect(ids).ToArray();
+            await queue.AcknowledgeAsync(accepted, ct);
+            var refused = ids.Except(receipt.AcceptedEventIds).ToArray();
+            if (refused.Length > 0)
+                await queue.RetryAsync(refused, TimeSpan.FromMinutes(1), "Server did not accept event", false, ct);
+            return (accepted.Length, refused.Length);
+        }
+
+        if (pending.Length == 0)
+            return new(0, 0, 0, null);
+        try
+        {
+            var (accepted, refused) = await Deliver(pending);
+            return new(accepted, refused, 0, null);
+        }
+        catch (HttpRequestException e) when (!Permanent(e) || pending.Length == 1)
+        {
+            var permanent = Permanent(e);
+            await queue.RetryAsync(pending.Select(x => x.EventId), RetryDelay(e), e.Message, permanent, ct);
+            return new(0, 0, permanent ? 1 : 0, e);
+        }
+        catch (HttpRequestException)
+        {
+            int accepted = 0,
+                refused = 0,
+                quarantined = 0;
+            for (var i = 0; i < pending.Length; i++)
+            {
+                try
+                {
+                    var (a, r) = await Deliver([pending[i]]);
+                    accepted += a;
+                    refused += r;
+                }
+                catch (HttpRequestException one) when (Permanent(one))
+                {
+                    await queue.RetryAsync([pending[i].EventId], TimeSpan.Zero, one.Message, true, ct);
+                    quarantined++;
+                }
+                catch (HttpRequestException other)
+                {
+                    await queue.RetryAsync(
+                        pending[i..].Select(x => x.EventId),
+                        RetryDelay(other),
+                        other.Message,
+                        false,
+                        ct
+                    );
+                    return new(accepted, refused, quarantined, other);
+                }
+            }
+            return new(accepted, refused, quarantined, null);
+        }
+    }
+}
+
 public record LocalTransition(string Type, string ObjectKey, string Detail, string? UserSid);
 
 public sealed class EventOutbox : IAsyncDisposable
@@ -55,6 +145,7 @@ public sealed class EventOutbox : IAsyncDisposable
                 System.Text.Encoding.UTF8.GetByteCount(
                     Wire.Serialize(new AgentEvent(id, long.MaxValue, when, type, objectKey, snapshot, detail))
                 ) + 8192L;
+            await PruneQuarantineAsync(tx, ct);
             var dropped = 0;
             while (await FullAsync(tx, needed, ct) && await DropOldestSnapshotAsync(tx, ct) is > 0 and var n)
                 dropped += n;
@@ -129,6 +220,53 @@ public sealed class EventOutbox : IAsyncDisposable
         drop.CommandText =
             "DELETE FROM events WHERE seq IN (SELECT seq FROM events WHERE json_extract(json,'$.type')='Snapshot' ORDER BY seq LIMIT 1)";
         return await drop.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>How long a quarantined event is kept for diagnosis; it is never sent again.</summary>
+    public static readonly TimeSpan QuarantineRetention = TimeSpan.FromDays(30);
+
+    /// <summary>Quarantined events kept at most, newest first, so they cannot fill the queue.</summary>
+    public const int MaxQuarantined = 1000;
+
+    private async Task PruneQuarantineAsync(SqliteTransaction tx, CancellationToken ct)
+    {
+        using var prune = db.CreateCommand();
+        prune.Transaction = tx;
+        prune.CommandText =
+            "DELETE FROM quarantine WHERE at < $cutoff OR seq NOT IN (SELECT seq FROM quarantine ORDER BY seq DESC LIMIT $max)";
+        prune.Parameters.AddWithValue("$cutoff", DateTimeOffset.UtcNow.Subtract(QuarantineRetention).ToString("O"));
+        prune.Parameters.AddWithValue("$max", MaxQuarantined);
+        await prune.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Makes the next event's sequence follow <paramref name="last"/>, the highest the server holds for this device.
+    /// The sequence lives in this file only, so a lost or replaced file would start again at 1, and the server ignores
+    /// snapshots older than its current one by sequence. Returns whether the sequence was behind.
+    /// </summary>
+    public async Task<bool> AdvanceSequenceAsync(long last, CancellationToken ct = default)
+    {
+        if (last <= 0)
+            return false;
+        await gate.WaitAsync(ct);
+        try
+        {
+            using var tx = db.BeginTransaction();
+            using var cmd = db.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText =
+                "UPDATE sqlite_sequence SET seq=$last WHERE name='events' AND seq<$last; "
+                + "INSERT INTO sqlite_sequence(name,seq) SELECT 'events',$last "
+                + "WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name='events')";
+            cmd.Parameters.AddWithValue("$last", last);
+            var changed = await cmd.ExecuteNonQueryAsync(ct);
+            tx.Commit();
+            return changed > 0;
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <summary>Queued snapshots dropped to make room since this queue was opened.</summary>

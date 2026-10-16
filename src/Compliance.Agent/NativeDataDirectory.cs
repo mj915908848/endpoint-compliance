@@ -25,11 +25,10 @@ public static class NativeDataDirectory
             if (parent.Exists && parent.Attributes.HasFlag(FileAttributes.ReparsePoint))
                 throw new UnauthorizedAccessException("Agent data path cannot include a reparse point");
         var directory = new DirectoryInfo(full);
+        // Created with its permissions in one step: between a plain create and setting them, a standard user could
+        // open the directory and keep writing to it.
         if (!directory.Exists)
-        {
-            directory.Create();
-            directory.SetAccessControl(Protected());
-        }
+            directory.Create(Protected());
         foreach (var file in directory.EnumerateFiles())
             if (file.Attributes.HasFlag(FileAttributes.ReparsePoint))
                 throw new UnauthorizedAccessException("Agent data file cannot be a reparse point");
@@ -84,6 +83,32 @@ public static class NativeDataDirectory
         // Deleting a link removes the link itself; a recursive delete does not descend into links inside.
         directory.Delete(!directory.Attributes.HasFlag(FileAttributes.ReparsePoint));
         return true;
+    }
+
+    /// <summary>
+    /// Run by the MSI as SYSTEM before the service first starts. Removes a directory someone else created (see
+    /// <see cref="RemoveIfForeign"/>) and creates the data directory with its permissions, so no standard user can
+    /// create one in the time until the service starts and <see cref="EnsureSecure"/> would take it over. Should someone
+    /// create it again between the two steps, it is removed again. Returns whether a directory was removed.
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public static bool PrepareInstall(string path)
+    {
+        var directory = new DirectoryInfo(Path.GetFullPath(path));
+        var removed = false;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            removed |= RemoveIfForeign(directory.FullName);
+            directory.Refresh();
+            if (!directory.Exists)
+                directory.Create(Protected());
+            if (!RemoveIfForeign(directory.FullName))
+                return removed;
+            removed = true;
+        }
+        throw new UnauthorizedAccessException(
+            $"{directory.FullName} keeps being created by someone other than SYSTEM or Administrators"
+        );
     }
 
     /// <summary>
