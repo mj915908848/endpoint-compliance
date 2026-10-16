@@ -3,7 +3,9 @@
 import argparse, http.cookiejar, json, os, pathlib, secrets, socket, sqlite3, subprocess, time, urllib.request
 from datetime import datetime, timezone
 root=pathlib.Path(__file__).resolve().parents[1]
-ap=argparse.ArgumentParser();ap.add_argument('--dotnet',default='dotnet');ap.add_argument('--data',type=pathlib.Path);ap.add_argument('--port',type=int,default=0);args=ap.parse_args()
+ap=argparse.ArgumentParser();ap.add_argument('--dotnet',default='dotnet');ap.add_argument('--data',type=pathlib.Path);ap.add_argument('--port',type=int,default=0)
+# A published server executable (for example a trimmed single-file build) instead of the Release build's dll.
+ap.add_argument('--server-bin',type=pathlib.Path);args=ap.parse_args()
 data=args.data or root/'artifacts'/('e2e-'+secrets.token_hex(4));data.mkdir(parents=True,exist_ok=False)
 if args.port: port=args.port
 else:
@@ -21,7 +23,8 @@ server_log=(data/'server.log').open('w');process=None
 
 def start():
     global process
-    process=subprocess.Popen([args.dotnet,str(root/'src/Compliance.Server/bin/Release/net10.0/Compliance.Server.dll')],cwd=root/'src/Compliance.Server',env=env,stdout=server_log,stderr=subprocess.STDOUT)
+    command=[str(args.server_bin)] if args.server_bin else [args.dotnet,str(root/'src/Compliance.Server/bin/Release/net10.0/Compliance.Server.dll')]
+    process=subprocess.Popen(command,cwd=root/'src/Compliance.Server',env=env,stdout=server_log,stderr=subprocess.STDOUT)
     end=time.monotonic()+30
     while time.monotonic()<end:
         if process.poll() is not None:raise AssertionError('Server failed; inspect server.log')

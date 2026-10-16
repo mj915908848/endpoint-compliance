@@ -28,13 +28,17 @@ def next_version() -> str:
     return f"{base}.{max(patches, default=-1) + 1}"
 
 
-def publish(project: str, output: Path, ver: str, single_file: bool) -> None:
+def publish(project: str, output: Path, ver: str, single_file: bool, trimmed: bool = False) -> None:
     args = [DOTNET, "publish", f"src/{project}", "-c", "Release", "-r", "win-x64", "--self-contained"]
     args += [f"-p:Version={ver}", "-p:EnableWindowsTargeting=true", "-o", str(output), "--nologo", "-v", "q"]
     # Only Chinese resources for the runtime's own messages; other languages fall back to English.
     args += ["-p:SatelliteResourceLanguages=zh-Hans"]
     if single_file:
-        args.append("-p:PublishSingleFile=true")
+        # Native libraries stay beside the executable rather than being extracted to %TEMP% at startup.
+        args += ["-p:PublishSingleFile=true", "-p:EnableCompressionInSingleFile=true", "-p:DebugType=none"]
+    if trimmed:
+        # Leaves out the parts of the framework the app never loads; the project file sets how (TrimMode etc.).
+        args.append("-p:PublishTrimmed=true")
     subprocess.run(args, cwd=ROOT, check=True)
 
 
@@ -132,7 +136,7 @@ def main() -> None:
 
     if args.trial:
         subprocess.run(["npm", "run", "build"], cwd=ROOT / "ui", check=True, stdout=subprocess.DEVNULL)
-        publish("Compliance.Server", published / "server", ver, False)
+        publish("Compliance.Server", published / "server", ver, single_file=True, trimmed=True)
         shutil.rmtree(stage)
         stage_client(stage, published)
         shutil.copytree(published / "server", stage / "server-windows-x64")
