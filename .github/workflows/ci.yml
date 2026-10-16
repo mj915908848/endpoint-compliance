@@ -25,6 +25,10 @@ jobs:
     name: 判断改动范围
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # On a pull request the filter lists the changed files through the API, which needs read access to pull requests.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       ui: ${{ steps.f.outputs.ui == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
       dotnet: ${{ steps.f.outputs.dotnet == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
