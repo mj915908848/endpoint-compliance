@@ -128,3 +128,58 @@ static class Authentication
         return expanded;
     }
 }
+
+/// <summary>
+/// Stops password guessing against one account from many addresses, which the per-address rate limit cannot see:
+/// after <see cref="MaxFailures"/> wrong passwords within <see cref="Window"/>, the account refuses sign-in until the
+/// oldest of them is that old. Kept in memory, so a restart clears it.
+/// </summary>
+public sealed class LoginThrottle
+{
+    public const int MaxFailures = 10;
+    public static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
+    const int MaxAccounts = 10_000;
+
+    readonly Dictionary<string, Queue<DateTimeOffset>> failures = new(StringComparer.OrdinalIgnoreCase);
+
+    public TimeSpan? LockedFor(string username, DateTimeOffset now)
+    {
+        lock (failures)
+        {
+            if (!failures.TryGetValue(username, out var times))
+                return null;
+            Expire(username, times, now);
+            return times.Count >= MaxFailures ? times.Peek() + Window - now : null;
+        }
+    }
+
+    public void Failed(string username, DateTimeOffset now)
+    {
+        lock (failures)
+        {
+            // Names that do not exist count too, so an attacker cannot tell them apart; old entries make room.
+            if (failures.Count >= MaxAccounts)
+                foreach (var (name, times) in failures.ToList())
+                    Expire(name, times, now);
+            if (failures.Count >= MaxAccounts)
+                return;
+            if (!failures.TryGetValue(username, out var list))
+                failures[username] = list = new();
+            list.Enqueue(now);
+        }
+    }
+
+    public void Succeeded(string username)
+    {
+        lock (failures)
+            failures.Remove(username);
+    }
+
+    void Expire(string username, Queue<DateTimeOffset> times, DateTimeOffset now)
+    {
+        while (times.Count > 0 && times.Peek() + Window <= now)
+            times.Dequeue();
+        if (times.Count == 0)
+            failures.Remove(username);
+    }
+}

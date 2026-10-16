@@ -779,6 +779,42 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Devices_enrolling_together_do_not_use_up_the_sign_in_limit()
+    {
+        await using var f = new Fixture();
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        for (var i = 0; i < 30; i++)
+        {
+            var r = await f.Client.PostAsJsonAsync(
+                "/api/agent/enroll",
+                new EnrollmentRequest("not-a-code", "pc-" + i, key.ExportSubjectPublicKeyInfoPem()),
+                Wire.Json
+            );
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, r.StatusCode);
+        }
+        await f.Login();
+    }
+
+    [Fact]
+    public async Task Repeated_wrong_passwords_lock_the_account_for_a_while()
+    {
+        await using var f = new Fixture();
+        Task<HttpResponseMessage> SignIn(string username, string password) =>
+            f.Client.PostAsJsonAsync("/api/auth/login", new { username, password });
+
+        for (var i = 0; i < LoginThrottle.MaxFailures; i++)
+            Assert.Equal(HttpStatusCode.Unauthorized, (await SignIn("ADMIN", "wrong-password")).StatusCode);
+        var locked = await SignIn("admin", "test-admin-password-long");
+        Assert.Equal(HttpStatusCode.TooManyRequests, locked.StatusCode);
+        Assert.Contains("15 分钟后再试", await locked.Content.ReadAsStringAsync());
+        // Other accounts are not affected.
+        Assert.Equal(HttpStatusCode.OK, (await SignIn("reader", "test-admin-password-long")).StatusCode);
+
+        f.Clock.Now += LoginThrottle.Window;
+        await f.Login();
+    }
+
+    [Fact]
     public async Task Authentication_applies_whatever_the_case_of_the_path()
     {
         await using var f = new Fixture();

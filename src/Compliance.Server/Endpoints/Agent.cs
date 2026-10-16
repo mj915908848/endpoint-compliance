@@ -75,7 +75,7 @@ static partial class Endpoints
                     });
                 }
             )
-            .RequireRateLimiting("login");
+            .RequireRateLimiting("enroll");
 
         group.MapPost(
             "/heartbeat",

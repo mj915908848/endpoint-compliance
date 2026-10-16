@@ -8,6 +8,7 @@ static partial class Endpoints
 
     static void MapAuth(IEndpointRouteBuilder routes, ComplianceService s, Settings settings)
     {
+        var throttle = new LoginThrottle();
         var group = routes.MapGroup("/api");
 
         group.MapGet(
@@ -46,11 +47,20 @@ static partial class Endpoints
                         || login.Password.Length > 1024
                     )
                         throw new ApiError(401, "Invalid credentials");
+                    if (throttle.LockedFor(login.Username, s.Now) is { } wait)
+                        throw new ApiError(
+                            429,
+                            $"该账号密码错误次数过多，请 {Math.Ceiling(wait.TotalMinutes)} 分钟后再试"
+                        );
                     var result = await s.Tx(async tx =>
                     {
                         var user = await tx.GetUser(login.Username);
                         if (user == null || !Secrets.Check(login.Password, user.PasswordHash))
+                        {
+                            throttle.Failed(login.Username, s.Now);
                             throw new ApiError(401, "Invalid credentials");
+                        }
+                        throttle.Succeeded(login.Username);
                         var token = Secrets.Token();
                         var session = new SessionRecord(user.Username, Secrets.Token(), s.Now.AddHours(8), s.Now);
                         await tx.InsertSession(Secrets.Hash(token), session);
