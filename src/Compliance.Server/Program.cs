@@ -27,19 +27,26 @@ public partial class Program
         b.Services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = 429;
-            o.AddPolicy(
-                "login",
-                c =>
-                    RateLimitPartition.GetFixedWindowLimiter(
-                        c.Connection.RemoteIpAddress?.ToString() ?? "loopback",
-                        _ => new FixedWindowRateLimiterOptions
-                        {
-                            PermitLimit = 20,
-                            Window = TimeSpan.FromMinutes(1),
-                            QueueLimit = 0,
-                        }
-                    )
-            );
+            // Separate buckets per source address, so devices enrolling together behind one NAT do not lock
+            // administrators out of signing in, and the other way round.
+            void PerAddress(string policy, int perMinute) =>
+                o.AddPolicy(
+                    policy,
+                    c =>
+                        RateLimitPartition.GetFixedWindowLimiter(
+                            c.Connection.RemoteIpAddress?.ToString() ?? "loopback",
+                            _ => new FixedWindowRateLimiterOptions
+                            {
+                                PermitLimit = perMinute,
+                                Window = TimeSpan.FromMinutes(1),
+                                QueueLimit = 0,
+                            }
+                        )
+                );
+            PerAddress("login", 20);
+            // Enrollment codes are random and long, so this only stops floods; a whole office may enroll at once.
+            PerAddress("enroll", 300);
+            PerAddress("notify-test", 5);
         });
 
         var app = b.Build();

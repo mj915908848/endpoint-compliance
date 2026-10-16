@@ -123,7 +123,7 @@ static partial class Endpoints
                     return new { ok = error == null, error };
                 }
             )
-            .RequireRateLimiting("login");
+            .RequireRateLimiting("notify-test");
 
         group.MapPut(
             "/audit-retention",
