@@ -440,7 +440,8 @@ try:
         def removed():
             assert subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True).returncode != 0, \
                 "Uninstalling the MSI left the service"
-            assert not program.exists(), f"Uninstalling the MSI left {program}"
+            assert not program.exists(), \
+                f"Uninstalling the MSI left {program}: {[str(p) for p in program.rglob('*')][:20]}"
             assert not agent_data.exists(), f"Uninstalling the MSI left {agent_data}"
 
         def pipe(request_line):
