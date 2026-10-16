@@ -7,8 +7,9 @@ using Timer = System.Windows.Forms.Timer;
 namespace Compliance.Tray;
 
 /// <summary>
-/// The resident service's log for administrators testing the client. It lives in the service's data folder, which only
-/// administrators can read, so the tray opens this window in a separate elevated process.
+/// The resident service's log. It lives in the logs folder of the service's data directory, which every local user may
+/// read, so the window opens without asking for administrator rights. It runs in a process of its own, of which there
+/// is only one at a time.
 /// </summary>
 public sealed class LogWindow : Form
 {
@@ -21,7 +22,8 @@ public sealed class LogWindow : Form
 
     private static readonly string Folder = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        "ComplianceAgent"
+        "ComplianceAgent",
+        "logs"
     );
     private static readonly string LogPath = Path.Combine(Folder, "agent.log");
 
@@ -33,18 +35,11 @@ public sealed class LogWindow : Form
     private readonly Timer timer = new() { Interval = 5000 };
     private string shown = "";
 
-    /// <summary>Starts an elevated copy of the tray showing the log; nothing happens if the UAC prompt is declined.</summary>
-    public static void OpenElevated()
+    /// <summary>Starts a copy of the tray showing the log, or brings the open one forward.</summary>
+    public static void Open()
     {
-        if (ActivateExisting())
-            return;
-        try
-        {
-            Process.Start(
-                new ProcessStartInfo(Environment.ProcessPath!, Argument) { UseShellExecute = true, Verb = "runas" }
-            );
-        }
-        catch (System.ComponentModel.Win32Exception) { }
+        if (!ActivateExisting())
+            Process.Start(Environment.ProcessPath!, Argument);
     }
 
     /// <summary>Brings an open log window to the front; false when none is open.</summary>
@@ -56,7 +51,7 @@ public sealed class LogWindow : Form
                 return false;
             mutex.Dispose();
         }
-        // The elevated process's mutex exists but a standard user's tray may not open it.
+        // A window an earlier version opened elevated holds a mutex a standard user's tray may not open.
         catch (UnauthorizedAccessException) { }
         var window = FindWindow(null, Caption);
         if (window != 0)

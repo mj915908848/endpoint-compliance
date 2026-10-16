@@ -55,6 +55,45 @@ public static class NativeDataDirectory
         return true;
     }
 
+    /// <summary>
+    /// Creates the logs folder inside the data directory, which every local user may read but not change, so the tray
+    /// shows the log without asking for administrator rights. Its permissions are set on every start and are not
+    /// inherited, so the data directory's stay as they are. Logs an earlier version wrote next to the key move here.
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public static string EnsureLogs(string dataDirectory)
+    {
+        var logs = new DirectoryInfo(Path.Combine(Path.GetFullPath(dataDirectory), "logs"));
+        if (logs.Exists && logs.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            throw new UnauthorizedAccessException("Agent log folder cannot be a reparse point");
+        logs.Create();
+        var security = Protected();
+        security.AddAccessRule(
+            new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
+                FileSystemRights.ReadAndExecute,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow
+            )
+        );
+        logs.SetAccessControl(security);
+        foreach (var name in new[] { "agent.log.1", "agent.log" })
+        {
+            var old = Path.Combine(dataDirectory, name);
+            if (File.Exists(old))
+                File.Move(old, Path.Combine(logs.FullName, name), true);
+        }
+        foreach (var file in logs.EnumerateFiles())
+        {
+            // A moved file keeps the rules it had; with none of its own it takes the folder's.
+            var inherit = OwnedByAdministrators(new FileSecurity());
+            inherit.SetAccessRuleProtection(false, false);
+            file.SetAccessControl(inherit);
+        }
+        return logs.FullName;
+    }
+
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static DirectorySecurity Protected()
     {

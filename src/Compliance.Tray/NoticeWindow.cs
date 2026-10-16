@@ -70,8 +70,8 @@ public sealed class NoticeWindow : Form
         header.Controls.AddRange([logo, title, status, readAll]);
         header.Layout += (_, _) => readAll.Location = new Point(header.Width - readAll.Width - S(20), S(25));
 
-        var log = Theme.Link("运行日志（需管理员）", Theme.Small);
-        log.LinkClicked += (_, _) => LogWindow.OpenElevated();
+        var log = Theme.Link("运行日志", Theme.Small);
+        log.LinkClicked += (_, _) => LogWindow.Open();
         var footer = new Theme.Bar(lineAtTop: true) { Dock = DockStyle.Bottom, Height = S(41) };
         var note = Theme.Label("检查在后台自动进行，不读取文件内容", Theme.Small, Theme.Muted);
         note.Location = new Point(S(20), S(12));

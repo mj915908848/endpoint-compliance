@@ -42,7 +42,7 @@ public sealed class TrayApp : ApplicationContext
     {
         var menu = new ContextMenuStrip { Font = Theme.Body };
         menu.Items.Add("打开通知中心", null, (_, _) => ShowWindow());
-        menu.Items.Add("运行日志（需管理员）", null, (_, _) => LogWindow.OpenElevated());
+        menu.Items.Add("运行日志", null, (_, _) => LogWindow.Open());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出托盘", null, (_, _) => ExitThread());
         icon = new NotifyIcon

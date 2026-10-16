@@ -343,6 +343,29 @@ try:
             line.split()[-1] in ("S-1-5-18", "S-1-5-32-544") for line in owners.splitlines() if line.strip()
         ), f"Data directory items with other owners: {owners}"
         print("PASS the data directory and its files belong to SYSTEM or Administrators")
+        # The log sits in a logs folder every user may read but not change, so the tray opens it without elevation;
+        # an earlier release's log next to the key moved there on upgrade.
+        logs = agent_data / "logs"
+        assert (logs / "agent.log").exists(), "The service did not write logs\\agent.log"
+        assert not (agent_data / "agent.log").exists() and not (agent_data / "agent.log.1").exists(), \
+            "A log was left next to the identity key"
+        rules = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             f"$acl = Get-Acl -LiteralPath '{logs}'; 'protected ' + $acl.AreAccessRulesProtected; "
+             "$acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | "
+             "ForEach-Object { $_.IdentityReference.Value + ' ' + $_.AccessControlType + ' ' + $_.FileSystemRights }"],
+            capture_output=True, text=True, timeout=60,
+        ).stdout
+        users = [line for line in rules.splitlines() if line.startswith("S-1-5-32-545 ")]
+        assert "protected True" in rules and users and all(
+            "Allow" in line and not any(w in line for w in ("Write", "Modify", "FullControl", "Delete", "ChangePermissions"))
+            for line in users
+        ), f"Users may not read the logs folder, or may change it: {rules}"
+        assert all(
+            line.split()[0] in ("S-1-5-18", "S-1-5-32-544", "S-1-5-32-545")
+            for line in rules.splitlines()[1:] if line.strip()
+        ), f"The logs folder grants another account: {rules}"
+        print("PASS the log is in a folder users may read but not change, and an earlier release's log moved there")
         # Explorer's "permanently get access" prompt grants the signed-in user access to the data directory.
         # The service must remove that grant on its next start, keep running and tell the administrator.
         before = wait_reporting()[0]["lastHeartbeat"]
