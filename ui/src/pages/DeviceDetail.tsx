@@ -170,8 +170,7 @@ export function DeviceDetailPage({
                 </Fact>
                 <Fact label="策略">
                   {d.policyName && `${d.policyName} `}v{d.targetPolicyVersion}
-                  {d.appliedPolicyVersion !== d.targetPolicyVersion &&
-                    `（终端已应用 v${d.appliedPolicyVersion}）`}
+                  {!d.policyApplied && "（终端尚未应用，下次联系管理端时更新）"}
                   {d.protectionStatus && ` · ${d.protectionStatus}`}
                 </Fact>
                 {pending > 0 && <Fact label="待执行的检查请求">{pending}</Fact>}

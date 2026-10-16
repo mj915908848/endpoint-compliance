@@ -7,6 +7,7 @@ public sealed record PolicyListItem(string Key, bool IsDefault, SignedPolicy Rel
 /// <summary>One earlier release of a policy; PublishedBy is empty once its audit record has been pruned.</summary>
 public sealed record PolicyHistoryItem(
     long Version,
+    long Serial,
     DateTimeOffset PublishedAt,
     string PublishedBy,
     SignedPolicy Release
@@ -59,19 +60,22 @@ static partial class Endpoints
                 {
                     if (!(await s.Policies(tx)).Any(p => p.Key == key))
                         throw new ApiError(404, "策略不存在或已删除");
-                    var publishers = (await tx.PolicyPublications())
-                        .Select(a => (a.Target, a.Actor))
-                        .Where(a => a.Target.LastIndexOf(" v", StringComparison.Ordinal) >= 0)
-                        .GroupBy(a => a.Target[(a.Target.LastIndexOf(" v", StringComparison.Ordinal) + 2)..])
-                        .ToDictionary(g => g.Key, g => g.First().Actor);
-                    return (await tx.PolicyReleases(key, 50))
-                        .Select(r => new PolicyHistoryItem(
-                            r.Version,
-                            r.PublishedAt,
-                            publishers.GetValueOrDefault(r.Version.ToString(), ""),
-                            r.Release
-                        ))
-                        .ToArray();
+                    var publications = await tx.PolicyPublications();
+                    var items = new List<PolicyHistoryItem>();
+                    foreach (var (serial, at, release) in await tx.PolicyReleases(key, 50))
+                    {
+                        var doc = Wire.Read<PolicyDocument>(release.Payload);
+                        // A re-issue for devices moving between policies repeats the newer release's content.
+                        if (items.Count > 0 && items[^1].Version == doc.Version)
+                            continue;
+                        var target = $"{doc.PolicyId} v{doc.Version}";
+                        var by = publications
+                            .Where(a => a.Target == target && (a.At - at).Duration() < TimeSpan.FromMinutes(1))
+                            .Select(a => a.Actor)
+                            .FirstOrDefault();
+                        items.Add(new(doc.Version, serial, at, by ?? "", release));
+                    }
+                    return items;
                 });
             }
         );

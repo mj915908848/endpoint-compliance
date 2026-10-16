@@ -83,6 +83,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
                 {
                     Mode = "Audit",
                     Version = 1,
+                    Sequence = 1,
                     IssuedAt = Now,
                     ExpiresAt = Now + PolicyValidity,
                 };
@@ -134,8 +135,9 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         ?? policies.First(p => p.IsDefault);
 
     /// <summary>
-    /// Points every device at the newest release of its policy. Agents refuse a lower version than they hold,
-    /// so a policy that devices move to from a newer release is first re-issued under a new version.
+    /// Points every device at the newest release of its policy. Agents refuse a lower serial than they hold, so a
+    /// policy that devices move to from a newer release is first re-issued under a new serial; its own version, which
+    /// administrators see, stays the same since its content does.
     /// </summary>
     async Task Reassign(Transaction tx)
     {
@@ -144,31 +146,32 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         foreach (
             var stale in policies
                 .Where(p =>
-                    devices.Any(d => d.TargetPolicyVersion > p.Document.Version && PolicyFor(d.Id, policies) == p)
+                    devices.Any(d => d.TargetPolicyVersion > p.Document.Serial && PolicyFor(d.Id, policies) == p)
                 )
                 .ToList()
         )
         {
             var doc = stale.Document with
             {
-                Version = await NextVersion(tx),
+                Sequence = await NextSerial(tx),
                 IssuedAt = Now,
                 ExpiresAt = Now + PolicyValidity,
             };
-            await tx.InsertRelease(doc.Version, Sign(doc), Now, stale.Key);
+            await tx.InsertRelease(doc.Serial, Sign(doc), Now, stale.Key);
             await tx.Audit("system", "ReissuePolicy", $"{doc.PolicyId} v{doc.Version}", Now);
         }
         policies = await Policies(tx);
         foreach (var d in devices)
         {
-            var version = PolicyFor(d.Id, policies).Document.Version;
-            if (d.TargetPolicyVersion != version)
-                await tx.SetTargetPolicy(d.Id, version);
+            var serial = PolicyFor(d.Id, policies).Document.Serial;
+            if (d.TargetPolicyVersion != serial)
+                await tx.SetTargetPolicy(d.Id, serial);
         }
     }
 
-    async Task<long> NextVersion(Transaction tx) =>
-        Wire.Read<PolicyDocument>((await tx.CurrentRelease())!.Payload).Version + 1;
+    /// <summary>Releases are stored under their serial, so the newest release overall holds the highest.</summary>
+    async Task<long> NextSerial(Transaction tx) =>
+        Wire.Read<PolicyDocument>((await tx.CurrentRelease())!.Payload).Serial + 1;
 
     async Task RenameLegacyDefault(Transaction tx)
     {
@@ -184,11 +187,12 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         var doc = current with
         {
             PolicyId = "Default",
-            Version = await NextVersion(tx),
+            Version = current.Version + 1,
+            Sequence = await NextSerial(tx),
             IssuedAt = Now,
             ExpiresAt = Now + PolicyValidity,
         };
-        await tx.InsertRelease(doc.Version, Sign(doc), Now);
+        await tx.InsertRelease(doc.Serial, Sign(doc), Now);
         await tx.Audit("bootstrap", "RenameDefaultPolicy", "v" + doc.Version, Now);
         await Reassign(tx);
     }
@@ -279,7 +283,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             v.Last,
             v.CollectedAt,
             v.Policy.Version,
-            d.AppliedPolicyVersion,
+            d.AppliedPolicyVersion == v.TargetPolicyVersion,
             v.Report?.ProtectionStatus ?? "未取得检查结果",
             v.Report?.ViolationCount ?? 0,
             v.Simulated,
@@ -745,7 +749,9 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         {
             SchemaVersion = 1,
             PolicyId = submitted.PolicyId?.Trim() ?? "",
-            Version = await NextVersion(tx),
+            // Each policy counts its own releases; the serial orders releases of every policy.
+            Version = (existing?.Document.Version ?? 0) + 1,
+            Sequence = await NextSerial(tx),
             IssuedAt = Now,
             ExpiresAt = Now + PolicyValidity,
             DenyInstalled = true,
@@ -795,7 +801,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         key ??= "p-" + Guid.NewGuid().ToString("N")[..12];
         await tx.InsertPolicy(key, Now);
         var signed = Sign(doc);
-        await tx.InsertRelease(doc.Version, signed, Now, key);
+        await tx.InsertRelease(doc.Serial, signed, Now, key);
         await Reassign(tx);
         return (key, signed);
     }

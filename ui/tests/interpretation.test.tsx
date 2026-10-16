@@ -12,7 +12,7 @@ const device: DeviceSummary = {
   lastVerdict: "FAIL",
   lastScan: "2026-10-14T05:52:04Z",
   targetPolicyVersion: 1,
-  appliedPolicyVersion: 0,
+  policyApplied: false,
   protectionStatus: "审计模式",
   violationCount: 3,
   simulated: false,

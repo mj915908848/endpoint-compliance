@@ -12,8 +12,10 @@ export interface DeviceSummary {
   currentVerdict: Verdict;
   lastVerdict: Verdict | null;
   lastScan: string | null;
+  /** The device's policy's own version. */
   targetPolicyVersion: number;
-  appliedPolicyVersion: number;
+  /** The client reported holding that release. */
+  policyApplied: boolean;
   protectionStatus: string;
   violationCount: number;
   simulated: boolean;
@@ -73,6 +75,9 @@ export interface Report {
   reasons: string[];
   coverageGaps: string[];
   sensitiveFileNotes?: string[];
+  /** The policy the report judged against, by name and its own version; absent from servers before 0.2.17. */
+  policyName?: string;
+  policyVersion?: number;
   violationCount: number;
   evidenceCount: number;
   protectionStatus: string;
@@ -113,7 +118,10 @@ export interface Product {
 export interface Policy {
   schemaVersion: number;
   policyId: string;
+  /** This policy's own release number, counting per policy. */
   version: number;
+  /** Order of the release among every policy's releases; absent in releases before 0.2.17. */
+  sequence?: number;
   mode: string;
   targetDeviceIds: string[];
   issuedAt: string;
@@ -206,6 +214,7 @@ export interface PolicyHistoryItem {
   publishedAt: string;
   /** Empty once the publication's audit record has been pruned. */
   publishedBy: string;
+  serial: number;
   release: SignedPolicy;
 }
 

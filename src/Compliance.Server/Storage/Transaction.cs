@@ -506,8 +506,8 @@ public sealed class Transaction
             ("policy", policy)
         );
 
-    /// <summary>A policy's releases, newest first.</summary>
-    public Task<List<(long Version, DateTimeOffset PublishedAt, SignedPolicy Release)>> PolicyReleases(
+    /// <summary>A policy's releases with their serials, newest first.</summary>
+    public Task<List<(long Serial, DateTimeOffset PublishedAt, SignedPolicy Release)>> PolicyReleases(
         string key,
         int limit
     ) =>
@@ -521,7 +521,7 @@ public sealed class Transaction
             ("limit", (long)limit)
         );
 
-    /// <summary>Audit records of policy publications, whose target ends in " v{version}".</summary>
+    /// <summary>Audit records of policy publications, whose target is "{name} v{version}".</summary>
     public Task<List<AuditRecord>> PolicyPublications() =>
         Query(
             "SELECT id, actor, action, target, at FROM audit WHERE action IN ('CreatePolicy', 'PublishPolicy')",

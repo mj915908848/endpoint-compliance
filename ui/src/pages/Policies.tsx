@@ -389,7 +389,7 @@ function PolicyHistory({
       </Typography.Paragraph>
       <Fresh error={items.error} loading={items.loading}>
         <Table
-          rowKey="version"
+          rowKey="serial"
           dataSource={rows}
           size="small"
           pagination={rows.length > 10 ? { pageSize: 10, showSizeChanger: false } : false}

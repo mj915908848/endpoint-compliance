@@ -63,7 +63,22 @@ public record PolicyDocument
 {
     public int SchemaVersion { get; init; } = 1;
     public string PolicyId { get; init; } = "Default";
+
+    /// <summary>This policy's own release number, counting 1, 2, 3 ... per policy; shown to administrators.</summary>
     public long Version { get; init; } = 1;
+
+    /// <summary>
+    /// The release's number among the releases of every policy, which only grows. Agents refuse a lower one than
+    /// they hold, so moving a device to another policy can never roll it back. 0 in releases from before 0.2.17,
+    /// whose <see cref="Version"/> was that number.
+    /// </summary>
+    public long Sequence { get; init; }
+
+    /// <summary>
+    /// What identifies a release: agents report it as their policy version and the server stores releases under it.
+    /// </summary>
+    [JsonIgnore]
+    public long Serial => Sequence > 0 ? Sequence : Version;
     public string Mode { get; init; } = "Audit";
     public string[] TargetDeviceIds { get; init; } = [];
     public DateTimeOffset IssuedAt { get; init; } = DateTimeOffset.UtcNow;
@@ -186,6 +201,7 @@ public record ModuleResult(
     string? Error = null
 );
 
+/// <param name="Version">The <see cref="PolicyDocument.Serial"/> of the policy the state was reached under.</param>
 public record ControlState(
     string Id,
     long Version,
@@ -203,6 +219,8 @@ public record ScanSnapshot
     public string Platform { get; init; } = "Windows";
     public bool Simulated { get; init; }
     public DateTimeOffset CollectedAt { get; init; } = DateTimeOffset.UtcNow;
+
+    /// <summary>The <see cref="PolicyDocument.Serial"/> of the policy the scan used.</summary>
     public long PolicyVersion { get; init; }
     public Evidence[] Evidence { get; init; } = [];
     public ModuleResult[] Modules { get; init; } = [];
@@ -227,6 +245,12 @@ public record ComplianceReport(
 {
     /// <summary>Incomplete sensitive file scans when every rule only alerts; they do not affect the verdict.</summary>
     public string[] SensitiveFileNotes { get; init; } = [];
+
+    /// <summary>The name of the policy the report judged against.</summary>
+    public string PolicyName { get; init; } = "";
+
+    /// <summary>That policy's own <see cref="PolicyDocument.Version"/>.</summary>
+    public long PolicyVersion { get; init; }
 }
 
 public record AgentEvent(
@@ -243,6 +267,7 @@ public record EnrollmentRequest(string Code, string HostName, string PublicKeyPe
 
 public record EnrollmentResponse(string DeviceId, string PolicyPublicKeyPem, string PolicyKeyId);
 
+/// <param name="PolicyVersion">The <see cref="PolicyDocument.Serial"/> of the policy the agent holds.</param>
 public record HeartbeatRequest(
     string HostName,
     string AgentVersion,
@@ -259,6 +284,8 @@ public record DeviceCommand(string Id, string Type, DateTimeOffset ExpiresAt);
 
 public record CommandReply(bool Success, string Detail);
 
+/// <param name="TargetPolicyVersion">The device's policy's own version, as administrators see it.</param>
+/// <param name="PolicyApplied">The agent reported holding that release.</param>
 public record DeviceSummary(
     string Id,
     string HostName,
@@ -268,7 +295,7 @@ public record DeviceSummary(
     Verdict? LastVerdict,
     DateTimeOffset? LastScan,
     long TargetPolicyVersion,
-    long AppliedPolicyVersion,
+    bool PolicyApplied,
     string ProtectionStatus,
     int ViolationCount,
     bool Simulated,

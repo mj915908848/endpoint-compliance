@@ -15,7 +15,7 @@ const device: DeviceSummary = {
   lastVerdict: "UNKNOWN",
   lastScan: null,
   targetPolicyVersion: 1,
-  appliedPolicyVersion: 1,
+  policyApplied: true,
   protectionStatus: "审计模式",
   violationCount: 0,
   simulated: false,

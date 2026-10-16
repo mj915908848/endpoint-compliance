@@ -21,5 +21,5 @@ public static class EdgePolicyCompiler
 public static class UnavailableControls
 {
     public static ControlState[] For(PolicyDocument policy, string reason) =>
-        [.. Controls.All.Select(id => new ControlState(id, policy.Version, "Uncovered", reason))];
+        [.. Controls.All.Select(id => new ControlState(id, policy.Serial, "Uncovered", reason))];
 }

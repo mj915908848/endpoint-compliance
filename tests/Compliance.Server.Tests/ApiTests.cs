@@ -571,7 +571,9 @@ public class ApiTests
         var pilot = await created.Content.ReadFromJsonAsync<PolicyListItem>(Wire.Json);
         Assert.Equal(1, pilot!.Devices);
         var devices = await Devices();
-        Assert.Equal(("研发部", 2L), (devices[first].PolicyName, devices[first].TargetPolicyVersion));
+        // Each policy counts its own versions.
+        Assert.Equal(("研发部", 1L), (devices[first].PolicyName, devices[first].TargetPolicyVersion));
+        Assert.Equal(2L, Wire.Read<PolicyDocument>(pilot.Release.Payload).Serial);
         Assert.Equal(("Default", 1L), (devices[second].PolicyName, devices[second].TargetPolicyVersion));
         // The device that was not named still receives the default release it already had.
         var signed = await (await f.Agent("GET", "/api/agent/policy")).Content.ReadFromJsonAsync<SignedPolicy>(
@@ -613,13 +615,14 @@ public class ApiTests
         var list = await f.Client.GetFromJsonAsync<PolicyListItem[]>("/api/policies", Wire.Json);
         Assert.Equal([(true, 1), (false, 1)], list!.Select(p => (p.IsDefault, p.Devices)));
 
-        // Deleting the named policy moves its device back to the default policy under a newer version,
-        // because agents refuse a lower version than the one they hold.
+        // Deleting the named policy moves its device back to the default policy under a newer serial, because
+        // agents refuse a lower one than they hold; the default policy's own version stays the same.
         Assert.Equal(HttpStatusCode.OK, (await f.Client.DeleteAsync("/api/policies/" + pilot.Key)).StatusCode);
         devices = await Devices();
-        Assert.Equal("Default", devices[first].PolicyName);
-        Assert.True(devices[first].TargetPolicyVersion > 2);
+        Assert.Equal(("Default", 1L), (devices[first].PolicyName, devices[first].TargetPolicyVersion));
         Assert.Equal(devices[first].TargetPolicyVersion, devices[second].TargetPolicyVersion);
+        signed = await (await f.Agent("GET", "/api/agent/policy")).Content.ReadFromJsonAsync<SignedPolicy>(Wire.Json);
+        Assert.True(Wire.Read<PolicyDocument>(signed!.Payload).Serial > 2);
         Assert.Single((await f.Client.GetFromJsonAsync<PolicyListItem[]>("/api/policies", Wire.Json))!);
         Assert.Equal(HttpStatusCode.Conflict, (await f.Client.DeleteAsync("/api/policies/default")).StatusCode);
     }

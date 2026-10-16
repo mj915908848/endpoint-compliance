@@ -234,7 +234,6 @@ export function ControlList({ controls }: { controls: Control[] }) {
             </Space>
           ),
         },
-        { title: "策略版本", key: "version", width: 90, render: (_, c) => `v${c.version}` },
         { title: "说明", dataIndex: "detail" },
       ]}
     />
@@ -325,7 +324,8 @@ export function ReportFindings({ report: r }: { report: Report }) {
   return (
     <div className="report">
       <Typography.Text type="secondary">
-        本次检查采集于 {time(s.collectedAt)}，按策略 v{s.policyVersion} 判定
+        本次检查采集于 {time(s.collectedAt)}
+        {r.policyName ? `，按策略“${r.policyName}”v${r.policyVersion} 判定` : ""}
       </Typography.Text>
       {r.reasons.length > 0 && (
         <Section title={`不通过项（${r.reasons.length}）`}>

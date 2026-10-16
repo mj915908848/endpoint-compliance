@@ -13,7 +13,7 @@ const deviceFixture: DeviceSummary = {
   lastVerdict: "PASS",
   lastScan: "2026-10-13T00:00:00Z",
   targetPolicyVersion: 1,
-  appliedPolicyVersion: 1,
+  policyApplied: true,
   protectionStatus: "Audit only",
   violationCount: 0,
   simulated: false,

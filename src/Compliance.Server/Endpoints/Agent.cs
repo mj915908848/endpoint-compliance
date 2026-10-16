@@ -55,7 +55,7 @@ static partial class Endpoints
 
                         var id = Guid.NewGuid().ToString();
                         // A new device has an id no policy lists yet, so it starts on the default policy.
-                        var target = Wire.Read<PolicyDocument>((await s.CurrentRelease(tx)).Payload).Version;
+                        var target = Wire.Read<PolicyDocument>((await s.CurrentRelease(tx)).Payload).Serial;
                         await tx.InsertDevice(
                             new DeviceRecord(
                                 id,

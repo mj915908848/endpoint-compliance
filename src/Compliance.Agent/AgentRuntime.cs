@@ -460,7 +460,7 @@ public sealed class AgentRuntime(
         }
     }
 
-    private PolicyDocument VerifyRetained(SignedPolicy signed, long minimumVersion)
+    private PolicyDocument VerifyRetained(SignedPolicy signed, long minimumSerial)
     {
         var untrusted = Wire.Read<PolicyDocument>(signed.Payload);
         var verificationTime =
@@ -469,7 +469,7 @@ public sealed class AgentRuntime(
             signed,
             config.PolicyPublicKeyPem!,
             config.DeviceId!,
-            minimumVersion,
+            minimumSerial,
             verificationTime
         );
     }
@@ -490,7 +490,7 @@ public sealed class AgentRuntime(
                 HostName,
                 ReleaseVersion.Of(typeof(AgentRuntime).Assembly),
                 DateTimeOffset.UtcNow,
-                signedPolicy is null ? 0 : policy?.Version ?? 0,
+                signedPolicy is null ? 0 : policy?.Serial ?? 0,
                 latest?.Controls ?? []
             );
             var reply = await api.SendAsync<JsonElement>(HttpMethod.Post, "/api/agent/heartbeat", heartbeat, ct);
@@ -513,20 +513,24 @@ public sealed class AgentRuntime(
                 fetched,
                 config.PolicyPublicKeyPem!,
                 config.DeviceId!,
-                policy?.Version ?? 0,
+                policy?.Serial ?? 0,
                 DateTimeOffset.UtcNow
             );
             if (
                 policy is not null
-                && verified.Version == policy.Version
+                && verified.Serial == policy.Serial
                 && signedPolicy is not null
                 && fetched.Payload != signedPolicy.Payload
             )
                 throw new CryptographicException("Immutable policy version changed content");
-            if (policy?.Version != verified.Version)
+            if (policy?.Serial != verified.Serial)
             {
                 forceFull = true;
-                Console.WriteLine($"收到新策略 v{verified.Version}（原 v{policy?.Version ?? 0}），立即完整检查");
+                Console.WriteLine(
+                    $"收到新策略“{verified.PolicyId}”v{verified.Version}"
+                        + (policy is null ? "" : $"（原“{policy.PolicyId}”v{policy.Version}）")
+                        + "，立即完整检查"
+                );
             }
             policy = verified;
             signedPolicy = fetched;
@@ -622,7 +626,7 @@ public sealed class AgentRuntime(
                 scan with
                 {
                     DeviceId = config.DeviceId!,
-                    PolicyVersion = signedPolicy is null ? 0 : policy.Version,
+                    PolicyVersion = signedPolicy is null ? 0 : policy.Serial,
                     Controls = controls,
                     Modules = moduleResults,
                 }
@@ -646,7 +650,7 @@ public sealed class AgentRuntime(
             }
             if (AgentLog.Active)
                 Console.WriteLine(
-                    $"{(full ? "完整检查" : "快速检查")}完成：{report.Summary}；证据 {report.EvidenceCount} 条，检查缺口 {report.CoverageGaps.Length} 项，策略 v{policy.Version}"
+                    $"{(full ? "完整检查" : "快速检查")}完成：{report.Summary}；证据 {report.EvidenceCount} 条，检查缺口 {report.CoverageGaps.Length} 项，策略“{policy.PolicyId}”v{policy.Version}"
                 );
             else
                 Console.WriteLine(ReportRenderer.Markdown(report));

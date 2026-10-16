@@ -356,6 +356,21 @@ Test(
     }
 );
 Test(
+    "a policy's own version may be lower after moving policies, its serial may not",
+    () =>
+    {
+        using var k = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var pem = k.ExportSubjectPublicKeyInfoPem();
+        var moved = PolicyCrypto.Sign(p with { Version = 2, Sequence = 7 }, k, "key1");
+        Eq(7L, PolicyCrypto.Verify(moved, pem, "dev1", 6, now).Serial);
+        Throws(() => PolicyCrypto.Verify(moved, pem, "dev1", 8, now));
+        // Releases from before per-policy versions have no serial; their version was it.
+        var legacy = PolicyCrypto.Sign(p with { Version = 9 }, k, "key1");
+        Eq(9L, PolicyCrypto.Verify(legacy, pem, "dev1", 7, now).Serial);
+        Throws(() => PolicyCrypto.Verify(legacy, pem, "dev1", 10, now));
+    }
+);
+Test(
     "tampering signed policy rejected",
     () =>
     {

@@ -19,7 +19,7 @@ public static class ReportEngine
             gaps.Add("策略模式无法识别");
         if (policy.ExpiresAt < now || policy.IssuedAt > now.AddMinutes(2))
             gaps.Add("策略已过期或签发时间异常");
-        if (snapshot.PolicyVersion != policy.Version)
+        if (snapshot.PolicyVersion != policy.Serial)
             gaps.Add("终端检查所用的策略版本与当前策略不一致");
         if (snapshot.Simulated)
             gaps.Add("检查数据来自模拟终端，未经 Windows 实机验证");
@@ -83,7 +83,7 @@ public static class ReportEngine
             if (
                 c is null
                 || !c.Verified
-                || c.Version != policy.Version
+                || c.Version != policy.Serial
                 || c.RebootRequired
                 || c.State is not ("Verified" or "Applied")
             )
@@ -187,6 +187,8 @@ public static class ReportEngine
         )
         {
             SensitiveFileNotes = sensitiveRequired ? [] : sensitiveIssues.Distinct().ToArray(),
+            PolicyName = policy.PolicyId,
+            PolicyVersion = policy.Version,
         };
     }
 }

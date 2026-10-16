@@ -23,7 +23,7 @@ public static class PolicyCrypto
         SignedPolicy policy,
         string publicKeyPem,
         string deviceId,
-        long minimumVersion,
+        long minimumSerial,
         DateTimeOffset now
     )
     {
@@ -48,7 +48,7 @@ public static class PolicyCrypto
         }
         var doc = Wire.Read<PolicyDocument>(policy.Payload);
         Validate(doc);
-        if (doc.Version < minimumVersion)
+        if (doc.Serial < minimumSerial)
             throw new ArgumentException("Policy downgrade rejected");
         if (doc.ExpiresAt < now || doc.IssuedAt > now.AddMinutes(2))
             throw new ArgumentException("Policy expired or time invalid");
@@ -318,7 +318,7 @@ public static class ReportRenderer
             .AppendLine($"- 设备 ID：{Cell(s.DeviceId)}")
             .AppendLine($"- 平台：{Cell(s.Platform)}")
             .AppendLine($"- 采集时间：{Time(s.CollectedAt)}")
-            .AppendLine($"- 策略版本：v{s.PolicyVersion}")
+            .AppendLine($"- 策略：{Cell(report.PolicyName)} v{report.PolicyVersion}")
             .AppendLine($"- 数据格式版本：{s.SchemaVersion}")
             .AppendLine($"- 数据来源：{(s.Simulated ? "模拟数据，不能作为实机验收依据" : "终端实机采集")}");
         if (s.Users.Length > 0)
@@ -358,12 +358,10 @@ public static class ReportRenderer
             b.AppendLine("\n终端未上报防护措施，因此不能认定拦截已经生效。");
         else
         {
-            b.AppendLine(
-                "\n| 防护措施 | 状态 | 已验证 | 需重启 | 策略版本 | 说明 |\n| --- | --- | --- | --- | --- | --- |"
-            );
+            b.AppendLine("\n| 防护措施 | 状态 | 已验证 | 需重启 | 说明 |\n| --- | --- | --- | --- | --- |");
             foreach (var c in s.Controls)
                 b.AppendLine(
-                    $"| {Cell(Labels.Control(c.Id))} | {Cell(Labels.ControlState(c.State))} | {Labels.YesNo(c.Verified)} | {Labels.YesNo(c.RebootRequired)} | v{c.Version} | {Cell(c.Detail)} |"
+                    $"| {Cell(Labels.Control(c.Id))} | {Cell(Labels.ControlState(c.State))} | {Labels.YesNo(c.Verified)} | {Labels.YesNo(c.RebootRequired)} | {Cell(c.Detail)} |"
                 );
         }
         b.AppendLine("\n## 7. 检查覆盖\n");

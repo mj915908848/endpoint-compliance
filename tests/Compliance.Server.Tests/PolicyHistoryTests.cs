@@ -29,16 +29,17 @@ public class PolicyHistoryTests
         await Publish("default", PolicySeed.Create() with { BlockDomains = ["other.example"] });
 
         var history = await History(pilot.Key);
-        Assert.Equal([3L, 2L], history.Select(h => h.Version));
+        Assert.Equal([2L, 1L], history.Select(h => h.Version));
+        Assert.Equal([3L, 2L], history.Select(h => h.Serial));
         Assert.All(history, h => Assert.Equal("admin", h.PublishedBy));
         Assert.Equal(["example.com"], Wire.Read<PolicyDocument>(history[0].Release.Payload).BlockDomains);
-        Assert.Equal([1L, 4L], (await History("default")).Select(h => h.Version).Order());
+        Assert.Equal([2L, 1L], (await History("default")).Select(h => h.Version));
 
         // Restoring publishes the old content as a new version.
         var restored = await Publish(pilot.Key, Wire.Read<PolicyDocument>(history[1].Release.Payload));
         var doc = Wire.Read<PolicyDocument>(restored.Release.Payload);
-        Assert.Equal((5L, original.BlockDomains), (doc.Version, doc.BlockDomains));
-        Assert.Equal(5L, (await History(pilot.Key))[0].Version);
+        Assert.Equal((3L, 5L, original.BlockDomains), (doc.Version, doc.Serial, doc.BlockDomains));
+        Assert.Equal(3L, (await History(pilot.Key))[0].Version);
 
         Assert.Equal(HttpStatusCode.NotFound, (await f.Client.GetAsync("/api/policies/nope/history")).StatusCode);
         await f.Login("reader");

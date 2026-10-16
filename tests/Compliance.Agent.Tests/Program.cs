@@ -1511,7 +1511,12 @@ await Check(
             "audit mode reports the measure as ready: " + ready
         );
 
-        var enforce = policy with { Mode = "Enforce", TargetDeviceIds = ["d"] };
+        var enforce = policy with
+        {
+            Mode = "Enforce",
+            RequiredControls = ["process", "browser"],
+            TargetDeviceIds = ["d"],
+        };
         var blocked = enforcer.Sweep(enforce, DateTimeOffset.UtcNow);
         Assert(
             table.Killed.SequenceEqual([10]),
@@ -1580,7 +1585,12 @@ await Check(
             Assert(store.Writes == 0, "audit mode writes nothing");
             Assert(blocklist.State(policy) is { State: "Ready", Verified: true }, "audit mode reports ready");
 
-            var enforce = policy with { Mode = "Enforce", TargetDeviceIds = ["d"] };
+            var enforce = policy with
+            {
+                Mode = "Enforce",
+                RequiredControls = ["process", "browser"],
+                TargetDeviceIds = ["d"],
+            };
             blocklist.Apply(enforce);
             var wanted = EdgePolicyCompiler.Compile(enforce.BlockDomains);
             Assert(
@@ -1713,6 +1723,7 @@ if (OperatingSystem.IsWindows())
                 var policy = PolicySeed.Create() with
                 {
                     Mode = "Enforce",
+                    RequiredControls = ["process", "browser"],
                     TargetDeviceIds = ["d"],
                     Products = [new ProductRule("ping", product, "test", [], ["PING.EXE"], [], [])],
                 };
@@ -1752,6 +1763,7 @@ if (OperatingSystem.IsWindows())
                     var policy = PolicySeed.Create() with
                     {
                         Mode = "Enforce",
+                        RequiredControls = ["process", "browser"],
                         TargetDeviceIds = ["d"],
                         BlockDomains = ["chatgpt.com", "claude.ai"],
                     };

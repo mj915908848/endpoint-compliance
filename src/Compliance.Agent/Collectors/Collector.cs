@@ -178,7 +178,7 @@ public sealed partial class WindowsCollector
             Platform = "Windows",
             Simulated = false,
             CollectedAt = DateTimeOffset.UtcNow,
-            PolicyVersion = policy.Version,
+            PolicyVersion = policy.Serial,
             Evidence = evidence.ToArray(),
             Modules = modules.ToArray(),
             Controls = [],

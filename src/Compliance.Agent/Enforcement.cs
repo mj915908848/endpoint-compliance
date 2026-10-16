@@ -143,23 +143,23 @@ public sealed class ProcessEnforcer(IProcessTable table)
     {
         var watched = policy.Products.Count(p => p.ExecutableNames.Length > 0);
         if (watched == 0)
-            return new(Controls.Process, policy.Version, "Uncovered", "策略中没有填写程序文件名的产品，无可结束的进程");
+            return new(Controls.Process, policy.Serial, "Uncovered", "策略中没有填写程序文件名的产品，无可结束的进程");
         if (!table.CanTerminate)
-            return new(Controls.Process, policy.Version, "Uncovered", "客户端未以系统权限运行，无法结束其他用户的进程");
+            return new(Controls.Process, policy.Serial, "Uncovered", "客户端未以系统权限运行，无法结束其他用户的进程");
         if (!Controls.Enforced(policy, Controls.Process))
             return new(
                 Controls.Process,
-                policy.Version,
+                policy.Serial,
                 "Ready",
                 $"可启用：客户端以系统权限运行，强制模式下会结束 {watched} 个产品的进程",
                 true
             );
         if (lastFailure is not null)
-            return new(Controls.Process, policy.Version, "Error", lastFailure);
+            return new(Controls.Process, policy.Serial, "Error", lastFailure);
         var detail = lastEnded is { } last
             ? $"已生效：每 2 秒检查一次，已结束 {ended} 次，最近一次 {last.Name}（{last.At.ToLocalTime():MM-dd HH:mm}）"
             : "已生效：每 2 秒检查一次，尚未发现禁用程序运行";
-        return new(Controls.Process, policy.Version, "Applied", detail, true);
+        return new(Controls.Process, policy.Serial, "Applied", detail, true);
     }
 }
 
@@ -233,21 +233,21 @@ public sealed class BrowserBlocklist(IBlocklistStore store, string statePath)
     public ControlState State(PolicyDocument policy)
     {
         if (policy.BlockDomains.Length == 0)
-            return new(Controls.Browser, policy.Version, "Uncovered", "策略中没有禁止访问的域名");
+            return new(Controls.Browser, policy.Serial, "Uncovered", "策略中没有禁止访问的域名");
         if (!store.CanWrite)
-            return new(Controls.Browser, policy.Version, "Uncovered", "客户端没有写入浏览器策略的权限");
+            return new(Controls.Browser, policy.Serial, "Uncovered", "客户端没有写入浏览器策略的权限");
         var wanted = EdgePolicyCompiler.Compile(policy.BlockDomains);
         var names = string.Join("、", store.Browsers);
         if (!Controls.Enforced(policy, Controls.Browser))
             return new(
                 Controls.Browser,
-                policy.Version,
+                policy.Serial,
                 "Ready",
                 $"可启用：可写入 {names} 的网址拦截策略，强制模式下拦截 {wanted.Length} 条规则",
                 true
             );
         if (lastError is not null)
-            return new(Controls.Browser, policy.Version, "Error", lastError);
+            return new(Controls.Browser, policy.Serial, "Error", lastError);
         var missing = store
             .Browsers.Where(b =>
             {
@@ -258,14 +258,14 @@ public sealed class BrowserBlocklist(IBlocklistStore store, string statePath)
         return missing.Length == 0
             ? new(
                 Controls.Browser,
-                policy.Version,
+                policy.Serial,
                 "Applied",
                 $"已生效：{names} 已写入 {wanted.Length} 条网址拦截规则并读回核对；浏览器自动加载，已打开的页面刷新后被拦截",
                 true
             )
             : new(
                 Controls.Browser,
-                policy.Version,
+                policy.Serial,
                 "Error",
                 $"{string.Join("、", missing)} 的拦截规则读回不一致，可能被组策略覆盖，下次检查时重新写入"
             );
