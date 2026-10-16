@@ -1,6 +1,4 @@
 using System.IO;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 
 namespace Compliance.Tray;
 
@@ -16,17 +14,24 @@ public static class Icons
         ?? throw new FileNotFoundException("Embedded icon missing", name);
 
     /// <summary>The notification-area icon at the size Windows uses there.</summary>
-    public static System.Drawing.Icon Tray(string name)
+    public static Icon Tray(string name)
     {
         using var stream = Open(name);
-        return new System.Drawing.Icon(stream, System.Windows.Forms.SystemInformation.SmallIconSize);
+        return new Icon(stream, SystemInformation.SmallIconSize);
     }
 
-    /// <summary>The frame closest to <paramref name="size"/> pixels, for window titles and headers.</summary>
-    public static ImageSource Image(string name, int size)
+    /// <summary>All frames, for a window's title bar and taskbar button.</summary>
+    public static Icon Window(string name)
     {
         using var stream = Open(name);
-        var decoder = new IconBitmapDecoder(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
-        return decoder.Frames.OrderBy(f => Math.Abs(f.PixelWidth - size)).ThenByDescending(f => f.PixelWidth).First();
+        return new Icon(stream);
+    }
+
+    /// <summary>The frame closest to <paramref name="size"/> pixels, for window headers.</summary>
+    public static Bitmap Image(string name, int size)
+    {
+        using var stream = Open(name);
+        using var icon = new Icon(stream, size, size);
+        return icon.ToBitmap();
     }
 }

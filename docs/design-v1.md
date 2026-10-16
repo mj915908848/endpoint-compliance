@@ -38,7 +38,7 @@ flowchart TB
 | 组件 | 选择 | 原因 |
 |---|---|---|
 | Windows服务 | C#、.NET 10 LTS Worker Service，Windows API/CIM采集 | 与Windows服务、事件日志和系统策略集成；维护统一类型模型 |
-| 托盘 | C#、WPF，普通用户会话 | 提供通知、状态及历史；与高权限服务分离 |
+| 托盘 | C#、WinForms，普通用户会话 | 提供通知、状态及历史；与高权限服务分离 |
 | 管理端 | ASP.NET Core，.NET 10 LTS | 与客户端共享协议和规则定义；支持Linux/Windows部署 |
 | 管理页面 | React、TypeScript，静态资源随管理端分发 | 设备、策略和报告界面；无需公网资源 |
 | 服务端存储 | PostgreSQL；版本在实施时固定到受支持且已验证的补丁版本 | 事务、事件幂等、后台任务及后续扩展 |
