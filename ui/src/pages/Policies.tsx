@@ -83,8 +83,14 @@ export function Policies({ session }: { session: Session }) {
       setSelected(key);
       setError(null);
       if (key === NEW && defaultDoc)
-        // A new policy starts from the default policy's rules, in audit mode, with no devices.
-        setDraft({ ...defaultDoc, policyId: "", mode: "Audit", targetDeviceIds: [] });
+        // A new policy starts from the default policy's rules, in audit mode, with no devices or measures.
+        setDraft({
+          ...defaultDoc,
+          policyId: "",
+          mode: "Audit",
+          targetDeviceIds: [],
+          requiredControls: [],
+        });
       else setDraft(policies.find((p) => p.key === key)?.doc ?? null);
     };
     if (!dirty) return go();

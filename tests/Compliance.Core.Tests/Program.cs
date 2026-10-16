@@ -232,6 +232,7 @@ Test(
                     p with
                     {
                         Mode = "Enforce",
+                        RequiredControls = ["process", "browser"],
                     },
                     clean with
                     {

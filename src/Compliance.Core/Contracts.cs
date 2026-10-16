@@ -94,7 +94,7 @@ public record PolicyDocument
     /// always read, since per-user modules need them, but only count toward the verdict when listed.
     /// </summary>
     public string[] RequiredModules { get; init; } = [.. AllModules];
-    public string[] RequiredControls { get; init; } = ["process", "browser"];
+    public string[] RequiredControls { get; init; } = [];
 
     /// <summary>How often the agent checks processes, ports and proxy settings.</summary>
     public int QuickCheckMinutes { get; init; } = 5;
