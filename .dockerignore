@@ -7,5 +7,4 @@ data/
 .git/
 deploy/docker/certs/
 deploy/docker/backups/
-deploy/docker/.env
 deploy/docker/compliance-server-*.tar.gz

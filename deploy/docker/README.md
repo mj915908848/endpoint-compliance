@@ -2,21 +2,83 @@
 
 ## 部署
 
-一台装有 Docker（含 `docker compose` 插件）的 Linux 服务器即可，PostgreSQL 一起在容器里运行。管理端镜像是 `ghcr.io/mj915908848/compliance-server`，启动时自动拉取。
+一台装有 Docker（含 `docker compose` 插件）的 Linux 服务器即可，PostgreSQL 一起在容器里运行。管理端镜像是 `ghcr.io/mj915908848/compliance-server`，启动时自动拉取；服务器要能访问 `ghcr.io`，拉不下镜像时给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`）。
 
-1. 新建部署目录，下载部署文件：
+1. 新建部署目录，把下面的内容存为 `compose.yml`（与仓库里的 `deploy/docker/compose.yml` 相同），改掉标着【改】的数据库密码和管理员密码，对外端口不是 443 时改 `ports`：
 
    ```bash
-   mkdir compliance && cd compliance
-   for f in compose.yml .env.example backup.sh README.md; do
-     curl -fsSLO "https://raw.githubusercontent.com/mj915908848/endpoint-compliance/main/deploy/docker/$f"
-   done
-   chmod +x backup.sh
+   mkdir compliance && cd compliance && vi compose.yml
    ```
 
-   服务器要能访问 `raw.githubusercontent.com` 和 `ghcr.io`；拉不下镜像时给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`）。
+   <!-- compose.yml: 下面这段由 CI 与 deploy/docker/compose.yml 逐字比对 -->
+   ```yaml
+   # 终端合规管理端：PostgreSQL + 管理端。部署只需要这一个文件和证书，用法见 deploy/docker/README.md。
+   # 首次启动前改掉下面标着「改」的几处。
+   name: compliance
 
-2. 放证书（经网关转发到 HTTP 时不需要，见下文“经网关反向代理”方式二）。用客户信任的泛域名证书（如 `*.example.com`），证书文件必须包含中间证书：
+   # 数据库密码：只在两个容器之间使用，只能用字母和数字（可用 openssl rand -hex 16 生成）。【改】
+   x-db-password: &db-password 改成数据库密码
+
+   # Container output is kept in rotated files: 3 × 10 MB per container, instead of one file that grows until the disk is full.
+   x-logging: &logging
+     driver: json-file
+     options:
+       max-size: 10m
+       max-file: "3"
+
+   services:
+     db:
+       image: postgres:18
+       restart: unless-stopped
+       logging: *logging
+       environment:
+         POSTGRES_DB: compliance
+         POSTGRES_USER: compliance
+         POSTGRES_PASSWORD: *db-password
+       volumes:
+         - db:/var/lib/postgresql
+       healthcheck:
+         test: ["CMD-SHELL", "pg_isready -U compliance -d compliance"]
+         interval: 5s
+         timeout: 5s
+         retries: 20
+
+     server:
+       # latest 跟随最新版；要停在某个版本时写成如 compliance-server:0.2.24。
+       image: ghcr.io/mj915908848/compliance-server:latest
+       restart: unless-stopped
+       logging: *logging
+       depends_on:
+         db:
+           condition: service_healthy
+       ports:
+         # 对外端口:容器端口。对外端口不是 443 时改前一个数字，如 "8443:8443"。
+         - "443:8443"
+       environment:
+         Compliance__Database: Host=db;Database=compliance;Username=compliance
+         PGPASSWORD: *db-password
+         # 首个管理员账号，只在第一次启动时创建，之后改这里不会改已有账号的密码。
+         # 密码至少 16 位，不要包含 " 和 \ 。【改】
+         Compliance__BootstrapUsers: '[{"username":"admin","password":"改成管理员密码","roles":["Reader","Operator","Publisher"]}]'
+         # 证书放在本文件旁的 certs 目录。PEM 格式（含中间证书的完整链 + 私钥）：
+         Kestrel__Certificates__Default__Path: /certs/cert.pem
+         Kestrel__Certificates__Default__KeyPath: /certs/key.pem
+         # PFX 格式时删掉上面两行，改为：
+         # Kestrel__Certificates__Default__Path: /certs/cert.pfx
+         # Kestrel__Certificates__Default__Password: 证书密码
+         TZ: Asia/Shanghai
+       volumes:
+         - ./certs:/certs:ro
+         - keys:/var/lib/compliance
+
+   volumes:
+     db:
+     keys:
+   ```
+
+   `compose.yml` 里有密码，存好后 `chmod 600 compose.yml`。
+
+2. 在 `compose.yml` 旁边放证书（经网关转发到 HTTP 时不需要，见下文“经网关反向代理”方式二）。用客户信任的泛域名证书（如 `*.example.com`），证书文件必须包含中间证书：
 
    ```bash
    mkdir certs
@@ -25,22 +87,14 @@
    sudo chown -R 1654:1654 certs && sudo chmod 600 certs/*
    ```
 
-   容器内以 uid 1654（非 root）运行，私钥要让它读得到。PFX 格式的证书见 `.env.example`。先试用、还没有证书时可以生成自签证书（客户端会校验证书，正式使用前要换掉，或把 `certs/cert.pem` 导入各终端的“受信任的根证书颁发机构”）：
+   容器内以 uid 1654（非 root）运行，私钥要让它读得到。先试用、还没有证书时可以生成自签证书（客户端会校验证书，正式使用前要换掉，或把 `certs/cert.pem` 导入各终端的“受信任的根证书颁发机构”），再执行上面的 `chown`、`chmod`：
 
    ```bash
    sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=compliance.example.com" \
      -addext "subjectAltName=DNS:compliance.example.com" -keyout certs/key.pem -out certs/cert.pem
    ```
 
-3. 写配置：
-
-   ```bash
-   cp .env.example .env && chmod 600 .env && vi .env
-   ```
-
-   必填 `DB_PASSWORD`（只用字母数字，可用 `openssl rand -hex 16` 生成）和 `ADMIN_PASSWORD`（至少 16 位）。端口不是 443 时改 `HTTPS_PORT`，证书文件名不同时改证书那两行。
-
-4. 启动：
+3. 启动：
 
    ```bash
    docker compose up -d
@@ -49,9 +103,9 @@
 
    出现 `Now listening on` 即启动完成，按 Ctrl+C 退出日志。
 
-5. 给服务器加内网 DNS 记录，例如 `compliance.example.com` 指向这台服务器，浏览器打开 `https://compliance.example.com` 用 `.env` 里的管理员账号登录，再在右上角「修改密码」。
+4. 给服务器加内网 DNS 记录，例如 `compliance.example.com` 指向这台服务器，浏览器打开 `https://compliance.example.com`，用账号 `admin` 和 `compose.yml` 里的管理员密码登录，再在右上角「修改密码」。
 
-6. 立即做一次备份（见下）。
+5. 立即做一次备份（见下）。
 
 在源码仓库里也可以从源码构建：`cd deploy/docker && docker compose -f compose.yml -f compose.build.yml up -d --build`，需要几分钟和外网访问 Docker Hub、npm、NuGet。
 
@@ -79,21 +133,21 @@
 
 转发到管理端有两种方式：
 
-**方式一（推荐）：网关转发到 HTTPS。** 本目录配置不用改，网关的上游填 `https://服务器地址:HTTPS_PORT`。容器里也装着同一张泛域名证书；网关若校验上游证书，上游的主机名（SNI）要填证书覆盖的域名，或关闭上游证书校验。
+**方式一（推荐）：网关转发到 HTTPS。** 本目录配置不用改，网关的上游填 `https://服务器地址:对外端口`（`compose.yml` 里 `ports` 的前一个数字）。容器里也装着同一张泛域名证书；网关若校验上游证书，上游的主机名（SNI）要填证书覆盖的域名，或关闭上游证书校验。
 
-**方式二：网关转发到 HTTP。** 容器里不放证书（不用建 `certs` 目录）。在 `.env` 中删掉 `Kestrel__Certificates__...` 几行，并加上：
+**方式二：网关转发到 HTTP。** 容器里不放证书（不用建 `certs` 目录）。在 `compose.yml` 的 `server` → `environment` 里删掉 `Kestrel__Certificates__...` 两行，并加上：
 
-```
-ASPNETCORE_URLS=http://+:8443
-Compliance__TrustedProxies__0=网关的 IP
+```yaml
+      ASPNETCORE_URLS: http://+:8443
+      Compliance__TrustedProxies__0: 网关的 IP
 ```
 
 网关必须带上 `X-Forwarded-Proto: https` 和 `X-Forwarded-For`。管理端只接受来自 `TrustedProxies` 中 IP 的这两个头，其他来源的 HTTP 请求一律拒绝（返回 “HTTPS is required”）。网关到管理端这一段是明文，两台机器之间应是机房内网或同一 VLAN。
 
-`HTTPS_PORT` 只应让网关访问到：
+对外端口只应让网关访问到：
 
-- 网关与管理端在同一台机器：`HTTPS_PORT=127.0.0.1:8443`，`TrustedProxies` 填 Docker 网络的网关地址（启动后用 `docker network inspect compliance_default -f '{{(index .IPAM.Config 0).Gateway}}'` 查看，通常为 `172.18.0.1` 一类）。
-- 网关在另一台机器：`HTTPS_PORT=8443`，`TrustedProxies` 填网关的内网 IP（中间有 NAT 时填 NAT 后的地址），并只允许网关访问 8443。Docker 映射的端口不受 ufw、firewalld 规则约束，要用 `DOCKER-USER` 链或云服务器安全组：
+- 网关与管理端在同一台机器：`ports` 写成 `"127.0.0.1:8443:8443"`，`TrustedProxies` 填 Docker 网络的网关地址（启动后用 `docker network inspect compliance_default -f '{{(index .IPAM.Config 0).Gateway}}'` 查看，通常为 `172.18.0.1` 一类）。
+- 网关在另一台机器：`ports` 写成 `"8443:8443"`，`TrustedProxies` 填网关的内网 IP（中间有 NAT 时填 NAT 后的地址），并只允许网关访问 8443。Docker 映射的端口不受 ufw、firewalld 规则约束，要用 `DOCKER-USER` 链或云服务器安全组：
 
   ```bash
   sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 8443 ! -s 网关的内网IP -j DROP
@@ -142,9 +196,9 @@ server {
 
 ## 管理员密码与系统设置
 
-**管理员密码**：`.env` 里的 `ADMIN_PASSWORD` 只在第一次启动时用来创建账号，之后再改 `.env` 不起作用。登录后点右上角「修改密码」修改，修改后其他浏览器上的登录会退出。
+**管理员密码**：`compose.yml` 里 `Compliance__BootstrapUsers` 的密码只在第一次启动时用来创建账号，之后再改不起作用。登录后点右上角「修改密码」修改，修改后其他浏览器上的登录会退出。
 
-忘记密码时，删掉账号和所有登录会话再重启，管理端会按 `.env` 里的 `ADMIN_USER`、`ADMIN_PASSWORD` 重新创建账号。终端、策略、告警和审计记录都不受影响。下面的 `admin` 换成实际的账号名：
+忘记密码时，删掉账号和所有登录会话再重启，管理端会按 `compose.yml` 里 `Compliance__BootstrapUsers` 的账号和密码重新创建账号。终端、策略、告警和审计记录都不受影响。下面的 `admin` 换成实际的账号名：
 
 ```bash
 docker compose exec db psql -U compliance -d compliance -c "DELETE FROM sessions; DELETE FROM users WHERE username = 'admin'"
@@ -160,13 +214,16 @@ docker compose restart server
 
 ## 备份与恢复
 
+备份用仓库里的 `backup.sh`，下载到 `compose.yml` 旁边：
+
 ```bash
+curl -fsSLO https://raw.githubusercontent.com/mj915908848/endpoint-compliance/main/deploy/docker/backup.sh && chmod +x backup.sh
 ./backup.sh
 ```
 
 在 `backups/<时间>/` 下生成数据库备份 `compliance.dump` 和策略签名密钥 `signing.key`（正在更换密钥时还有新密钥 `signing.key.next`），请拷贝到别的机器保存。**签名密钥丢失后，所有已登记终端都会拒收新策略，只能逐台重新登记。**
 
-恢复到新服务器：先按“部署”完成第 1–3 步但不要启动，然后：
+恢复到新服务器：先按“部署”完成第 1–2 步但不要启动（`compose.yml` 里的数据库密码要与原服务器相同），然后：
 
 ```bash
 docker compose up -d db
@@ -193,9 +250,9 @@ docker compose pull
 docker compose up -d
 ```
 
-先备份，再拉取最新镜像并换成新版本；数据库结构在启动时自动升级。要停在某个版本时，在 `.env` 里写 `COMPLIANCE_VERSION=0.2.24`，删掉这一行即恢复跟随最新版。
+先备份，再拉取最新镜像并换成新版本；数据库结构在启动时自动升级。要停在某个版本时，把 `compose.yml` 里的 `compliance-server:latest` 改成如 `compliance-server:0.2.24`，改回 `latest` 即恢复跟随最新版。
 
-0.2.23 及以前的部署用的是 Releases 页的镜像包：先把新的 `compose.yml`、`backup.sh`（下载方法见“部署”第 1 步）覆盖到原来的部署目录，`.env` 和证书不动，改过 `compose.yml` 的把改动补回新文件，再按上面三条命令升级。
+0.2.24 及以前的部署用 `.env` 存配置：在原来的部署目录按“部署”第 1 步换上新的 `compose.yml`，把 `.env` 里的 `DB_PASSWORD`、管理员账号密码、端口和证书设置填进去（数据库密码必须与原来相同），改过 `compose.yml` 的把改动补回新文件，证书不动，再按上面三条命令升级；之后 `.env` 可以删掉。
 
 在源码仓库里从源码构建同样可用：更新源码后 `docker compose -f compose.yml -f compose.build.yml up -d --build`。
 
