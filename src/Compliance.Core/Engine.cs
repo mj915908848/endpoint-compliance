@@ -118,6 +118,11 @@ public static class ReportEngine
             )
         )
             gaps.Add($"发现策略中未定义的产品：{e.ProductId}，请核查规则");
+        // Earliest collection time of each module per scope, so judging every piece of evidence stays linear.
+        var moduleTimes = new Dictionary<(string Module, string? Scope), DateTimeOffset>();
+        foreach (var m in snapshot.Modules)
+            if (!moduleTimes.TryGetValue((m.Module, m.Scope), out var seen) || m.CollectedAt < seen)
+                moduleTimes[(m.Module, m.Scope)] = m.CollectedAt;
         bool EvidenceFresh(Evidence e)
         {
             if (e.Kind == EvidenceKind.SensitiveFile)
@@ -132,11 +137,10 @@ public static class ReportEngine
                 EvidenceKind.Proxy => "proxy",
                 _ => "processes",
             };
-            var moduleTimes = snapshot
-                .Modules.Where(m => m.Module == module && (m.Scope == e.UserSid || m.Scope == "machine"))
-                .Select(m => m.CollectedAt)
-                .ToArray();
-            var time = e.CollectedAt ?? (moduleTimes.Length > 0 ? moduleTimes.Min() : snapshot.CollectedAt);
+            DateTimeOffset? scoped = moduleTimes.TryGetValue((module, e.UserSid), out var user) ? user : null;
+            if (moduleTimes.TryGetValue((module, "machine"), out var machine) && (scoped is null || machine < scoped))
+                scoped = machine;
+            var time = e.CollectedAt ?? scoped ?? snapshot.CollectedAt;
             var minutes = e.Kind is EvidenceKind.Installation or EvidenceKind.Extension
                 ? policy.InventoryFreshMinutes
                 : policy.LightweightFreshMinutes;
@@ -151,25 +155,31 @@ public static class ReportEngine
             SensitiveFiles.HasViolationRules(policy) || policy.RequiredModules.Contains(SensitiveFiles.Module);
         if (sensitiveRequired)
             gaps.AddRange(sensitiveIssues);
-        var confirmed = snapshot
-            .Evidence.Where(e =>
-                current
-                    && EvidenceFresh(e)
-                    && e.Confirmed
-                    && e.Kind
-                        is EvidenceKind.Installation
-                            or EvidenceKind.Process
-                            or EvidenceKind.Extension
-                            or EvidenceKind.Proxy
-                    && (e.Kind == EvidenceKind.Proxy || knownIds.Contains(e.ProductId))
-                || current
-                    && e.Kind == EvidenceKind.SensitiveFile
-                    && e.Confirmed
-                    && EvidenceFresh(e)
-                    && sensitiveRules.TryGetValue(e.ProductId, out var rule)
-                    && rule.Action == "Violation"
+        var confirmedAt = snapshot
+            .Evidence.Select((e, i) => (e, i))
+            .Where(x =>
+                x.e is var e
+                && (
+                    current
+                        && EvidenceFresh(e)
+                        && e.Confirmed
+                        && e.Kind
+                            is EvidenceKind.Installation
+                                or EvidenceKind.Process
+                                or EvidenceKind.Extension
+                                or EvidenceKind.Proxy
+                        && (e.Kind == EvidenceKind.Proxy || knownIds.Contains(e.ProductId))
+                    || current
+                        && e.Kind == EvidenceKind.SensitiveFile
+                        && e.Confirmed
+                        && EvidenceFresh(e)
+                        && sensitiveRules.TryGetValue(e.ProductId, out var rule)
+                        && rule.Action == "Violation"
+                )
             )
+            .Select(x => x.i)
             .ToArray();
+        var confirmed = confirmedAt.Select(i => snapshot.Evidence[i]).ToArray();
         var objects = confirmed.GroupBy(e => (e.ProductId, Scope: e.UserSid ?? "machine")).ToArray();
         var reasons = objects
             .Select(group =>
@@ -189,21 +199,13 @@ public static class ReportEngine
             Verdict.UNKNOWN => "无法判断：检查覆盖或防护验证不完整",
             _ => "通过：必需检查项均为有效数据，未发现确认违规",
         };
-        return new(
-            verdict,
-            summary,
-            reasons,
-            gaps.Distinct().ToArray(),
-            count,
-            confirmed.Length,
-            protection,
-            EvidenceSanitizer.Sanitize(snapshot)
-        )
+        return new(verdict, summary, reasons, gaps.Distinct().ToArray(), count, confirmed.Length, protection, snapshot)
         {
             SensitiveFileNotes = sensitiveRequired ? [] : sensitiveIssues.Distinct().ToArray(),
             PolicyName = policy.PolicyId,
             PolicyVersion = policy.Version,
             ValidUntil = validUntil == DateTimeOffset.MaxValue ? null : validUntil,
+            ConfirmedEvidence = confirmedAt,
         };
     }
 }
