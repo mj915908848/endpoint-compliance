@@ -323,6 +323,23 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
     }
 
     /// <summary>
+    /// Stores <paramref name="v"/> for <paramref name="d"/> (as read in this transaction, with its stored verdict) and
+    /// records a history entry when the verdict differs from the stored one. Returns 1 if stored.
+    /// </summary>
+    async Task<int> StoreVerdict(Transaction tx, DeviceRecord d, StoredVerdict v)
+    {
+        if (await tx.SaveVerdict(d.Id, v) == 0)
+            return 0;
+        var verdict = v.Current ?? Verdict.UNKNOWN;
+        if (d.Verdict is null || (d.Verdict.Current ?? Verdict.UNKNOWN) != verdict)
+            await tx.InsertVerdictChange(new VerdictChange(d.Id, Now, verdict, v.ViolationCount, v.PolicyVersion));
+        return 1;
+    }
+
+    /// <summary>Changes kept for history and trends; each device's latest change is kept regardless.</summary>
+    public static readonly TimeSpan VerdictHistoryRetention = TimeSpan.FromDays(400);
+
+    /// <summary>
     /// Stores a new verdict for every device whose stored one no longer holds, a few hundred per transaction. Run in
     /// the background, so that lists find stored verdicts; returns how many were stored.
     /// </summary>
@@ -336,8 +353,14 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
             found = await Tx(async tx =>
             {
                 var ids = await tx.DevicesWithStaleVerdicts(Now, 200);
-                foreach (var d in await tx.GetDevices(ids))
-                    total += await tx.SaveVerdict(d.Id, (await Evaluate(tx, d)).Verdict);
+                // Locked in id order, like every refresh, so that two servers refreshing at once neither deadlock nor
+                // record the same change twice; a snapshot arriving meanwhile waits and stores its own.
+                foreach (var id in ids)
+                {
+                    await tx.Lock(DeviceLock(id));
+                    if (await tx.GetDevice(id) is { } d)
+                        total += await StoreVerdict(tx, d, (await Evaluate(tx, d)).Verdict);
+                }
                 return ids.Count;
             });
         } while (found == 200);
@@ -392,6 +415,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         await Repeat(tx => tx.PruneResolvedAlerts(resolvedCutoff, PruneBatch));
         total += await Tx(tx => tx.PruneSessions(Now));
         total += await Tx(tx => tx.PruneCommands(Now - ExpiredCommandRetention));
+        await Repeat(tx => tx.PruneVerdictHistory(Now - VerdictHistoryRetention, PruneBatch));
         var days = await Tx(AuditRetentionDays);
         if (days > 0)
         {
@@ -549,7 +573,7 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         if (snapshotChanged)
         {
             await tx.UpdateSnapshot(deviceId, d.Snapshot!, d.SnapshotSequence);
-            await tx.SaveVerdict(deviceId, (await Evaluate(tx, d)).Verdict);
+            await StoreVerdict(tx, d, (await Evaluate(tx, d)).Verdict);
         }
         return new(accepted.ToArray());
     }

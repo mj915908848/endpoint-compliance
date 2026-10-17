@@ -97,6 +97,15 @@ public sealed record StoredVerdict(
         && (ValidUntil is null || now < ValidUntil);
 }
 
+/// <summary>A change of a device's stored verdict, kept for the device's history and the fleet trend.</summary>
+public sealed record VerdictChange(
+    string DeviceId,
+    DateTimeOffset At,
+    Verdict Verdict,
+    int ViolationCount,
+    long PolicyVersion
+);
+
 public sealed record SnapshotIncident(string Id, string DeviceId, string Scope, string[] Modules);
 
 public sealed record StoredEvent(string Fingerprint, AgentEvent Event, DateTimeOffset ReceivedAt);

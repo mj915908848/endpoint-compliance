@@ -54,6 +54,41 @@ static partial class Endpoints
             }
         );
 
+        // Daily counts of devices by verdict; offset is the browser's time zone in minutes east of UTC.
+        group.MapGet(
+            "/trend",
+            async (HttpContext c, int? days, int? offset) =>
+            {
+                Require(c, "Reader");
+                var span = Math.Clamp(days ?? 30, 1, 90);
+                var zone = TimeSpan.FromMinutes(Math.Clamp(offset ?? 0, -14 * 60, 14 * 60));
+                var start = VerdictTrend.Start(s.Now, span, zone);
+                return await s.Tx(async tx =>
+                    VerdictTrend.Daily(
+                        s.Now,
+                        span,
+                        zone,
+                        await tx.VerdictsBefore(start),
+                        await tx.VerdictChangesSince(start)
+                    )
+                );
+            }
+        );
+
+        group.MapGet(
+            "/{id}/history",
+            async (HttpContext c, string id, int? days) =>
+            {
+                Require(c, "Reader");
+                var since = s.Now - TimeSpan.FromDays(Math.Clamp(days ?? 90, 1, 400));
+                return await s.Tx(async tx =>
+                {
+                    await s.DeviceHead(tx, id);
+                    return (await tx.DeviceVerdictChanges(id, since)).ToArray();
+                });
+            }
+        );
+
         group.MapGet(
             "/{id}/report",
             async (HttpContext c, string id) =>

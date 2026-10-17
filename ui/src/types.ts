@@ -242,3 +242,20 @@ export interface EnrollmentCode {
   createdBy: string;
   revoked: boolean;
 }
+
+/** Devices by stored verdict at the end of one day (today: now). */
+export interface TrendDay {
+  date: string;
+  pass: number;
+  fail: number;
+  unknown: number;
+}
+
+/** A change of one device's verdict. */
+export interface VerdictChange {
+  deviceId: string;
+  at: string;
+  verdict: Verdict;
+  violationCount: number;
+  policyVersion: number;
+}
