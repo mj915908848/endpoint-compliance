@@ -296,8 +296,9 @@ public static class SensitiveFileWalker
 
 /// <summary>
 /// Runs sensitive file scans on a low-priority background thread so a large drive never delays the five-minute
-/// process and proxy checks. NTFS volumes are read from their file table in one pass; other volumes are walked
-/// folder by folder. Between full scans each agent cycle reads the volumes' change journals and rescans a volume only
+/// process and proxy checks. NTFS volumes are read from their file records (in the service, the shared
+/// <see cref="VolumeCatalog"/>, which reads each file table once and follows its change journal); other volumes are
+/// walked folder by folder. Between full scans each agent cycle reads the volumes' change journals and rescans a volume only
 /// when a matching name appeared, disappeared or moved, so new files are found within minutes. Each snapshot carries
 /// the latest result of every scope, which is kept on disk across restarts. Changing the rules starts again.
 /// </summary>
@@ -341,6 +342,12 @@ public sealed class SensitiveFileScanner(
     /// otherwise checks for changes since the last scan.
     /// </summary>
     public void Update(SensitiveFilePolicy policy, bool force, DateTimeOffset now)
+    {
+        Plan(policy, force, now);
+        Flush();
+    }
+
+    private void Plan(SensitiveFilePolicy policy, bool force, DateTimeOffset now)
     {
         lock (gate)
         {
@@ -393,7 +400,16 @@ public sealed class SensitiveFileScanner(
                     Thread.CurrentThread.Priority = ThreadPriority.Lowest;
                 }
                 catch (Exception ex) when (ex is PlatformNotSupportedException or ThreadStateException) { }
-                work(cts.Token);
+                // Disk reads too: a folder walk or a file table read waits behind what the user is doing.
+                using (BackgroundIo.Enter())
+                    try
+                    {
+                        work(cts.Token);
+                    }
+                    finally
+                    {
+                        Flush();
+                    }
             },
             cts.Token,
             TaskCreationOptions.LongRunning,
@@ -538,7 +554,7 @@ public sealed class SensitiveFileScanner(
                 var cursor = index.Cursor() is { } c ? c with { Volume = volume } : null;
                 var results = SensitiveIndexScan.Scan(index, inside, policy, ownerOf, ct, out var names);
                 Console.WriteLine(
-                    $"敏感文件扫描：{volume} 通过 NTFS 文件表比对 {names} 个名称，用时 {started.Elapsed.TotalSeconds:F1} 秒"
+                    $"敏感文件扫描：{volume} 通过文件索引比对 {names} 个名称，用时 {started.Elapsed.TotalSeconds:F1} 秒"
                 );
                 foreach (var result in results)
                     Publish(hash, result with { Volume = cursor is null ? null : volume });
@@ -703,6 +719,8 @@ public sealed class SensitiveFileScanner(
             Save();
             Interlocked.Increment(ref revision);
         }
+        if (Environment.TickCount64 - Volatile.Read(ref savedAt) >= SaveEvery)
+            Flush();
     }
 
     /// <summary>Marks a full scan finished and drops scopes that no longer exist (a removed drive).</summary>
@@ -763,19 +781,48 @@ public sealed class SensitiveFileScanner(
         return new("", null, []);
     }
 
-    private void Save()
+    /// <summary>
+    /// Marks the state changed. It is written when a scan or check ends, when the client stops, and at most every
+    /// <see cref="SaveEvery"/> milliseconds in between, outside the lock: a power cut loses at most that much, which the
+    /// next scan finds again.
+    /// </summary>
+    private void Save() => changes++;
+
+    private const long SaveEvery = 30_000;
+    private long changes;
+    private long savedAt = Environment.TickCount64;
+    private long written;
+    private readonly Lock saving = new();
+
+    private void Flush()
     {
-        try
+        SensitiveScanState snapshot;
+        long version;
+        lock (gate)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(statePath))!);
-            var temp = statePath + ".tmp";
-            File.WriteAllText(temp, Wire.Serialize(state));
-            File.Move(temp, statePath, true);
+            if (changes == Volatile.Read(ref written))
+                return;
+            (snapshot, version) = (state, changes);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        lock (saving)
         {
-            // Results still reach the server from memory; only a restart would repeat the scan.
-            Console.Error.WriteLine("Sensitive file scan state not saved: " + ex.GetType().Name);
+            // Another flush may have written a later state meanwhile.
+            if (version <= written)
+                return;
+            Volatile.Write(ref savedAt, Environment.TickCount64);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(statePath))!);
+                var temp = statePath + ".tmp";
+                File.WriteAllText(temp, Wire.Serialize(snapshot));
+                File.Move(temp, statePath, true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Results still reach the server from memory; only a restart would repeat the scan.
+                Console.Error.WriteLine("Sensitive file scan state not saved: " + ex.GetType().Name);
+            }
+            Volatile.Write(ref written, version);
         }
     }
 
@@ -783,6 +830,7 @@ public sealed class SensitiveFileScanner(
     {
         lock (gate)
             Stop();
+        Flush();
     }
 
     /// <summary>User profiles and fixed drives other than the system drive, as the policy selects.</summary>

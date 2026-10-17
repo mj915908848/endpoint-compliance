@@ -1835,6 +1835,153 @@ await Check(
 );
 
 await Check(
+    "volume catalog reads a file table once and follows the change journal",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-catalog-" + Guid.NewGuid());
+        try
+        {
+            var docs = Path.Combine(root, "docs");
+            Directory.CreateDirectory(Path.Combine(docs, "old"));
+            File.WriteAllText(Path.Combine(docs, "old", "机密合同.pdf"), "");
+            File.WriteAllText(Path.Combine(docs, "普通.txt"), "");
+            var volume = new FakeVolume(root);
+            var clock = new ManualClock(DateTimeOffset.UtcNow);
+            var catalog = new VolumeCatalog(_ => volume, clock);
+            catalog.Want("sensitive", new("v1", n => n.Contains("机密")));
+            string[] Held()
+            {
+                using var view = catalog.Open(root)!;
+                var folders = view.Entries(CancellationToken.None).Where(e => e.IsDirectory).ToDictionary(e => e.Id);
+                string PathOf(VolumeEntry e) =>
+                    e.ParentId == view.RootId ? e.Name : PathOf(folders[e.ParentId]) + "/" + e.Name;
+                return view.Entries(CancellationToken.None)
+                    .Where(e => !e.IsDirectory)
+                    .Select(PathOf)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray();
+            }
+            Assert(Held() is ["docs/old/机密合同.pdf"] && volume.Scans == 1, "first read: " + string.Join(",", Held()));
+
+            volume.Change(Path.Combine(docs, "机密附件.pdf"), JournalReasons.Create);
+            volume.Change(Path.Combine(docs, "普通2.txt"), JournalReasons.Create);
+            // A folder renamed keeps its id: the names under it follow without records of their own.
+            volume.Change(Path.Combine(docs, "old"), JournalReasons.RenameOldName, folder: true);
+            Directory.Move(Path.Combine(docs, "old"), Path.Combine(docs, "new"));
+            volume.Change(
+                Path.Combine(docs, "new"),
+                JournalReasons.RenameNewName,
+                folder: true,
+                renamedFrom: Path.Combine(docs, "old")
+            );
+            Assert(
+                Held() is ["docs/new/机密合同.pdf", "docs/机密附件.pdf"] && volume.Scans == 1,
+                "journal not applied: " + string.Join(",", Held())
+            );
+
+            File.Delete(Path.Combine(docs, "机密附件.pdf"));
+            volume.Change(Path.Combine(docs, "机密附件.pdf"), JournalReasons.Delete);
+            Assert(Held() is ["docs/new/机密合同.pdf"] && volume.Scans == 1, "deletion not applied");
+
+            volume.Journal++;
+            Held();
+            Assert(volume.Scans == 2 && catalog.Reads == 2, "recreated journal did not cause a read");
+            // Rules that need names passed over read the table again; narrower ones do not.
+            catalog.Want("programs", new("p1", n => n.EndsWith(".txt")));
+            Assert(Held().Length == 3 && volume.Scans == 3, "new interest did not cause a read");
+            catalog.Want("programs", null);
+            Held();
+            Assert(volume.Scans == 3, "dropping an interest caused a read");
+            clock.Now += VolumeCatalog.Reread;
+            Held();
+            Assert(volume.Scans == 4, "weekly read missing");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+        await Task.CompletedTask;
+    }
+);
+
+await Check(
+    "sensitive and program file scans share one read of the file table",
+    async () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), "compliance-shared-" + Guid.NewGuid());
+        var docs = Path.Combine(root, "docs");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(docs, "node_modules", "pkg"));
+            Directory.CreateDirectory(Path.Combine(root, "Tools"));
+            File.WriteAllText(Path.Combine(docs, "机密合同.pdf"), "");
+            File.WriteAllText(Path.Combine(docs, "node_modules", "pkg", "机密-包.txt"), "");
+            File.WriteAllText(Path.Combine(root, "Tools", "xray.exe"), "");
+            var volume = new FakeVolume(root);
+            var catalog = new VolumeCatalog(_ => volume);
+            var policy = new SensitiveFilePolicy { Enabled = true, Rules = [new("secret", "机密文件", ["机密"])] };
+            var products = PolicySeed.Create();
+            catalog.Want(VolumeInterest.SensitiveFiles, VolumeInterest.Sensitive(policy));
+            catalog.Want(VolumeInterest.ProgramFiles, VolumeInterest.Programs(products));
+            var exes = products.Products.SelectMany(r => r.ExecutableNames).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            List<string> Programs()
+            {
+                using var view = catalog.Open(root)!;
+                return WindowsCollector.FindProgramFiles(view, exes, 50, CancellationToken.None);
+            }
+            using var scanner = new SensitiveFileScanner(
+                Path.Combine(root, "state.json"),
+                _ => [new("user-1", docs, "S-1-5-21-1", false, [])],
+                null,
+                _ => catalog.Open(root)
+            );
+            var now = DateTimeOffset.UtcNow;
+            string[] Keys() =>
+                scanner
+                    .Results(policy, now)
+                    .Evidence.Select(e => Path.GetFileName(e.ObjectKey))
+                    .Order(StringComparer.Ordinal)
+                    .ToArray();
+            async Task Cycle()
+            {
+                scanner.Update(policy, false, now);
+                await scanner.Completion;
+            }
+            await Cycle();
+            Assert(Keys() is ["机密合同.pdf"], "first scan: " + string.Join(",", Keys()));
+            Assert(Programs() is [var tool] && tool.EndsWith("xray.exe"), "program file missed");
+
+            volume.Change(Path.Combine(docs, "机密附件.pdf"), JournalReasons.Create);
+            volume.Change(Path.Combine(root, "Tools", "v2rayN.exe"), JournalReasons.Create);
+            await Cycle();
+            Assert(Keys() is ["机密合同.pdf", "机密附件.pdf"], "new file missed: " + string.Join(",", Keys()));
+            Assert(Programs().Count == 2, "new program file missed");
+
+            // Renaming an excluded folder brings the names under it into view.
+            var modules = Path.Combine(docs, "node_modules");
+            volume.Change(modules, JournalReasons.RenameOldName, folder: true);
+            Directory.Move(modules, Path.Combine(docs, "vendor"));
+            volume.Change(
+                Path.Combine(docs, "vendor"),
+                JournalReasons.RenameNewName,
+                folder: true,
+                renamedFrom: modules
+            );
+            await Cycle();
+            Assert(Keys().Contains("机密-包.txt"), "folder moved into view missed: " + string.Join(",", Keys()));
+            Assert(volume.Scans == 1, $"file table read {volume.Scans} times");
+
+            // A restart finds the saved results; the state file is written when a scan ends.
+            Assert(File.Exists(Path.Combine(root, "state.json")), "scan state not saved");
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+);
+
+await Check(
     "service log stamps each line and keeps at most two files",
     async () =>
     {
@@ -1844,7 +1991,7 @@ await Check(
         {
             var path = Path.Combine(dir, "agent.log");
             using var log = new AgentLog(path, 200);
-            log.WriteLine("敏感文件扫描：C:\\ 通过 NTFS 文件表比对 10 个名称");
+            log.WriteLine("敏感文件扫描：C:\\ 通过文件索引比对 10 个名称");
             log.Write("partial ");
             log.Write("line\n");
             var lines = File.ReadAllLines(path);
@@ -2503,15 +2650,17 @@ sealed class DelayedHandler : HttpMessageHandler
     }
 }
 
-/// <summary>A folder tree read as if it were an indexed volume: ids are stable per path, changes are queued by the test.</summary>
+/// <summary>
+/// A folder tree read as if it were an indexed volume: ids are stable per path, changes are journaled by the test.
+/// Like a real journal, reading it consumes nothing: each reader asks from its own position.
+/// </summary>
 sealed class FakeVolume(string root) : IVolumeIndex
 {
     private readonly Dictionary<string, ulong> ids = new() { [root] = 1 };
-    private readonly List<VolumeEntry> pending = [];
+    private readonly List<VolumeEntry> journal = [];
     public readonly List<VolumeEntry> Extra = [];
     public ulong Journal = 7;
     public int Scans;
-    private long usn;
 
     public string Root => root;
     public ulong RootId => 1;
@@ -2526,9 +2675,9 @@ sealed class FakeVolume(string root) : IVolumeIndex
     /// <summary>Records a change; <paramref name="renamedFrom"/> keeps the file id of the old path, as a rename does.</summary>
     public void Change(string path, uint reason, bool folder = false, string? renamedFrom = null)
     {
-        if (!folder)
+        if (!folder && (reason & JournalReasons.Delete) == 0 && !File.Exists(path))
             File.WriteAllText(path, "");
-        pending.Add(
+        journal.Add(
             new(
                 Id(renamedFrom ?? path),
                 Id(Path.GetDirectoryName(path)!),
@@ -2539,7 +2688,7 @@ sealed class FakeVolume(string root) : IVolumeIndex
         );
     }
 
-    public VolumeCursor? Cursor() => new(root, Journal, usn);
+    public VolumeCursor? Cursor() => new(root, Journal, journal.Count);
 
     public IEnumerable<VolumeEntry> Entries(CancellationToken ct)
     {
@@ -2566,10 +2715,7 @@ sealed class FakeVolume(string root) : IVolumeIndex
     {
         if (since.JournalId != Journal)
             throw new JournalGoneException("journal recreated");
-        var changes = pending.ToList();
-        usn += changes.Count;
-        pending.Clear();
-        return (changes, since with { NextUsn = usn });
+        return (journal.Skip((int)since.NextUsn).ToList(), since with { NextUsn = journal.Count });
     }
 
     public string? PathOf(ulong id) => ids.FirstOrDefault(p => p.Value == id && Directory.Exists(p.Key)).Key;
@@ -2577,6 +2723,13 @@ sealed class FakeVolume(string root) : IVolumeIndex
     public string? Canonical(string path) => Directory.Exists(path) ? SensitiveScopeRules.Full(path) : null;
 
     public void Dispose() { }
+}
+
+sealed class ManualClock(DateTimeOffset now) : TimeProvider
+{
+    public DateTimeOffset Now = now;
+
+    public override DateTimeOffset GetUtcNow() => Now;
 }
 
 sealed class FakeProcesses(RunningProcess[] running) : IProcessTable

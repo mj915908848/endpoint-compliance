@@ -6,7 +6,7 @@ real scan, and checks that the registry, PackageManager, socket-table, account l
 produced complete modules and the expected evidence. Runs on Windows only (CI uses windows-latest); it
 changes the current user's proxy setting and restores it, and removes the planted files.
 """
-import argparse, http.cookiejar, json, os, pathlib, secrets, shutil, socket, subprocess, sys, time, urllib.request
+import argparse, http.cookiejar, json, os, pathlib, re, secrets, shutil, socket, subprocess, sys, time, urllib.request
 import winreg
 
 # The runner console is cp1252; agent and server logs are UTF-8 Chinese.
@@ -257,8 +257,12 @@ try:
     assert SECRET_CONTENT not in json.dumps(snapshot, ensure_ascii=False), "File content left the machine"
     print(f"PASS sensitive file names found in the profile and under {drive_evidence['source']}; content not uploaded")
     log_text = (data / "agent.log").read_text(encoding="utf-8", errors="replace")
-    assert "通过 NTFS 文件表比对" in log_text, "Sensitive file scan did not use the NTFS file table"
-    print("PASS sensitive file scan read the NTFS file table instead of walking folders")
+    assert "通过文件索引比对" in log_text, "Sensitive file scan did not use the NTFS file table"
+    # The sensitive file scan and the program file scan share one read of each drive's file table.
+    reads = re.findall(r"文件索引：读取 ([A-Za-z]):", log_text)
+    assert reads and len(reads) == len(set(r.upper() for r in reads)), \
+        f"File tables read more than once per drive: {reads}"
+    print(f"PASS both scans used one read of the NTFS file table per drive ({', '.join(reads)}) instead of walking folders")
 
     alerts = request("/api/alerts")
     sensitive_alerts = {a["objectKey"].lower() for a in alerts if a["type"] == "SensitiveFile"}
