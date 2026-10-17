@@ -129,7 +129,8 @@ describe("policy editor", () => {
     expect(posts[0]).toMatchObject({ policyId: "研发部", targetDeviceIds: ["a"], mode: "Audit" });
     expect(posts[0].products).toEqual(base.products);
     expect(await screen.findByText("研发部 · 1 台")).toBeTruthy();
-  });
+    // Takes about 15 seconds in jsdom (device picker, editor and confirm dialog), too close to the default 20.
+  }, 60_000);
 
   it("publishes an edit directly after showing what changes", async () => {
     const posts = stub(base, base);

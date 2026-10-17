@@ -9,12 +9,13 @@ from PIL import Image, ImageDraw
 
 ASSETS = Path(__file__).resolve().parents[1] / "src" / "Compliance.Tray" / "Assets"
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-BLUE_TOP, BLUE_BOTTOM = (64, 150, 255), (14, 92, 222)
-BADGE = (245, 63, 63)
+# The management UI's teal (#1f6f84) and danger red (#c2413b).
+TEAL_TOP, TEAL_BOTTOM = (52, 150, 170), (24, 94, 114)
+BADGE = (194, 65, 59)
 GRAY = ((168, 175, 186), (120, 128, 140))
 
 
-def shield(size: int, badge: bool, colors=(BLUE_TOP, BLUE_BOTTOM)) -> Image.Image:
+def shield(size: int, badge: bool, colors=(TEAL_TOP, TEAL_BOTTOM)) -> Image.Image:
     scale = 8  # draw large, then shrink for smooth edges
     s = size * scale
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
@@ -70,7 +71,7 @@ def shield(size: int, badge: bool, colors=(BLUE_TOP, BLUE_BOTTOM)) -> Image.Imag
     return img.resize((size, size), Image.LANCZOS)
 
 
-def save(name: str, badge: bool, colors=(BLUE_TOP, BLUE_BOTTOM)) -> None:
+def save(name: str, badge: bool, colors=(TEAL_TOP, TEAL_BOTTOM)) -> None:
     images = [shield(size, badge, colors) for size in SIZES]
     images[-1].save(ASSETS / name, format="ICO", sizes=[(i.width, i.height) for i in images], append_images=images[:-1])
 
@@ -82,7 +83,7 @@ save("tray-offline.ico", badge=False, colors=GRAY)
 # Preview sheet for reviewing the design.
 sheet = Image.new("RGBA", (600, 140), (255, 255, 255, 255))
 x = 10
-for badge, colors in ((False, (BLUE_TOP, BLUE_BOTTOM)), (True, (BLUE_TOP, BLUE_BOTTOM)), (False, GRAY)):
+for badge, colors in ((False, (TEAL_TOP, TEAL_BOTTOM)), (True, (TEAL_TOP, TEAL_BOTTOM)), (False, GRAY)):
     for size in (16, 24, 32, 48):
         icon = shield(size, badge, colors)
         sheet.paste(icon, (x, 70 - size // 2), icon)

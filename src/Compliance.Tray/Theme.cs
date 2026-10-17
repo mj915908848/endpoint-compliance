@@ -5,13 +5,15 @@ namespace Compliance.Tray;
 /// <summary>The colors and fonts the tray's windows share, matching the management UI.</summary>
 public static class Theme
 {
-    public static readonly Color Page = Color.FromArgb(0xF5, 0xF7, 0xFA);
+    public static readonly Color Page = Color.FromArgb(0xF3, 0xF6, 0xF8);
     public static readonly Color Surface = Color.White;
-    public static readonly Color Line = Color.FromArgb(0xE5, 0xE8, 0xEF);
+    public static readonly Color Line = Color.FromArgb(0xE8, 0xED, 0xF0);
     public static readonly Color Text = Color.FromArgb(0x1D, 0x21, 0x29);
     public static readonly Color Muted = Color.FromArgb(0x86, 0x90, 0x9C);
-    public static readonly Color Primary = Color.FromArgb(0x16, 0x64, 0xFF);
-    public static readonly Color Danger = Color.FromArgb(0xF5, 0x3F, 0x3F);
+    public static readonly Color Primary = Color.FromArgb(0x1F, 0x6F, 0x84);
+    public static readonly Color Good = Color.FromArgb(0x2F, 0x8F, 0x5B);
+    public static readonly Color Warning = Color.FromArgb(0xC9, 0x83, 0x16);
+    public static readonly Color Danger = Color.FromArgb(0xC2, 0x41, 0x3B);
 
     private const string Family = "Microsoft YaHei UI";
 

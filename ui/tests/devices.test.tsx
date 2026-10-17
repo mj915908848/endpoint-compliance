@@ -132,7 +132,7 @@ describe("device list", () => {
     );
     renderAt("/devices");
     expect(await screen.findByText(/10\.0\.0\.5 · 00-11-22-33-44-55/)).toBeTruthy();
-    expect(screen.getByText("在线").closest(".ant-tag")).toBeTruthy();
+    expect(screen.getAllByRole("img", { name: "在线" }).length).toBeGreaterThan(0);
     expect(screen.getByText(/共\s*2\s*台/)).toBeTruthy();
     await userEvent.type(screen.getByLabelText("搜索设备"), "00:11:22");
     await waitFor(() => expect(screen.queryByText("OLD-PC")).toBeNull());

@@ -13,12 +13,7 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import {
-  CheckCircleFilled,
-  DisconnectOutlined,
-  ExclamationCircleFilled,
-  SafetyCertificateOutlined,
-} from "@ant-design/icons";
+import { SafetyCertificateOutlined } from "@ant-design/icons";
 import type { Alert, DeviceSummary, ModuleResult, Verdict } from "../types";
 import { alertTypeLabel, onlineLabel, verdictLabels } from "./labels";
 
@@ -34,26 +29,57 @@ const verdictColor: Record<Verdict, string> = {
   UNKNOWN: "warning",
 };
 
-export function VerdictTag({ verdict }: { verdict: Verdict }) {
+/** `muted` greys the tag out, for a device whose current verdict is unknown only because it is offline. */
+export function VerdictTag({ verdict, muted = false }: { verdict: Verdict; muted?: boolean }) {
   return (
-    <Tag color={verdictColor[verdict] ?? "warning"} variant="solid">
+    <Tag color={muted ? "default" : (verdictColor[verdict] ?? "warning")} variant="filled">
       {verdictLabels[verdict] ?? "无法判断"}
     </Tag>
   );
 }
 
-const online: Record<string, { color: string; icon: ReactNode }> = {
-  Online: { color: "success", icon: <CheckCircleFilled /> },
-  SuspectedOffline: { color: "warning", icon: <ExclamationCircleFilled /> },
-  Offline: { color: "default", icon: <DisconnectOutlined /> },
-};
+/** How long ago, in rough words: "3 分钟", "2 小时", "5 天". */
+export function ago(value: string | null | undefined, now = Date.now()) {
+  if (!value) return null;
+  const minutes = Math.max(0, Math.floor((now - new Date(value).getTime()) / 60_000));
+  if (minutes < 60) return `${Math.max(1, minutes)} 分钟`;
+  if (minutes < 60 * 24) return `${Math.floor(minutes / 60)} 小时`;
+  return `${Math.floor(minutes / 60 / 24)} 天`;
+}
 
-export function OnlineTag({ state }: { state: string }) {
-  const look = online[state] ?? { color: "default", icon: null };
+/** A dot before a device's name: green and haloed when online, amber when it may be offline, grey when offline. */
+export function OnlineDot({
+  device,
+}: {
+  device: Pick<DeviceSummary, "onlineState" | "lastHeartbeat">;
+}) {
+  const label = onlineLabel(device.onlineState) ?? "在线状态未知";
+  const tone =
+    device.onlineState === "Online"
+      ? "online"
+      : device.onlineState === "SuspectedOffline"
+        ? "suspect"
+        : "offline";
   return (
-    <Tag color={look.color} icon={look.icon} variant={state === "Online" ? "solid" : "filled"}>
-      {onlineLabel(state) ?? "在线状态未知"}
-    </Tag>
+    <Tooltip title={`${label} · 最近心跳 ${time(device.lastHeartbeat)}`}>
+      <span className={`online-dot online-dot-${tone}`} role="img" aria-label={label} />
+    </Tooltip>
+  );
+}
+
+/** The dot with its label, e.g. "● 失联 2 小时", for places that state the online state in words. */
+export function OnlineState({
+  device,
+}: {
+  device: Pick<DeviceSummary, "onlineState" | "lastHeartbeat">;
+}) {
+  const label = onlineLabel(device.onlineState) ?? "在线状态未知";
+  const since = device.onlineState === "Online" ? null : ago(device.lastHeartbeat);
+  return (
+    <Space size={6}>
+      <OnlineDot device={device} />
+      <span>{since ? `${label} ${since}` : label}</span>
+    </Space>
   );
 }
 
@@ -136,8 +162,7 @@ export function DeviceState({ device }: { device: DeviceSummary }) {
   return (
     <Space orientation="vertical" size={2}>
       <Space size={4} wrap>
-        <OnlineTag state={device.onlineState} />
-        <VerdictTag verdict={offline ? "UNKNOWN" : device.currentVerdict} />
+        <VerdictTag verdict={offline ? "UNKNOWN" : device.currentVerdict} muted={offline} />
         {device.simulated && <Tag color="purple">模拟终端</Tag>}
       </Space>
       {offline && device.lastVerdict && (
