@@ -24,6 +24,15 @@ public static class Program
         }
         else
         {
+            // One tray per sign-in session: the Run key, the install scripts and the MSI all start one. A second
+            // start opens the running tray's notification center instead, which also offers enrolling.
+            using var single = new Mutex(true, TrayApp.MutexName, out var first);
+            using var show = new EventWaitHandle(false, EventResetMode.AutoReset, TrayApp.ShowEventName);
+            if (!first)
+            {
+                show.Set();
+                return;
+            }
             // --setup [the MSI's path]: opened by the MSI after installing; enrolls unless the service already is.
             var setup = Array.IndexOf(args, "--setup");
             Application.Run(
@@ -32,7 +41,8 @@ public static class Program
                     setup < 0 ? null
                         : setup + 1 < args.Length && !args[setup + 1].StartsWith("--", StringComparison.Ordinal)
                             ? args[setup + 1]
-                        : ""
+                        : "",
+                    show
                 )
             );
         }
@@ -43,6 +53,8 @@ public static class Program
 public sealed class TrayApp : ApplicationContext
 {
     private const string PipeName = "ComplianceAgent.Notifications.v1";
+    public const string MutexName = @"Local\ComplianceAgent.Tray";
+    public const string ShowEventName = @"Local\ComplianceAgent.Tray.Show";
 
     private readonly NotifyIcon icon;
     private NoticeWindow? window;
@@ -59,7 +71,9 @@ public sealed class TrayApp : ApplicationContext
     private readonly Timer timer = new() { Interval = 20_000 };
     private string? state;
 
-    public TrayApp(bool showNotices, string? setupSource = null)
+    private RegisteredWaitHandle? showRequests;
+
+    public TrayApp(bool showNotices, string? setupSource = null, EventWaitHandle? show = null)
     {
         this.setupSource = setupSource;
         var menu = new ContextMenuStrip { Font = Theme.Body };
@@ -90,6 +104,18 @@ public sealed class TrayApp : ApplicationContext
         };
         timer.Tick += async (_, _) => await RefreshAsync();
         timer.Start();
+        if (show is not null)
+        {
+            // The wait completes on a pool thread; the window opens on the UI thread.
+            var ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+            showRequests = ThreadPool.RegisterWaitForSingleObject(
+                show,
+                (_, _) => ui.Post(_ => ShowWindow(), null),
+                null,
+                Timeout.Infinite,
+                false
+            );
+        }
         // Opened at start for a quick look (and for screenshots in CI).
         if (showNotices)
             ShowWindow();
@@ -159,8 +185,9 @@ public sealed class TrayApp : ApplicationContext
         {
             notices = Parse(await PipeRequestAsync("{\"action\":\"list\"}"));
         }
-        catch (Exception ex)
-            when (ex is IOException or TimeoutException or JsonException or UnauthorizedAccessException)
+        // Anything else, such as a reply from a service of another version, must not end the tray either: this
+        // runs from the timer's async void handler, where an escaping exception closes the process.
+        catch (Exception)
         {
             latest = null;
             enrollItem.Visible = false;
@@ -223,18 +250,30 @@ public sealed class TrayApp : ApplicationContext
         if (
             json.RootElement.ValueKind == JsonValueKind.Object
             && json.RootElement.TryGetProperty("error", out var error)
+            && error.ValueKind == JsonValueKind.String
             && error.GetString() == "not-enrolled"
         )
             return null;
         if (json.RootElement.ValueKind != JsonValueKind.Array)
             throw new JsonException("Service refused the request: " + reply);
+        // Entries without an id are skipped rather than failing the whole list; other fields fall back.
         return json
             .RootElement.EnumerateArray()
+            .Where(n =>
+                n.ValueKind == JsonValueKind.Object
+                && n.TryGetProperty("eventId", out var id)
+                && id.ValueKind == JsonValueKind.String
+                && id.GetString() is { Length: > 0 }
+            )
             .Select(n => new Notice(
                 n.GetProperty("eventId").GetString()!,
-                n.GetProperty("message").GetString() ?? "",
-                n.TryGetProperty("at", out var at) && at.TryGetDateTimeOffset(out var time) ? time : DateTimeOffset.Now,
-                n.GetProperty("acknowledged").GetBoolean()
+                n.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString()! : "",
+                n.TryGetProperty("at", out var at)
+                && at.ValueKind == JsonValueKind.String
+                && at.TryGetDateTimeOffset(out var time)
+                    ? time
+                    : DateTimeOffset.Now,
+                n.TryGetProperty("acknowledged", out var ack) && ack.ValueKind == JsonValueKind.True
             ))
             .ToArray();
     }
@@ -245,7 +284,8 @@ public sealed class TrayApp : ApplicationContext
         {
             await PipeRequestAsync(JsonSerializer.Serialize(new { action = "ack", eventId = id }));
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException) { }
+        // A failed acknowledgement leaves the notice unread; the refresh that follows shows it again.
+        catch (Exception) { }
     }
 
     /// <summary>Changes the tray icon only when the state changes, so the icon does not flicker every refresh.</summary>
@@ -279,6 +319,7 @@ public sealed class TrayApp : ApplicationContext
     protected override void ExitThreadCore()
     {
         timer.Stop();
+        showRequests?.Unregister(null);
         window?.Close();
         setup?.Close();
         icon.Visible = false;
