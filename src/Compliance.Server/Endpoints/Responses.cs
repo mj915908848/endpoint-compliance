@@ -51,4 +51,12 @@ public record NotificationTested(bool Ok, string? Error);
 
 /// <param name="GzipUploads">The server accepts gzip-compressed uploads (clients from 0.2.9 use them).</param>
 /// <param name="LastSequence">The highest event sequence the server holds for the device.</param>
-public record HeartbeatReply(bool Ok, bool GzipUploads, long LastSequence);
+/// <param name="ServerVersion">The server's release.</param>
+/// <param name="MinimumAgentVersion">Clients older than this should be upgraded (<see cref="ReleaseVersion.MinimumAgent"/>).</param>
+public record HeartbeatReply(
+    bool Ok,
+    bool GzipUploads,
+    long LastSequence,
+    string ServerVersion,
+    string MinimumAgentVersion
+);

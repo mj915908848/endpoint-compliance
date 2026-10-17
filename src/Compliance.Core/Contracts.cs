@@ -61,7 +61,7 @@ public record ProductRule(
 
 public record PolicyDocument
 {
-    public int SchemaVersion { get; init; } = 1;
+    public int SchemaVersion { get; init; } = Wire.SchemaVersion;
     public string PolicyId { get; init; } = "Default";
 
     /// <summary>This policy's own release number, counting 1, 2, 3 ... per policy; shown to administrators.</summary>
@@ -233,7 +233,7 @@ public record ControlState(
 
 public record ScanSnapshot
 {
-    public int SchemaVersion { get; init; } = 1;
+    public int SchemaVersion { get; init; } = Wire.SchemaVersion;
     public string DeviceId { get; init; } = "";
     public string HostName { get; init; } = "";
     public string Platform { get; init; } = "Windows";
@@ -325,6 +325,8 @@ public record CommandReply(bool Success, string Detail);
 
 /// <param name="TargetPolicyVersion">The device's policy's own version, as administrators see it.</param>
 /// <param name="PolicyApplied">The agent reported holding that release.</param>
+/// <param name="AgentOutdated">The client is older than the server.</param>
+/// <param name="AgentUnsupported">The client is older than <see cref="ReleaseVersion.MinimumAgent"/>.</param>
 public record DeviceSummary(
     string Id,
     string HostName,
@@ -343,7 +345,8 @@ public record DeviceSummary(
     string AgentVersion = "",
     bool AgentOutdated = false,
     NetworkAdapter[]? Network = null,
-    string SourceAddress = ""
+    string SourceAddress = "",
+    bool AgentUnsupported = false
 );
 
 public record AlertSummary(

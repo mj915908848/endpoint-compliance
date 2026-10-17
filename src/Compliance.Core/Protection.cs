@@ -60,7 +60,7 @@ public static class PolicyCrypto
     public static void Validate(PolicyDocument doc)
     {
         if (
-            doc.SchemaVersion != 1
+            doc.SchemaVersion != Wire.SchemaVersion
             || doc.Version < 1
             || string.IsNullOrWhiteSpace(doc.PolicyId)
             || doc.PolicyId.Length > 64
