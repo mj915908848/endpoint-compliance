@@ -9,6 +9,9 @@
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Compliance.Core/Compliance.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Drawn by scripts/make_tray_icons.py. -->
     <EmbeddedResource
       Include="Assets\*.ico"

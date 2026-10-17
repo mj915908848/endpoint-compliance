@@ -2205,7 +2205,7 @@ if (OperatingSystem.IsWindows())
                     // Exactly as the tray connects.
                     using var pipe = new System.IO.Pipes.NamedPipeClientStream(
                         ".",
-                        NotificationPipe.PipeName,
+                        TrayPipe.Name,
                         System.IO.Pipes.PipeDirection.InOut,
                         System.IO.Pipes.PipeOptions.Asynchronous,
                         System.Security.Principal.TokenImpersonationLevel.Identification
@@ -2229,6 +2229,13 @@ if (OperatingSystem.IsWindows())
                         .GetBoolean(),
                     "acknowledgment not kept: " + after
                 );
+                // The tray's own client reads the same replies.
+                var notices = await TrayPipe.ListAsync();
+                Assert(
+                    notices is { Length: 2 } && notices.Single(n => n.EventId == "n-1").Acknowledged,
+                    "tray client: " + after
+                );
+                Assert(await TrayPipe.AcknowledgeAsync("n-2"), "tray client acknowledgment");
                 stop.Cancel();
                 try
                 {

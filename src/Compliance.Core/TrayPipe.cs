@@ -1,0 +1,87 @@
+using System.IO.Pipes;
+using System.Security.Principal;
+using System.Text.Json;
+
+namespace Compliance.Core;
+
+/// <summary>A request from the tray to the agent service: <c>list</c>, or <c>ack</c> with an event id.</summary>
+public record TrayRequest(string Action, string? EventId = null);
+
+/// <summary>A notice the service keeps for the tray; <see cref="UserSid"/> is null for notices to every user.</summary>
+public record TrayNotice(string EventId, string? UserSid, string Message, DateTimeOffset At, bool Acknowledged);
+
+public record TrayAck(bool Ok);
+
+public record TrayError(string Error);
+
+/// <summary>
+/// The named pipe between the agent service and the tray: one JSON line each way. <c>list</c> is answered with
+/// <see cref="TrayNotice"/>[], <c>ack</c> with <see cref="TrayAck"/>, anything else (and every request while the
+/// service waits to be enrolled) with <see cref="TrayError"/>. The version in the name changes only when this does.
+/// </summary>
+public static class TrayPipe
+{
+    public const string Name = "ComplianceAgent.Notifications.v1";
+    public const string List = "list";
+    public const string Ack = "ack";
+    public const string NotEnrolled = "not-enrolled";
+
+    /// <summary>The notices for the user running the tray, or null while the service waits to be enrolled.</summary>
+    public static async Task<TrayNotice[]?> ListAsync()
+    {
+        var reply = await RequestAsync(new(List));
+        using var json = JsonDocument.Parse(reply);
+        var root = json.RootElement;
+        if (
+            root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("error", out var error)
+            && error.ValueKind == JsonValueKind.String
+            && error.GetString() == NotEnrolled
+        )
+            return null;
+        if (root.ValueKind != JsonValueKind.Array)
+            throw new JsonException("Service refused the request: " + reply);
+        // Entries without an id are skipped rather than failing the whole list; other fields fall back.
+        return root.EnumerateArray()
+            .Where(n =>
+                n.ValueKind == JsonValueKind.Object
+                && n.TryGetProperty("eventId", out var id)
+                && id.ValueKind == JsonValueKind.String
+                && id.GetString() is { Length: > 0 }
+            )
+            .Select(n => new TrayNotice(
+                n.GetProperty("eventId").GetString()!,
+                n.TryGetProperty("userSid", out var sid) && sid.ValueKind == JsonValueKind.String
+                    ? sid.GetString()
+                    : null,
+                n.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString()! : "",
+                n.TryGetProperty("at", out var at)
+                && at.ValueKind == JsonValueKind.String
+                && at.TryGetDateTimeOffset(out var time)
+                    ? time
+                    : DateTimeOffset.Now,
+                n.TryGetProperty("acknowledged", out var ack) && ack.ValueKind == JsonValueKind.True
+            ))
+            .ToArray();
+    }
+
+    public static async Task<bool> AcknowledgeAsync(string eventId) =>
+        Wire.Read<TrayAck>(await RequestAsync(new(Ack, eventId))).Ok;
+
+    static async Task<string> RequestAsync(TrayRequest request)
+    {
+        // Identification lets the service tell which user asks, without letting it act as that user.
+        using var pipe = new NamedPipeClientStream(
+            ".",
+            Name,
+            PipeDirection.InOut,
+            PipeOptions.Asynchronous,
+            TokenImpersonationLevel.Identification
+        );
+        await pipe.ConnectAsync(2000);
+        using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
+        using var reader = new StreamReader(pipe, leaveOpen: true);
+        await writer.WriteLineAsync(Wire.Serialize(request));
+        return await reader.ReadLineAsync() ?? throw new IOException("Empty service response");
+    }
+}
