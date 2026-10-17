@@ -43,7 +43,7 @@ static partial class Endpoints
                     await tx.Lock(ComplianceService.DeviceLock(a.DeviceId));
                     await tx.AcknowledgeAlert(id);
                     await tx.Audit(u.Username, "AcknowledgeAlert", id, s.Now);
-                    return new { ok = true };
+                    return new Done();
                 });
             }
         );

@@ -43,13 +43,12 @@ static partial class Endpoints
                 return await s.Tx(async tx =>
                 {
                     var d = await s.Device(tx, id);
-                    return new
-                    {
-                        device = await s.Verdicts.Summary(tx, d),
-                        snapshot = d.Snapshot,
-                        controls = d.Controls ?? [],
-                        pendingCommands = (await tx.PendingCommands(id, s.Now)).Count,
-                    };
+                    return new DeviceDetail(
+                        await s.Verdicts.Summary(tx, d),
+                        d.Snapshot,
+                        d.Controls ?? [],
+                        (await tx.PendingCommands(id, s.Now)).Count
+                    );
                 });
             }
         );
@@ -121,49 +120,53 @@ static partial class Endpoints
                     var d = await s.Device(tx, id);
                     await tx.DeleteDevice(id);
                     await tx.Audit(u.Username, "DeleteDevice", $"{d.HostName}（{id}）", s.Now);
-                    return new { deleted = id };
+                    return new DeviceDeleted(id);
                 });
             }
         );
 
         // A free-text label such as the employee or department, since host names rarely say whose PC it is.
-        group.MapPut(
-            "/{id}/note",
-            async (HttpContext c, string id) =>
-            {
-                var u = Require(c, "Operator");
-                var note = ((await Body<NoteRequest>(c)).Note ?? "").Trim();
-                if (note.Length > MaxNoteLength)
-                    throw new ApiError(400, $"备注不能超过 {MaxNoteLength} 个字符");
-                return await s.Tx(async tx =>
+        group
+            .MapPut(
+                "/{id}/note",
+                async (HttpContext c, string id) =>
                 {
-                    await tx.Lock(ComplianceService.DeviceLock(id));
-                    var d = await s.Device(tx, id);
-                    await tx.SetDeviceNote(id, note);
-                    await tx.Audit(u.Username, "SetDeviceNote", $"{d.HostName}（{id}）：{note}", s.Now);
-                    return await s.Verdicts.Summary(tx, d with { Note = note });
-                });
-            }
-        );
+                    var u = Require(c, "Operator");
+                    var note = ((await Body<NoteRequest>(c)).Note ?? "").Trim();
+                    if (note.Length > MaxNoteLength)
+                        throw new ApiError(400, $"备注不能超过 {MaxNoteLength} 个字符");
+                    return await s.Tx(async tx =>
+                    {
+                        await tx.Lock(ComplianceService.DeviceLock(id));
+                        var d = await s.Device(tx, id);
+                        await tx.SetDeviceNote(id, note);
+                        await tx.Audit(u.Username, "SetDeviceNote", $"{d.HostName}（{id}）：{note}", s.Now);
+                        return await s.Verdicts.Summary(tx, d with { Note = note });
+                    });
+                }
+            )
+            .Accepts<NoteRequest>(JsonBody);
 
-        group.MapPost(
-            "/{id}/commands",
-            async (HttpContext c, string id) =>
-            {
-                var u = Require(c, "Operator");
-                var r = await Body<CommandRequest>(c);
-                if (r.Type != "ScanNow")
-                    throw new ApiError(400, "Only ScanNow is supported");
-                return await s.Tx(async tx =>
+        group
+            .MapPost(
+                "/{id}/commands",
+                async (HttpContext c, string id) =>
                 {
-                    await s.Device(tx, id);
-                    var command = new DeviceCommand(Guid.NewGuid().ToString(), "ScanNow", s.Now.AddMinutes(10));
-                    await tx.InsertCommand(new CommandRecord(id, command));
-                    await tx.Audit(u.Username, "RequestScan", id, s.Now);
-                    return command;
-                });
-            }
-        );
+                    var u = Require(c, "Operator");
+                    var r = await Body<CommandRequest>(c);
+                    if (r.Type != "ScanNow")
+                        throw new ApiError(400, "Only ScanNow is supported");
+                    return await s.Tx(async tx =>
+                    {
+                        await s.Device(tx, id);
+                        var command = new DeviceCommand(Guid.NewGuid().ToString(), "ScanNow", s.Now.AddMinutes(10));
+                        await tx.InsertCommand(new CommandRecord(id, command));
+                        await tx.Audit(u.Username, "RequestScan", id, s.Now);
+                        return command;
+                    });
+                }
+            )
+            .Accepts<CommandRequest>(JsonBody);
     }
 
     /// <summary>

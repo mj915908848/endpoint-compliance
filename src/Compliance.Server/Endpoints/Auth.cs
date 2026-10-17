@@ -14,24 +14,21 @@ static partial class Endpoints
         group.MapGet(
             "/status",
             () =>
-                new
-                {
-                    version = ComplianceService.Version,
-                    mode = settings.DemoMode ? (settings.DemoHttpLan ? "LanHttpTrial" : "LoopbackDemo") : "Production",
-                    storage = settings.Storage,
-                    networkCapabilities = new[]
-                    {
-                        new
-                        {
-                            id = "network",
-                            implemented = false,
-                            verified = false,
-                            detail = "尚未实现。目前只能通过浏览器策略拦截浏览器访问；其他程序的网络访问需依靠单位的出口网关或代理拦截。",
-                        },
-                    },
-                    policyPublicKeyPem = s.Policies.PublicKey,
-                    policyKeyId = s.Policies.KeyId,
-                }
+                new ServerStatus(
+                    ComplianceService.Version,
+                    settings.DemoMode ? (settings.DemoHttpLan ? "LanHttpTrial" : "LoopbackDemo") : "Production",
+                    settings.Storage,
+                    [
+                        new(
+                            "network",
+                            Implemented: false,
+                            Verified: false,
+                            "尚未实现。目前只能通过浏览器策略拦截浏览器访问；其他程序的网络访问需依靠单位的出口网关或代理拦截。"
+                        ),
+                    ],
+                    s.Policies.PublicKey,
+                    s.Policies.KeyId
+                )
         );
 
         group
@@ -80,16 +77,16 @@ static partial class Endpoints
                         }
                     );
                     return Results.Json(
-                        new
-                        {
-                            username = result.user.Username,
-                            roles = result.user.Roles,
-                            csrfToken = result.session.CsrfToken,
-                            idleMinutes = s.SessionIdle?.TotalMinutes ?? 0,
-                        }
+                        new SessionInfo(
+                            result.user.Username,
+                            result.user.Roles,
+                            result.session.CsrfToken,
+                            s.SessionIdle?.TotalMinutes ?? 0
+                        )
                     );
                 }
             )
+            .Accepts<LoginRequest>(JsonBody)
             .RequireRateLimiting("login");
 
         group.MapGet(
@@ -98,13 +95,7 @@ static partial class Endpoints
             {
                 var u = (UserRecord)c.Items["user"]!;
                 var session = (SessionRecord)c.Items["session"]!;
-                return new
-                {
-                    username = u.Username,
-                    roles = u.Roles,
-                    csrfToken = session.CsrfToken,
-                    idleMinutes = s.SessionIdle?.TotalMinutes ?? 0,
-                };
+                return new SessionInfo(u.Username, u.Roles, session.CsrfToken, s.SessionIdle?.TotalMinutes ?? 0);
             }
         );
 
@@ -135,9 +126,10 @@ static partial class Endpoints
                         await tx.Audit(user.Username, "ChangePassword", user.Username, s.Now);
                         return others;
                     });
-                    return new { ok = true, signedOut };
+                    return new PasswordChanged(signedOut);
                 }
             )
+            .Accepts<PasswordRequest>(JsonBody)
             .RequireRateLimiting("login");
 
         group.MapPost(
@@ -152,7 +144,7 @@ static partial class Endpoints
                     return true;
                 });
                 c.Response.Cookies.Delete("compliance-session");
-                return new { ok = true };
+                return new Done();
             }
         );
     }

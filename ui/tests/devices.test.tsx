@@ -19,6 +19,12 @@ const device: DeviceSummary = {
   protectionStatus: "审计模式",
   violationCount: 0,
   simulated: false,
+  note: "",
+  policyName: "",
+  agentVersion: "",
+  agentOutdated: false,
+  network: null,
+  sourceAddress: "",
 };
 
 function stubApi(roles: string[]) {
@@ -161,6 +167,7 @@ describe("device detail", () => {
           summary: "Cursor 已安装",
           userSid: null,
           confirmed: true,
+          collectedAt: null,
         },
       ],
       modules: [
@@ -173,6 +180,7 @@ describe("device detail", () => {
         },
       ],
       controls: [],
+      users: [],
     };
     const report: Report = {
       verdict: "FAIL",
@@ -183,6 +191,9 @@ describe("device detail", () => {
       evidenceCount: 1,
       protectionStatus: "审计模式",
       snapshot,
+      sensitiveFileNotes: [],
+      policyName: "默认策略",
+      policyVersion: 1,
     };
     vi.stubGlobal("fetch", async (url: string) => {
       const json = (body: unknown) =>

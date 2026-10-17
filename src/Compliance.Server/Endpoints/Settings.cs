@@ -29,84 +29,89 @@ static partial class Endpoints
                 return await s.Tx(async tx =>
                 {
                     var n = await AlertNotifier.Settings(tx);
-                    return new
-                    {
-                        notifications = new
-                        {
+                    return new AppSettings(
+                        new NotificationView(
                             n.Enabled,
                             n.Channel,
                             n.WebhookUrl,
-                            hasSecret = n.Secret.Length > 0,
+                            n.Secret.Length > 0,
                             n.Types,
-                            n.ConsoleUrl,
-                        },
-                        lastNotification = notifier.Last,
-                        auditRetentionDays = await Housekeeping.AuditRetentionDays(tx),
-                    };
+                            n.ConsoleUrl
+                        ),
+                        notifier.Last,
+                        await Housekeeping.AuditRetentionDays(tx)
+                    );
                 });
             }
         );
 
-        group.MapPut(
-            "/notifications",
-            async (HttpContext c) =>
-            {
-                var u = Require(c, "Operator");
-                var r = await Body<NotificationRequest>(c);
-                var channel = r.Channel ?? "";
-                var url = (r.WebhookUrl ?? "").Trim();
-                var console = (r.ConsoleUrl ?? "").Trim().TrimEnd('/');
-                if (!NotificationSettings.Channels.Contains(channel))
-                    throw new ApiError(400, "请选择推送渠道");
-                if (url.Length > 0 || r.Enabled)
+        group
+            .MapPut(
+                "/notifications",
+                async (HttpContext c) =>
                 {
-                    if (
-                        url.Length > 512
-                        || !Uri.TryCreate(url, UriKind.Absolute, out var webhook)
-                        || webhook.Scheme != Uri.UriSchemeHttps
-                        || !NotificationSettings.Hosts(channel).Contains(webhook.Host)
-                    )
-                        throw new ApiError(
-                            400,
-                            $"机器人地址应以 https://{NotificationSettings.Hosts(channel)[0]}/ 开头，请从群机器人设置中复制"
-                        );
-                }
-                if (r.Secret is { Length: > 256 })
-                    throw new ApiError(400, "签名密钥过长");
-                var types = (r.Types ?? []).Distinct().ToArray();
-                if (types.Any(t => !NotificationSettings.AlertTypes.Contains(t)))
-                    throw new ApiError(400, "告警类型无效");
-                if (r.Enabled && types.Length == 0)
-                    throw new ApiError(400, "请至少选择一种要推送的告警");
-                if (
-                    console.Length > 0
-                    && (
-                        console.Length > 256
-                        || !Uri.TryCreate(console, UriKind.Absolute, out var consoleUri)
-                        || consoleUri.Scheme is not ("https" or "http")
-                    )
-                )
-                    throw new ApiError(400, "管理端地址无效");
-
-                return await s.Tx(async tx =>
-                {
-                    await tx.Lock(NotificationSettings.Key);
-                    var saved = await AlertNotifier.Settings(tx);
-                    var next = new NotificationSettings
+                    var u = Require(c, "Operator");
+                    var r = await Body<NotificationRequest>(c);
+                    var channel = r.Channel ?? "";
+                    var url = (r.WebhookUrl ?? "").Trim();
+                    var console = (r.ConsoleUrl ?? "").Trim().TrimEnd('/');
+                    if (!NotificationSettings.Channels.Contains(channel))
+                        throw new ApiError(400, "请选择推送渠道");
+                    if (url.Length > 0 || r.Enabled)
                     {
-                        Enabled = r.Enabled,
-                        Channel = channel,
-                        WebhookUrl = url,
-                        Secret = (r.Secret ?? saved.Secret).Trim(),
-                        Types = types,
-                        ConsoleUrl = console,
-                    };
-                    await tx.PutSetting(NotificationSettings.Key, Wire.Serialize(next));
-                    await tx.Audit(u.Username, "SetNotifications", r.Enabled ? $"开启（{channel}）" : "关闭", s.Now);
-                    return new { ok = true };
-                });
-            }
-        );
+                        if (
+                            url.Length > 512
+                            || !Uri.TryCreate(url, UriKind.Absolute, out var webhook)
+                            || webhook.Scheme != Uri.UriSchemeHttps
+                            || !NotificationSettings.Hosts(channel).Contains(webhook.Host)
+                        )
+                            throw new ApiError(
+                                400,
+                                $"机器人地址应以 https://{NotificationSettings.Hosts(channel)[0]}/ 开头，请从群机器人设置中复制"
+                            );
+                    }
+                    if (r.Secret is { Length: > 256 })
+                        throw new ApiError(400, "签名密钥过长");
+                    var types = (r.Types ?? []).Distinct().ToArray();
+                    if (types.Any(t => !NotificationSettings.AlertTypes.Contains(t)))
+                        throw new ApiError(400, "告警类型无效");
+                    if (r.Enabled && types.Length == 0)
+                        throw new ApiError(400, "请至少选择一种要推送的告警");
+                    if (
+                        console.Length > 0
+                        && (
+                            console.Length > 256
+                            || !Uri.TryCreate(console, UriKind.Absolute, out var consoleUri)
+                            || consoleUri.Scheme is not ("https" or "http")
+                        )
+                    )
+                        throw new ApiError(400, "管理端地址无效");
+
+                    return await s.Tx(async tx =>
+                    {
+                        await tx.Lock(NotificationSettings.Key);
+                        var saved = await AlertNotifier.Settings(tx);
+                        var next = new NotificationSettings
+                        {
+                            Enabled = r.Enabled,
+                            Channel = channel,
+                            WebhookUrl = url,
+                            Secret = (r.Secret ?? saved.Secret).Trim(),
+                            Types = types,
+                            ConsoleUrl = console,
+                        };
+                        await tx.PutSetting(NotificationSettings.Key, Wire.Serialize(next));
+                        await tx.Audit(
+                            u.Username,
+                            "SetNotifications",
+                            r.Enabled ? $"开启（{channel}）" : "关闭",
+                            s.Now
+                        );
+                        return new Done();
+                    });
+                }
+            )
+            .Accepts<NotificationRequest>(JsonBody);
 
         group
             .MapPost(
@@ -120,26 +125,33 @@ static partial class Endpoints
                         return await AlertNotifier.Settings(tx);
                     });
                     var error = await notifier.Test(settings, c.RequestAborted);
-                    return new { ok = error == null, error };
+                    return new NotificationTested(error == null, error);
                 }
             )
             .RequireRateLimiting("notify-test");
 
-        group.MapPut(
-            "/audit-retention",
-            async (HttpContext c) =>
-            {
-                var u = Require(c, "Operator");
-                var r = await Body<AuditRetentionRequest>(c);
-                if (!Housekeeping.AuditRetentionChoices.Contains(r.Days))
-                    throw new ApiError(400, "保留期限无效");
-                return await s.Tx(async tx =>
+        group
+            .MapPut(
+                "/audit-retention",
+                async (HttpContext c) =>
                 {
-                    await tx.PutSetting(Housekeeping.AuditRetentionKey, r.Days.ToString());
-                    await tx.Audit(u.Username, "SetAuditRetention", r.Days == 0 ? "永久保留" : $"{r.Days} 天", s.Now);
-                    return new { ok = true };
-                });
-            }
-        );
+                    var u = Require(c, "Operator");
+                    var r = await Body<AuditRetentionRequest>(c);
+                    if (!Housekeeping.AuditRetentionChoices.Contains(r.Days))
+                        throw new ApiError(400, "保留期限无效");
+                    return await s.Tx(async tx =>
+                    {
+                        await tx.PutSetting(Housekeeping.AuditRetentionKey, r.Days.ToString());
+                        await tx.Audit(
+                            u.Username,
+                            "SetAuditRetention",
+                            r.Days == 0 ? "永久保留" : $"{r.Days} 天",
+                            s.Now
+                        );
+                        return new Done();
+                    });
+                }
+            )
+            .Accepts<AuditRetentionRequest>(JsonBody);
     }
 }

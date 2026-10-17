@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "api": "openapi-typescript openapi.json -o src/api.gen.ts && prettier --write src/api.gen.ts"
   },
   "dependencies": {
     "@ant-design/icons": "6.3.4",
@@ -25,6 +26,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
     "jsdom": "^27.0.0",
+    "openapi-typescript": "7.13.0",
     "prettier": "3.6.2",
     "typescript": "^5.9.3",
     "vite": "^7.1.9",

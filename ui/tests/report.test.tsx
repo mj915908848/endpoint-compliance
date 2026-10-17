@@ -13,6 +13,7 @@ const hits: Evidence[] = Array.from({ length: 45 }, (_, i) => ({
   summary: "命中关键词“机密”",
   userSid: "S-1-5-21-1",
   confirmed: true,
+  collectedAt: null,
 }));
 
 describe("report tables", () => {

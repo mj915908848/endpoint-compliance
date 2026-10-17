@@ -6,7 +6,12 @@ import { codeState, Registration } from "../src/pages/Registration";
 import { Providers } from "../src/providers";
 import type { EnrollmentCode } from "../src/types";
 
-const session = { username: "admin", roles: ["Reader", "Operator"], csrfToken: "t" };
+const session = {
+  username: "admin",
+  roles: ["Reader", "Operator"],
+  csrfToken: "t",
+  idleMinutes: 0,
+};
 const code = "a".repeat(64);
 const listed: EnrollmentCode = {
   id: "c1",

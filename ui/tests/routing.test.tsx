@@ -5,7 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 import { Providers } from "../src/providers";
 
-const session = { username: "admin", roles: ["Reader", "Operator"], csrfToken: "t" };
+const session = {
+  username: "admin",
+  roles: ["Reader", "Operator"],
+  csrfToken: "t",
+  idleMinutes: 0,
+};
 
 // Logged in; every list is empty and device lookups fail, which is enough to render each page shell.
 function stubApi(loggedIn = true) {

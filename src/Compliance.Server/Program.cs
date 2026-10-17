@@ -23,6 +23,7 @@ public partial class Program
         b.Services.AddSingleton<AlertNotifier>();
         b.Services.AddHostedService<NotificationService>();
         b.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+        b.Services.AddOpenApi(ApiDocument.Configure);
         b.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 2 * 1024 * 1024);
         b.Services.AddRateLimiter(o =>
         {
@@ -156,6 +157,7 @@ public partial class Program
         );
 
         Endpoints.Map(app, service, settings, app.Services.GetRequiredService<AlertNotifier>());
+        app.MapOpenApi(ApiDocument.Path);
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.MapFallback(async c =>
