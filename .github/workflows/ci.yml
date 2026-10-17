@@ -310,7 +310,7 @@ jobs:
           check
           docker compose restart server
           check
-          ./install.sh
+          ./install.sh --build
           check
           test -s backups/*/compliance.dump && grep -q 'BEGIN EC PRIVATE KEY' backups/*/signing.key
       - if: failure()

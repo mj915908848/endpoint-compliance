@@ -29,7 +29,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
-    image: compliance-server:latest
+    # Published by each release; COMPLIANCE_VERSION in .env pins one (default latest). --build builds it from this repository.
+    image: ghcr.io/mj915908848/compliance-server:${COMPLIANCE_VERSION:-latest}
     restart: unless-stopped
     logging: *logging
     depends_on:
