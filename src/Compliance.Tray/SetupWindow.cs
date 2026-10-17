@@ -165,6 +165,8 @@ public sealed partial class SetupWindow : Form
             || uri.Scheme is not ("https" or "http")
             || uri.AbsolutePath != "/"
             || uri.Query.Length > 0
+            || uri.Fragment.Length > 0
+            || text.Any(ch => char.IsWhiteSpace(ch) || ch == '"')
         )
         {
             Say("管理端地址应以 https:// 开头，只写域名和端口，例如 https://compliance.example.com。", Theme.Danger);
@@ -182,7 +184,13 @@ public sealed partial class SetupWindow : Form
         Say("正在连接管理端…", Theme.Muted);
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            // Connects the way the service does: directly, never through a proxy set on this machine (a proxy is
+            // what the client checks for, and one could intercept or block its reports). Otherwise a proxy-only
+            // network would test fine here while the service never reaches the server.
+            using var client = new HttpClient(new HttpClientHandler { UseProxy = false })
+            {
+                Timeout = TimeSpan.FromSeconds(10),
+            };
             using var json = JsonDocument.Parse(await client.GetStringAsync(url + "/api/status"));
             var mode = json.RootElement.TryGetProperty("mode", out var m) ? m.GetString() : null;
             var trial = mode is "LoopbackDemo" or "LanHttpTrial";
@@ -212,7 +220,8 @@ public sealed partial class SetupWindow : Form
                 return "管理端的 HTTPS 证书不受本机信任。请使用证书上的域名访问（不能用 IP 地址），并确认证书由本机信任的机构签发。";
         return e switch
         {
-            TaskCanceledException => "连接管理端超时。请确认地址和端口正确、防火墙已放行。",
+            TaskCanceledException =>
+                "连接管理端超时。客户端不经过代理、直接连接管理端，请确认地址和端口正确、防火墙已放行。",
             JsonException => "该地址不是终端合规管理端，请核对地址。",
             HttpRequestException { StatusCode: not null } h => $"该地址返回错误 {(int)h.StatusCode}，请核对地址。",
             _ => $"无法连接管理端（{e.Message}）。请确认地址和端口正确、域名能解析、防火墙已放行。",
@@ -253,16 +262,29 @@ public sealed partial class SetupWindow : Form
         Say("正在登记，请在 Windows 弹出的管理员确认中点“是”…", Theme.Muted);
         try
         {
-            // The address and code were checked above and hold no quotes.
-            using var process = Process.Start(
-                new ProcessStartInfo(agent)
+            // Passed as a list, so each value reaches the elevated process as one argument whatever it holds.
+            var start = new ProcessStartInfo(agent)
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                WindowStyle = ProcessWindowStyle.Hidden,
+            };
+            foreach (
+                var argument in new[]
                 {
-                    Arguments = $"--config \"{config}\" --server \"{url}\" --enroll --code {key} --result \"{result}\"",
-                    UseShellExecute = true,
-                    Verb = "runas",
-                    WindowStyle = ProcessWindowStyle.Hidden,
+                    "--config",
+                    config,
+                    "--server",
+                    url,
+                    "--enroll",
+                    "--code",
+                    key,
+                    "--result",
+                    result,
                 }
-            )!;
+            )
+                start.ArgumentList.Add(argument);
+            using var process = Process.Start(start)!;
             await process.WaitForExitAsync();
             var outcome = File.Exists(result) ? File.ReadAllText(result).Trim() : "";
             if (process.ExitCode == 0)
