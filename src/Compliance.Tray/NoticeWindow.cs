@@ -11,10 +11,10 @@ public sealed record Notice(string Id, string Message, DateTimeOffset At, bool A
         foreach (
             var (prefix, label, color) in new[]
             {
-                ("Violation: ", "需要处理", Color.FromArgb(0xF5, 0x3F, 0x3F)),
-                ("Reminder: ", "仍未处理", Color.FromArgb(0xFF, 0x7D, 0x00)),
-                ("Blocked: ", "已拦截", Color.FromArgb(0xF5, 0x3F, 0x3F)),
-                ("Recovered: ", "已恢复", Color.FromArgb(0x00, 0xB4, 0x2A)),
+                ("Violation: ", "需要处理", Theme.Danger),
+                ("Reminder: ", "仍未处理", Theme.Warning),
+                ("Blocked: ", "已拦截", Theme.Danger),
+                ("Recovered: ", "已恢复", Theme.Good),
             }
         )
             if (Message.StartsWith(prefix, StringComparison.Ordinal))

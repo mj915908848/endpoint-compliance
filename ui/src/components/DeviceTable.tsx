@@ -20,7 +20,9 @@ export function DeviceTable({
       key: "host",
       render: (_, d) => (
         <Space orientation="vertical" size={0}>
-          <Typography.Text strong>{d.hostName}</Typography.Text>
+          <Typography.Text strong style={{ whiteSpace: "nowrap" }}>
+            {d.hostName}
+          </Typography.Text>
           {d.note && <Typography.Text>{d.note}</Typography.Text>}
           {d.network?.length ? (
             <NetworkLine device={d} />
@@ -92,7 +94,7 @@ export function DeviceTable({
       rowKey="id"
       dataSource={devices}
       size="middle"
-      scroll={compact ? undefined : { x: 720 }}
+      scroll={{ x: compact ? 480 : 720 }}
       pagination={pageSize ? { pageSize, hideOnSinglePage: true } : false}
       locale={{
         emptyText: (

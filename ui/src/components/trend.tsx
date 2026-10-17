@@ -1,4 +1,4 @@
-import { Space, Timeline, Typography } from "antd";
+import { Flex, Space, Timeline, Typography } from "antd";
 import type { TrendDay, VerdictChange } from "../types";
 import { Empty, time, VerdictTag } from "./common";
 
@@ -20,12 +20,12 @@ export function VerdictTrendChart({ days }: { days: TrendDay[] }) {
   if (days.every((d) => d.pass + d.fail + d.unknown === 0))
     return <Empty title="暂无历史结论">终端完成检查后开始记录。</Empty>;
   const width = 640,
-    height = 160,
+    height = 140,
     gap = 2,
     bar = width / days.length - gap;
   const today = days[days.length - 1];
   return (
-    <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+    <Space orientation="vertical" size={6} style={{ width: "100%" }}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         width="100%"
@@ -39,6 +39,7 @@ export function VerdictTrendChart({ days }: { days: TrendDay[] }) {
           return (
             <g key={d.date}>
               <title>{`${d.date}：通过 ${d.pass}，不通过 ${d.fail}，无法判断 ${d.unknown}`}</title>
+              <rect x={i * (bar + gap)} y={0} width={bar} height={height} fill="var(--track)" />
               {series.map((s) => {
                 const h = (d[s.key] / max) * height;
                 y -= h;
@@ -57,6 +58,10 @@ export function VerdictTrendChart({ days }: { days: TrendDay[] }) {
           );
         })}
       </svg>
+      <Flex justify="space-between" className="trend-axis">
+        <span>{days[0].date.slice(5)}</span>
+        <span>今天</span>
+      </Flex>
       <Space size={16} wrap>
         {series.map((s) => (
           <Typography.Text key={s.key} type="secondary" style={{ fontSize: 12 }}>
@@ -65,7 +70,7 @@ export function VerdictTrendChart({ days }: { days: TrendDay[] }) {
           </Typography.Text>
         ))}
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {days[0].date} 至 {today.date}，每天按当天结束时的结论计数，失联终端按其最后结论计
+          每天按当天结束时的结论计数，失联终端按其最后结论计
         </Typography.Text>
       </Space>
     </Space>

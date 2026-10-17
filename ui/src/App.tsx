@@ -9,7 +9,7 @@ import {
   useParams,
 } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, Avatar, Button, Flex, Layout, Menu, Space, Typography } from "antd";
+import { Alert, Avatar, Button, Drawer, Flex, Layout, Menu, Typography } from "antd";
 import {
   AlertOutlined,
   AuditOutlined,
@@ -18,6 +18,9 @@ import {
   FileProtectOutlined,
   InfoCircleOutlined,
   KeyOutlined,
+  LockOutlined,
+  LogoutOutlined,
+  MenuOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { HttpError, idleMs, markUse, onSessionLost, request } from "./api";
@@ -77,7 +80,8 @@ export function App() {
     [logoutBusy, setLogoutBusy] = useState(false),
     [passwordOpen, setPasswordOpen] = useState(false),
     [signedOut, setSignedOut] = useState<string | null>(null),
-    [idleWarning, setIdleWarning] = useState(false);
+    [idleWarning, setIdleWarning] = useState(false),
+    [navOpen, setNavOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const queries = useQueryClient();
@@ -180,60 +184,107 @@ export function App() {
     );
   if (!session) return <Login onLogin={login} notice={signedOut} />;
   const page = currentPage(location.pathname);
+  const nav = (
+    <Menu
+      theme="dark"
+      mode="inline"
+      aria-label="主导航"
+      selectedKeys={page ? [page.path] : []}
+      onClick={() => setNavOpen(false)}
+      items={pages.map((p) => ({
+        key: p.path,
+        icon: p.icon,
+        label: (
+          <NavLink to={p.path} end={p.path === "/"}>
+            {p.label}
+          </NavLink>
+        ),
+      }))}
+    />
+  );
+  const account = (
+    <div className="sidebar-account">
+      <Flex align="center" gap={10}>
+        <Avatar size={32} className="avatar">
+          {session.username.slice(0, 1).toUpperCase()}
+        </Avatar>
+        <div className="sidebar-account-name">
+          <strong>{session.username}</strong>
+          <span>{session.roles.map((r) => roleLabels[r] ?? r).join(" · ")}</span>
+        </div>
+      </Flex>
+      <Flex gap={4} className="sidebar-account-actions">
+        <Button
+          type="text"
+          size="small"
+          icon={<LockOutlined />}
+          onClick={() => {
+            setNavOpen(false);
+            setPasswordOpen(true);
+          }}
+        >
+          修改密码
+        </Button>
+        <Button
+          type="text"
+          size="small"
+          icon={<LogoutOutlined />}
+          loading={logoutBusy}
+          onClick={logout}
+        >
+          退出
+        </Button>
+      </Flex>
+    </div>
+  );
+  const brand = (
+    <Flex className="sidebar-brand" align="center" gap={10}>
+      <SafetyCertificateOutlined className="brand-icon" />
+      <div>
+        <strong>终端合规</strong>
+        <span>内网管理中心</span>
+      </div>
+    </Flex>
+  );
   return (
     <Layout className="app-shell">
-      <Layout.Sider breakpoint="lg" collapsedWidth={0} width={216} className="sidebar">
-        <Flex className="sidebar-brand" align="center" gap={10}>
-          <SafetyCertificateOutlined className="brand-icon" />
-          <div>
-            <strong>终端合规</strong>
-            <span>内网管理中心</span>
-          </div>
+      <Layout.Sider width={224} className="sidebar">
+        <Flex vertical style={{ height: "100%" }}>
+          {brand}
+          <div className="sidebar-nav">{nav}</div>
+          {account}
         </Flex>
-        <Menu
-          theme="dark"
-          mode="inline"
-          aria-label="主导航"
-          selectedKeys={page ? [page.path] : []}
-          items={pages.map((p) => ({
-            key: p.path,
-            icon: p.icon,
-            label: (
-              <NavLink to={p.path} end={p.path === "/"}>
-                {p.label}
-              </NavLink>
-            ),
-          }))}
-        />
       </Layout.Sider>
-      <Layout>
-        <Layout.Header className="topbar">
-          <Typography.Text type="secondary" className="breadcrumb">
-            管理中心 / {page?.label}
-          </Typography.Text>
-          <Space size={12}>
-            <Avatar size="small" className="avatar">
-              {session.username.slice(0, 1).toUpperCase()}
-            </Avatar>
-            <Space orientation="vertical" size={0} className="account">
-              <Typography.Text strong>{session.username}</Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {session.roles.map((r) => roleLabels[r] ?? r).join(" · ")}
-              </Typography.Text>
-            </Space>
-            <Button type="text" onClick={() => setPasswordOpen(true)}>
-              修改密码
-            </Button>
-            <Button type="text" loading={logoutBusy} onClick={logout}>
-              退出
-            </Button>
-          </Space>
-          <PasswordDialog
-            session={session}
-            open={passwordOpen}
-            onClose={() => setPasswordOpen(false)}
+      <Drawer
+        placement="left"
+        size={248}
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
+        closable={false}
+        className="sidebar sidebar-drawer"
+        styles={{ body: { padding: 0 } }}
+      >
+        <Flex vertical style={{ height: "100%" }}>
+          {brand}
+          <div className="sidebar-nav">{nav}</div>
+          {account}
+        </Flex>
+      </Drawer>
+      <PasswordDialog
+        session={session}
+        open={passwordOpen}
+        onClose={() => setPasswordOpen(false)}
+      />
+      <Layout className="main">
+        <Flex className="mobile-bar" align="center" gap={8}>
+          <Button
+            type="text"
+            aria-label="打开导航"
+            icon={<MenuOutlined />}
+            onClick={() => setNavOpen(true)}
           />
-        </Layout.Header>
+          <Typography.Text strong>{page?.label ?? "终端合规"}</Typography.Text>
+        </Flex>
         <Layout.Content className="content">
           <ErrorNotice error={authError} />
           {idleWarning && (
@@ -272,9 +323,6 @@ export function App() {
             </Routes>
           </ErrorBoundary>
         </Layout.Content>
-        <Layout.Footer className="footer">
-          终端合规管理中心 · 检查结论、防护状态与告警处理分别记录
-        </Layout.Footer>
       </Layout>
     </Layout>
   );

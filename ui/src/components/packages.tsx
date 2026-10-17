@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { App, Button, Input, Space, Table, Typography } from "antd";
-import { UploadOutlined } from "@ant-design/icons";
+import { PaperClipOutlined, UploadOutlined } from "@ant-design/icons";
 import { request } from "../api";
 import { role } from "../session";
 import { useRefresh, useResource } from "../useResource";
@@ -101,35 +101,41 @@ export function ClientPackagesPanel({ session }: { session: Session }) {
         MSI，管理端用策略签名密钥签名后托管。终端只安装签名有效、内容一致且比自己新的安装包，升级保留登记信息。
       </Typography.Paragraph>
       {publisher && (
-        <Space wrap style={{ marginBottom: 12 }}>
+        <>
           <input
             ref={input}
             type="file"
             accept=".msi"
             aria-label="选择客户端安装包"
+            className="visually-hidden"
             onChange={(e) => {
               const chosen = e.target.files?.[0] ?? null;
               setFile(chosen);
               setVersion(chosen ? packageVersion(chosen.name) : "");
             }}
           />
-          <Input
-            aria-label="安装包版本"
-            placeholder="版本，如 0.2.30"
-            value={version}
-            onChange={(e) => setVersion(e.target.value.trim())}
-            style={{ width: 160 }}
-          />
-          <Button
-            type="primary"
-            icon={<UploadOutlined />}
-            loading={busy}
-            disabled={!file || !version}
-            onClick={upload}
-          >
-            上传
-          </Button>
-        </Space>
+          <Space wrap style={{ marginBottom: 12 }}>
+            <Button icon={<PaperClipOutlined />} onClick={() => input.current?.click()}>
+              {file ? file.name : "选择安装包"}
+            </Button>
+            <Input
+              aria-label="安装包版本"
+              placeholder="版本，如 0.2.30"
+              value={version}
+              onChange={(e) => setVersion(e.target.value.trim())}
+              style={{ width: 160 }}
+            />
+            <Button
+              type="primary"
+              icon={<UploadOutlined />}
+              loading={busy}
+              disabled={!file || !version}
+              onClick={upload}
+            >
+              上传
+            </Button>
+          </Space>
+        </>
       )}
       <ErrorNotice error={error} />
       <Fresh error={packages.error} loading={packages.loading}>

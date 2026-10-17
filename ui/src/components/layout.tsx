@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Card, Flex, Statistic, Typography } from "antd";
+import { Card, Flex, Typography } from "antd";
 import { ErrorNotice, Loading } from "./common";
 
 export function Panel({
@@ -39,6 +39,7 @@ export function Fresh({
   );
 }
 
+/** A count with a colored dot for its meaning; the number itself takes the color only when it is not zero. */
 export function Metric({
   label,
   value,
@@ -60,12 +61,14 @@ export function Metric({
           : undefined;
   return (
     <Card size="small" className="metric">
-      <Statistic title={label} value={value} styles={{ content: { color } }} />
-      {caption && (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {caption}
-        </Typography.Text>
-      )}
+      <div className="metric-label">
+        <span className="metric-dot" style={color ? { background: color } : undefined} />
+        {label}
+      </div>
+      <div className="metric-value" style={color && value !== 0 ? { color } : undefined}>
+        {value}
+      </div>
+      {caption && <div className="metric-caption">{caption}</div>}
     </Card>
   );
 }

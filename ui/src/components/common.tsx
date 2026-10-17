@@ -51,7 +51,7 @@ const online: Record<string, { color: string; icon: ReactNode }> = {
 export function OnlineTag({ state }: { state: string }) {
   const look = online[state] ?? { color: "default", icon: null };
   return (
-    <Tag color={look.color} icon={look.icon} variant={state === "Online" ? "solid" : "filled"}>
+    <Tag color={look.color} icon={look.icon} variant="filled">
       {onlineLabel(state) ?? "在线状态未知"}
     </Tag>
   );

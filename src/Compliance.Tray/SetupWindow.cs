@@ -199,7 +199,7 @@ public sealed partial class SetupWindow : Form
                 Say("该管理端不是试用模式，不能用 http:// 连接，请改用 https:// 地址。", Theme.Danger);
                 return false;
             }
-            Say(trial ? "已连接管理端（试用模式）。" : "已连接管理端。", Color.FromArgb(0x00, 0xA8, 0x6B));
+            Say(trial ? "已连接管理端（试用模式）。" : "已连接管理端。", Theme.Good);
             return true;
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
@@ -290,10 +290,7 @@ public sealed partial class SetupWindow : Form
             if (process.ExitCode == 0)
             {
                 done = true;
-                Say(
-                    (outcome.Length > 0 ? outcome : "登记成功。") + "约 1 分钟后管理端显示本机在线。",
-                    Color.FromArgb(0x00, 0xA8, 0x6B)
-                );
+                Say((outcome.Length > 0 ? outcome : "登记成功。") + "约 1 分钟后管理端显示本机在线。", Theme.Good);
                 enroll.Text = "完成";
                 test.Visible = close.Visible = false;
                 Enrolled?.Invoke(this, EventArgs.Empty);
