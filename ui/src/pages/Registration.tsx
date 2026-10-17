@@ -171,7 +171,7 @@ export function Registration({ session }: { session: Session }) {
                   </Typography.Text>
                   <div>
                     <Typography.Text strong>省去逐台输入：</Typography.Text>
-                    下载登记配置，和 MSI 安装包放在同一个文件夹（或放进解压后的脚本安装包根目录），
+                    下载登记配置，和 MSI 安装包放在同一个文件夹，
                     之后每台电脑安装时地址和登记码会自动填好。
                   </div>
                   <Space wrap>

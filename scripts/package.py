@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build the Windows packages: a client package for production installs and, with --trial, the full trial package.
+"""Build the Windows packages: the client MSI for production installs, the full trial package, or a staged client.
 
 Releases pass --version; without it the build is the next release number with a -dev suffix.
-Writes artifacts/compliance-client-<version>-windows.zip (and compliance-trial-<version>-windows.zip); with --msi, on
-Windows, artifacts/compliance-client-<version>-windows-x64.msi instead.
+--msi (Windows only) writes artifacts/compliance-client-<version>-windows-x64.msi; --trial writes
+artifacts/compliance-trial-<version>-windows.zip; --stage copies the client and its install scripts into a folder.
 """
 from __future__ import annotations
 
@@ -130,10 +130,12 @@ def build_msi(client: Path, ver: str) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", help="release version; defaults to the next one with a -dev suffix")
-    parser.add_argument("--trial", action="store_true", help="also build the full trial package with the Windows server")
-    parser.add_argument("--stage", type=Path, help="only stage the client package (no zip) into this folder")
-    parser.add_argument("--msi", action="store_true", help="build the client MSI (Windows only) instead of the zip")
+    parser.add_argument("--trial", action="store_true", help="build the full trial package with the Windows server")
+    parser.add_argument("--stage", type=Path, help="stage the client package (no zip) into this folder")
+    parser.add_argument("--msi", action="store_true", help="build the client MSI (Windows only)")
     args = parser.parse_args()
+    if not (args.trial or args.stage or args.msi):
+        parser.error("choose --msi, --trial or --stage")
     ver = args.version or next_version() + "-dev"
     published = ARTIFACTS / "publish"
     shutil.rmtree(published, ignore_errors=True)
@@ -143,32 +145,23 @@ def main() -> None:
         stage_client(args.stage, published)
     if args.msi:
         build_msi(published / "client", ver)
-    if args.stage or args.msi:
+    if not args.trial:
         return
 
     stage = ARTIFACTS / "stage"
     shutil.rmtree(stage, ignore_errors=True)
+    subprocess.run(["npm", "run", "build"], cwd=ROOT / "ui", check=True, stdout=subprocess.DEVNULL)
+    publish("Compliance.Server", published / "server", ver, single_file=True, trimmed=True)
     stage_client(stage, published)
-    for name in ("安装客户端（正式环境）.bat", "卸载常驻客户端.bat"):
-        copy(ROOT / "deploy" / "windows" / name, stage / name)
-    copy(ROOT / "deploy" / "windows" / "客户端安装说明.md", stage / "安装说明.md")
-    make_zip(stage, ARTIFACTS / f"compliance-client-{ver}-windows.zip")
-
-    if args.trial:
-        subprocess.run(["npm", "run", "build"], cwd=ROOT / "ui", check=True, stdout=subprocess.DEVNULL)
-        publish("Compliance.Server", published / "server", ver, single_file=True, trimmed=True)
-        shutil.rmtree(stage)
-        stage_client(stage, published)
-        shutil.copytree(published / "server", stage / "server-windows-x64")
-        for name in ("README.md", "Start-Demo.ps1"):
-            copy(ROOT / "deploy" / "server" / name, stage / "deploy" / "server" / name)
-        for bat in (ROOT / "deploy").rglob("*.bat"):
-            copy(bat, stage / bat.name)
-        for name in ("README.md", "docs/capabilities.md", "docs/server-api.md"):
-            copy(ROOT / name, stage / name)
-        copy(ROOT / "deploy" / "server" / "试用说明.md", stage / "使用说明.md")
-        make_zip(stage, ARTIFACTS / f"compliance-trial-{ver}-windows.zip")
-
+    shutil.copytree(published / "server", stage / "server-windows-x64")
+    for name in ("README.md", "Start-Demo.ps1"):
+        copy(ROOT / "deploy" / "server" / name, stage / "deploy" / "server" / name)
+    for bat in (ROOT / "deploy").rglob("*.bat"):
+        copy(bat, stage / bat.name)
+    for name in ("README.md", "docs/capabilities.md", "docs/server-api.md"):
+        copy(ROOT / name, stage / name)
+    copy(ROOT / "deploy" / "server" / "试用说明.md", stage / "使用说明.md")
+    make_zip(stage, ARTIFACTS / f"compliance-trial-{ver}-windows.zip")
     shutil.rmtree(stage)
 
 
