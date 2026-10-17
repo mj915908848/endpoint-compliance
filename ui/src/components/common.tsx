@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Alert as Notice,
   Button,
@@ -422,4 +422,36 @@ export function usePageScroll() {
     target?.scrollIntoView({ block: "start" });
   };
   return { ref, onPageChange };
+}
+
+/**
+ * Shows a page that failed while rendering as an error with a way out, instead of leaving the whole window blank.
+ * Give it a key that changes on navigation so the next page renders afresh.
+ */
+export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <Notice
+        type="error"
+        showIcon
+        title="页面显示出错"
+        description={
+          <Space orientation="vertical" size={8}>
+            <span>
+              这一页遇到了无法显示的数据（{this.state.error.message}
+              ）。可以换到其他页面，或重新加载后再试。
+            </span>
+            <Button onClick={() => window.location.reload()}>重新加载</Button>
+          </Space>
+        }
+      />
+    );
+  }
 }

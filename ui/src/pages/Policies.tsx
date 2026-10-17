@@ -26,6 +26,7 @@ import {
   sameContent,
   time,
 } from "../components";
+import { policyJsonProblem, withDefaults } from "../policyJson";
 import { role } from "../session";
 import type { DeviceSummary, Policy, PolicyHistoryItem, PolicyListItem, Session } from "../types";
 
@@ -48,11 +49,12 @@ export function Policies({ session }: { session: Session }) {
     template = useResource<Policy>("/api/policies/template");
   const policies = useMemo(
     () =>
-      (list.data ?? []).flatMap((item) => {
+      // Policies are what is being edited, so a failed refresh keeps the last ones instead of closing the editor.
+      (list.data ?? list.lastData ?? []).flatMap((item) => {
         const doc = parse(item.release);
         return doc ? [{ ...item, doc }] : [];
       }),
-    [list.data],
+    [list.data, list.lastData],
   );
   const canPublish = role(session, "Publisher");
   // The selected policy's key, or NEW for a policy not yet published.
@@ -215,14 +217,20 @@ export function Policies({ session }: { session: Session }) {
   }
 
   function applyJson() {
+    let value: unknown;
     try {
-      const value = JSON.parse(json ?? "") as Policy;
-      if (!value || typeof value !== "object" || !Array.isArray(value.products)) throw Error();
-      setDraft({ ...draft!, ...value });
-      setJson(null);
+      value = JSON.parse(json ?? "");
     } catch {
-      message.error("不是有效的策略 JSON。");
+      message.error("不是有效的 JSON，请检查括号、引号和逗号。");
+      return;
     }
+    const problem = policyJsonProblem(value);
+    if (problem) {
+      message.error(`无法应用：${problem}。`);
+      return;
+    }
+    setDraft(withDefaults(draft!, value as Partial<Policy>));
+    setJson(null);
   }
 
   return (
@@ -318,13 +326,19 @@ export function Policies({ session }: { session: Session }) {
             action={<Button onClick={loadTemplate}>载入内置最新规则</Button>}
           />
         )}
-        <Fresh error={list.error} loading={list.loading || !draft}>
+        {draft && list.error && (
+          <ErrorNotice
+            error={list.error}
+            title="刷新失败，下面是上次读取的策略，未保存的修改仍保留"
+          />
+        )}
+        <Fresh error={draft ? null : list.error} loading={list.loading || !draft}>
           {draft && (
             <PolicyEditor
               key={selected}
               value={draft}
               onChange={setDraft}
-              devices={devices.data ?? []}
+              devices={devices.data ?? devices.lastData ?? []}
               readOnly={!canPublish}
               isDefault={isDefault}
               takenBy={takenBy}

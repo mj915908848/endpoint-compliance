@@ -37,6 +37,11 @@ async function fetchWithTimeout<T>(path: string, signal: AbortSignal): Promise<T
 
 export interface Resource<T> {
   data: T | null;
+  /**
+   * The last data read, kept through failed refreshes. Only for what the administrator is editing or that names
+   * the object on screen; never for a verdict or state, which must not look current when it cannot be confirmed.
+   */
+  lastData: T | null;
   error: string | null;
   /** First load only; background refreshes keep the current data on screen. */
   loading: boolean;
@@ -58,6 +63,7 @@ export function useResource<T>(path: string | null): Resource<T> {
   const failed = query.isError;
   return {
     data: failed ? null : (query.data ?? null),
+    lastData: query.data ?? null,
     error: failed ? (query.error instanceof Error ? query.error.message : "读取失败") : null,
     loading: !!path && query.isPending && !failed,
     refreshing: query.isFetching && !query.isPending,

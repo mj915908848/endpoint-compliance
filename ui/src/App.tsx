@@ -21,7 +21,14 @@ import {
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { HttpError, idleMs, markUse, onSessionLost, request } from "./api";
-import { ErrorNotice, errorText, Loading, Login, PasswordDialog } from "./components";
+import {
+  ErrorBoundary,
+  ErrorNotice,
+  errorText,
+  Loading,
+  Login,
+  PasswordDialog,
+} from "./components";
 import { Alerts } from "./pages/Alerts";
 import { AuditPage } from "./pages/Audit";
 import { DeviceDetailPage } from "./pages/DeviceDetail";
@@ -237,31 +244,33 @@ export function App() {
               style={{ marginBottom: 16 }}
             />
           )}
-          <Routes>
-            <Route
-              path="/"
-              element={
-                <Overview
-                  openDevice={(id) => navigate(devicePath(id))}
-                  openAlerts={() => navigate("/alerts")}
-                />
-              }
-            />
-            <Route
-              path="/devices"
-              element={<Devices openDevice={(id) => navigate(devicePath(id))} />}
-            />
-            <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
-            <Route
-              path="/alerts"
-              element={<Alerts session={session} openDevice={(id) => navigate(devicePath(id))} />}
-            />
-            <Route path="/policies" element={<Policies session={session} />} />
-            <Route path="/registration" element={<Registration session={session} />} />
-            <Route path="/audit" element={<AuditPage />} />
-            <Route path="/system" element={<SystemPage session={session} />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <ErrorBoundary key={location.pathname}>
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <Overview
+                    openDevice={(id) => navigate(devicePath(id))}
+                    openAlerts={() => navigate("/alerts")}
+                  />
+                }
+              />
+              <Route
+                path="/devices"
+                element={<Devices openDevice={(id) => navigate(devicePath(id))} />}
+              />
+              <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
+              <Route
+                path="/alerts"
+                element={<Alerts session={session} openDevice={(id) => navigate(devicePath(id))} />}
+              />
+              <Route path="/policies" element={<Policies session={session} />} />
+              <Route path="/registration" element={<Registration session={session} />} />
+              <Route path="/audit" element={<AuditPage />} />
+              <Route path="/system" element={<SystemPage session={session} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ErrorBoundary>
         </Layout.Content>
         <Layout.Footer className="footer">
           终端合规管理中心 · 检查结论、防护状态与告警处理分别记录
