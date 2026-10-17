@@ -291,9 +291,17 @@ jobs:
         working-directory: deploy/docker
     steps:
       - uses: actions/checkout@v5
-      # The one-step install: generates .env and a self-signed certificate, builds the image and waits until it answers.
-      - name: 一键部署
-        run: ./install.sh --domain ci.example.test --port 8443 --build
+      # The documented steps (README.md, 部署): a certificate in certs/, .env from the example, then compose up.
+      - name: 部署
+        run: |
+          set -e
+          mkdir certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=ci.example.test" \
+            -addext "subjectAltName=DNS:ci.example.test" -keyout certs/key.pem -out certs/cert.pem 2> /dev/null
+          sudo chown -R 1654:1654 certs && sudo chmod 600 certs/*
+          cp .env.example .env
+          sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=$(openssl rand -hex 16)/; s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$(openssl rand -hex 12)/; s/^HTTPS_PORT=.*/HTTPS_PORT=8443/" .env
+          docker compose -f compose.yml -f compose.build.yml up -d --build --wait --wait-timeout 180
       - name: 登录、读取策略、重启后签名密钥不变、备份
         run: |
           set -e
@@ -310,7 +318,8 @@ jobs:
           check
           docker compose restart server
           check
-          ./install.sh --build
+          ./backup.sh
+          docker compose -f compose.yml -f compose.build.yml up -d --build --wait --wait-timeout 180
           check
           test -s backups/*/compliance.dump && grep -q 'BEGIN EC PRIVATE KEY' backups/*/signing.key
       - if: failure()

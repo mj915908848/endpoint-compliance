@@ -111,7 +111,7 @@ jobs:
             git log --no-merges --format='- %s' ${previous:+$previous..}HEAD | head -50
             echo
             echo "## 安装与升级"
-            echo "- 管理端镜像：\`$IMAGE:$v\`（也是 \`latest\`）。首次部署见 [deploy/docker/README.md](../../blob/v$v/deploy/docker/README.md)；升级在服务器的部署目录运行 \`sudo ./install.sh\`，自动先备份再拉取新镜像。"
+            echo "- 管理端镜像：\`$IMAGE:$v\`（也是 \`latest\`）。首次部署见 [deploy/docker/README.md](../../blob/v$v/deploy/docker/README.md)；升级在服务器的部署目录运行 \`./backup.sh && docker compose pull && docker compose up -d\`。"
             echo "- 客户端：双击 \`compliance-client-$v-windows-x64.msi\` 安装或升级，装完在弹出的窗口中填写管理端地址和登记码；升级保留登记。批量部署：\`msiexec /i compliance-client-$v-windows-x64.msi SERVERURL=https://管理端域名 CODE=登记码 /qn\`。"
           } > notes.md
           gh release create "v$v" --target "$(git rev-parse HEAD)" --title "$v" --notes-file notes.md \
