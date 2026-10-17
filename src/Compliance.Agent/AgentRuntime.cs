@@ -15,7 +15,10 @@ public sealed record AgentConfiguration(
     string? PolicyKeyId = null,
     // Set by the trial installer: the resident service may use a private-network HTTP server that
     // reports trial mode. Production configurations leave it false and require HTTPS.
-    bool HttpTrial = false
+    bool HttpTrial = false,
+    // The key the server announced, under the current one, to sign with once its rotation completes.
+    string? NextPolicyPublicKeyPem = null,
+    string? NextPolicyKeyId = null
 )
 {
     public static AgentConfiguration Read(string path) => Wire.Read<AgentConfiguration>(File.ReadAllText(path));
@@ -27,6 +30,53 @@ public sealed record AgentConfiguration(
         File.WriteAllText(temp, Wire.Serialize(value));
         File.Move(temp, path, true);
     }
+}
+
+/// <summary>
+/// The policy signing keys a client trusts: the one it received at enrollment and, while the server rotates its key,
+/// the next one, announced in heartbeat replies and signed with the current key. Policies and packages signed with the
+/// next key verify as soon as it is known; the first policy that does makes it the current key.
+/// </summary>
+public static class PolicyKeys
+{
+    /// <summary>The public key a signature by <paramref name="keyId"/> must verify with.</summary>
+    public static string PublicKeyFor(AgentConfiguration config, string keyId)
+    {
+        if (keyId == config.NextPolicyKeyId && config.NextPolicyPublicKeyPem is { } next)
+            return next;
+        // Configurations written before enrollment returned a key id accept the pinned key for any id.
+        if (config.PolicyKeyId is null || keyId == config.PolicyKeyId)
+            return config.PolicyPublicKeyPem ?? throw new CryptographicException("No policy key");
+        throw new CryptographicException("Policy key ID changed");
+    }
+
+    /// <summary>
+    /// The configuration trusting the key a server announced, or the same configuration when the announcement is the
+    /// known one. Throws when the current key did not sign it.
+    /// </summary>
+    public static AgentConfiguration Accept(AgentConfiguration config, SignedKeyRotation announced)
+    {
+        var rotation = KeyRotationCrypto.Verify(announced, config.PolicyPublicKeyPem!);
+        if (rotation.NewKeyId == config.PolicyKeyId || rotation.NewKeyId == config.NextPolicyKeyId)
+            return config;
+        return config with { NextPolicyPublicKeyPem = rotation.NewPublicKeyPem, NextPolicyKeyId = rotation.NewKeyId };
+    }
+
+    /// <summary>The configuration after a policy signed by <paramref name="keyId"/> verified.</summary>
+    public static AgentConfiguration Verified(AgentConfiguration config, string keyId) =>
+        keyId == config.NextPolicyKeyId && config.NextPolicyPublicKeyPem is { } next
+            ? config with
+            {
+                PolicyPublicKeyPem = next,
+                PolicyKeyId = keyId,
+                NextPolicyPublicKeyPem = null,
+                NextPolicyKeyId = null,
+            }
+            : config;
+
+    /// <summary>The key ids reported in heartbeats, so the server can tell when every client knows the next key.</summary>
+    public static string[] Ids(AgentConfiguration config) =>
+        new[] { config.PolicyKeyId, config.NextPolicyKeyId }.OfType<string>().ToArray();
 }
 
 public sealed class DeviceIdentity
@@ -626,8 +676,6 @@ public sealed class AgentRuntime(
         try
         {
             var signed = Wire.Read<SignedPolicy>(await File.ReadAllTextAsync(statePath));
-            if (config.PolicyKeyId is not null && signed.KeyId != config.PolicyKeyId)
-                throw new CryptographicException("Cached policy key ID changed");
             var doc = VerifyRetained(signed, 0);
             signedPolicy = signed;
             policy = doc;
@@ -645,7 +693,7 @@ public sealed class AgentRuntime(
             untrusted.ExpiresAt < DateTimeOffset.UtcNow ? untrusted.ExpiresAt : DateTimeOffset.UtcNow;
         return PolicyCrypto.Verify(
             signed,
-            config.PolicyPublicKeyPem!,
+            PolicyKeys.PublicKeyFor(config, signed.KeyId),
             config.DeviceId!,
             minimumSerial,
             verificationTime
@@ -671,7 +719,8 @@ public sealed class AgentRuntime(
                 signedPolicy is null ? 0 : policy?.Serial ?? 0,
                 latest?.Controls ?? [],
                 // A fixture stands in for another machine; this one's adapters would be wrong for it.
-                simulated ? null : NetworkInventory.Read()
+                simulated ? null : NetworkInventory.Read(),
+                PolicyKeys.Ids(config)
             );
             var reply = await api.SendAsync<JsonElement>(HttpMethod.Post, "/api/agent/heartbeat", heartbeat, ct);
             // Servers before 0.2.9 do not say so and take uncompressed bodies only.
@@ -687,6 +736,28 @@ public sealed class AgentRuntime(
                 && await queue.AdvanceSequenceAsync(sequence, ct)
             )
                 Console.Error.WriteLine($"本地上报序号落后于管理端，已改为从 {sequence + 1} 继续");
+            // While the server rotates its policy key it announces the next one, signed with the current key. The
+            // next key is kept until a policy signed with it arrives, even when a reply stops announcing it: the
+            // rotation may have completed between two heartbeats.
+            if (
+                reply.ValueKind == JsonValueKind.Object
+                && reply.TryGetProperty("keyRotation", out var announced)
+                && announced.ValueKind == JsonValueKind.Object
+            )
+                try
+                {
+                    var accepted = PolicyKeys.Accept(config, Wire.Read<SignedKeyRotation>(announced.GetRawText()));
+                    if (accepted != config)
+                    {
+                        config = accepted;
+                        AgentConfiguration.Save(configPath, config);
+                        Console.WriteLine($"管理端将更换策略签名密钥，已记下新密钥 {config.NextPolicyKeyId}");
+                    }
+                }
+                catch (Exception e) when (e is CryptographicException or ArgumentException or JsonException)
+                {
+                    Console.Error.WriteLine("Key rotation announcement rejected: " + e.GetType().Name);
+                }
             // Newer servers say the oldest client they serve fully; the tray tells the user once per minimum.
             var own = ReleaseVersion.Of(typeof(AgentRuntime).Assembly);
             if (
@@ -712,11 +783,9 @@ public sealed class AgentRuntime(
         try
         {
             var fetched = await api.SendAsync<SignedPolicy>(HttpMethod.Get, "/api/agent/policy", null, ct);
-            if (config.PolicyKeyId is not null && fetched.KeyId != config.PolicyKeyId)
-                throw new CryptographicException("Policy key ID changed");
             var verified = PolicyCrypto.Verify(
                 fetched,
-                config.PolicyPublicKeyPem!,
+                PolicyKeys.PublicKeyFor(config, fetched.KeyId),
                 config.DeviceId!,
                 policy?.Serial ?? 0,
                 DateTimeOffset.UtcNow
@@ -742,6 +811,12 @@ public sealed class AgentRuntime(
             var temp = statePath + ".tmp";
             await File.WriteAllTextAsync(temp, Wire.Serialize(fetched), ct);
             File.Move(temp, statePath, true);
+            if (PolicyKeys.Verified(config, fetched.KeyId) is var promoted && promoted != config)
+            {
+                config = promoted;
+                AgentConfiguration.Save(configPath, config);
+                Console.WriteLine($"管理端已更换策略签名密钥，现在信任 {config.PolicyKeyId}");
+            }
         }
         catch (Exception e)
             when (e
@@ -892,7 +967,7 @@ public sealed class AgentRuntime(
             prepared = await ClientUpgrade.PrepareAsync(
                 api,
                 command,
-                config.PolicyPublicKeyPem!,
+                keyId => PolicyKeys.PublicKeyFor(config, keyId),
                 config.DataDirectory,
                 ct
             );

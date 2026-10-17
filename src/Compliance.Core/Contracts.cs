@@ -302,13 +302,15 @@ public record EnrollmentRequest(string Code, string HostName, string PublicKeyPe
 public record EnrollmentResponse(string DeviceId, string PolicyPublicKeyPem, string PolicyKeyId);
 
 /// <param name="PolicyVersion">The <see cref="PolicyDocument.Serial"/> of the policy the agent holds.</param>
+/// <param name="PolicyKeyIds">The policy signing keys the agent trusts: its own, and during a rotation the next.</param>
 public record HeartbeatRequest(
     string HostName,
     string AgentVersion,
     DateTimeOffset SourceTime,
     long PolicyVersion,
     ControlState[] Controls,
-    NetworkAdapter[]? Network = null
+    NetworkAdapter[]? Network = null,
+    string[]? PolicyKeyIds = null
 );
 
 /// <summary>A device's physical network adapter: its hardware address as AA-BB-CC-DD-EE-FF and its IP addresses.</summary>

@@ -56,7 +56,9 @@ describe("system settings", () => {
           ? { mode: "Production", storage: "Postgres", networkCapabilities: [], policyKeyId: "k" }
           : c.url === "/api/client-packages"
             ? []
-            : { ok: true },
+            : c.url === "/api/settings/signing-key"
+              ? { keyId: "k", rotation: null }
+              : { ok: true },
     );
     render(
       <Providers>

@@ -58,12 +58,14 @@ static partial class Endpoints
                         limit.MaxRequestBodySize = PackageCrypto.MaxSize;
                     if (await s.Tx(async tx => await tx.GetClientPackage(version)) != null)
                         throw new ApiError(409, $"已有 {version} 的安装包，如需替换请先删除");
-                    var record = await s.Packages.Receive(c.Request.Body, version, u.Username, c.RequestAborted);
-                    await s.Tx(async tx =>
+                    var package = await s.Packages.Receive(c.Request.Body, version, c.RequestAborted);
+                    var record = await s.Tx(async tx =>
                     {
+                        // Signed under the lock a key rotation takes, so it cannot be signed with the key being retired.
                         await tx.Lock(PackageService.PackageLock);
                         if (await tx.GetClientPackage(version) != null)
                             throw new ApiError(409, $"已有 {version} 的安装包，如需替换请先删除");
+                        var record = new ClientPackageRecord(package, u.Username, s.Policies.Sign(package));
                         await tx.InsertClientPackage(record);
                         await tx.Audit(
                             u.Username,
@@ -71,7 +73,7 @@ static partial class Endpoints
                             $"{version}（SHA-256 {record.Package.Sha256}）",
                             s.Now
                         );
-                        return true;
+                        return record;
                     });
                     return new ClientPackageItem(
                         version,

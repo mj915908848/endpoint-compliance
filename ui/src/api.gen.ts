@@ -1592,6 +1592,134 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/settings/signing-key": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SigningKeyState"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/settings/signing-key/rotation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SigningKeyState"];
+          };
+        };
+      };
+    };
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SigningKeyState"];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/settings/signing-key/rotation/complete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CompleteRotationRequest"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SigningKeyState"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1676,6 +1804,10 @@ export interface components {
     CommandRequest: {
       type: string;
       version?: null | string;
+    };
+    CompleteRotationRequest: {
+      /** @default false */
+      force: boolean;
     };
     ComplianceReport: {
       verdict: components["schemas"]["Verdict"];
@@ -1815,6 +1947,7 @@ export interface components {
       lastSequence: number;
       serverVersion: string;
       minimumAgentVersion: string;
+      keyRotation: null | components["schemas"]["SignedKeyRotation"];
     };
     HeartbeatRequest: {
       hostName: string;
@@ -1825,6 +1958,23 @@ export interface components {
       policyVersion: number;
       controls: components["schemas"]["ControlState"][];
       network?: null | components["schemas"]["NetworkAdapter"][];
+      policyKeyIds?: null | string[];
+    };
+    KeyRotationProgress: {
+      nextKeyId: string;
+      /** Format: date-time */
+      startedAt: string;
+      /** Format: int32 */
+      devices: number;
+      /** Format: int32 */
+      ready: number;
+      waiting: components["schemas"]["KeyRotationWait"][];
+    };
+    KeyRotationWait: {
+      id: string;
+      hostName: string;
+      /** Format: date-time */
+      lastHeartbeat: null | string;
     };
     LoginRequest: {
       username: string;
@@ -2018,10 +2168,19 @@ export interface components {
       signature: string;
       keyId: string;
     };
+    SignedKeyRotation: {
+      payload: string;
+      signature: string;
+      keyId: string;
+    };
     SignedPolicy: {
       payload: string;
       signature: string;
       keyId: string;
+    };
+    SigningKeyState: {
+      keyId: string;
+      rotation: null | components["schemas"]["KeyRotationProgress"];
     };
     TrendDay: {
       /** Format: date */

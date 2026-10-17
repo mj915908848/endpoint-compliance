@@ -96,6 +96,8 @@ static partial class Endpoints
                         || r.SourceTime < s.Now.AddMinutes(-5)
                         || r.Network?.Length > 64
                         || r.Network?.Any(a => a?.Addresses?.Length > 64) == true
+                        || r.PolicyKeyIds?.Length > 4
+                        || r.PolicyKeyIds?.Any(k => k is not { Length: > 0 and <= 64 } || k.Contains(',')) == true
                     )
                         throw new ApiError(400, "Invalid heartbeat");
                     return await s.Tx(async tx =>
@@ -123,6 +125,9 @@ static partial class Endpoints
                                 : NetworkAdapters.Normalize(r.Network),
                             c.Connection.RemoteIpAddress is { } remote ? NetworkAdapters.Address(remote) : ""
                         );
+                        // Clients before key rotation existed do not say which keys they trust.
+                        if (r.PolicyKeyIds is { } keys)
+                            await tx.SetDevicePolicyKeys(deviceId, keys);
                         // StatusMonitor resolves the offline alert within 15 seconds; doing it here would make every
                         // heartbeat wait for the one global offline lock.
                         // Clients from 0.2.9 compress larger uploads once a server says it accepts them. The highest
@@ -133,7 +138,8 @@ static partial class Endpoints
                             GzipUploads: true,
                             await tx.LastSequence(deviceId),
                             ComplianceService.Version,
-                            ReleaseVersion.MinimumAgent
+                            ReleaseVersion.MinimumAgent,
+                            s.Policies.Rotation
                         );
                     });
                 }

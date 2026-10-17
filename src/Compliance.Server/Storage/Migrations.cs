@@ -29,6 +29,11 @@ public static class Migrations
         new(10, "stored verdicts", StoredVerdicts),
         new(11, "verdict history", VerdictHistory),
         new(12, "client packages", ClientPackages),
+        new(
+            13,
+            "policy keys devices trust",
+            tx => tx.Execute("ALTER TABLE devices ADD COLUMN policy_keys TEXT NOT NULL DEFAULT ''")
+        ),
     ];
 
     public static async Task<bool> Apply(Transaction tx)

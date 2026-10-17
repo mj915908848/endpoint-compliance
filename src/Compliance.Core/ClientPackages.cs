@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Compliance.Core;
@@ -18,41 +17,16 @@ public static partial class PackageCrypto
 {
     public const long MaxSize = 512L * 1024 * 1024;
 
-    // Signed bytes start with this, so a package signature can never pass as a policy signature or the other way round.
-    const string Purpose = "compliance-client-package\n";
-
     public static SignedClientPackage Sign(ClientPackage package, ECDsa key, string keyId)
     {
         Validate(package);
         var payload = Wire.Serialize(package);
-        return new(
-            payload,
-            Convert.ToBase64String(key.SignData(Encoding.UTF8.GetBytes(Purpose + payload), HashAlgorithmName.SHA256)),
-            keyId
-        );
+        return new(payload, Statement.Sign(Statement.ClientPackage, payload, key), keyId);
     }
 
     public static ClientPackage Verify(SignedClientPackage signed, string publicKeyPem)
     {
-        if (signed.Payload.Length > 4096)
-            throw new ArgumentException("Package description too large");
-        using var key = ECDsa.Create();
-        key.ImportFromPem(publicKeyPem);
-        try
-        {
-            if (
-                !key.VerifyData(
-                    Encoding.UTF8.GetBytes(Purpose + signed.Payload),
-                    Convert.FromBase64String(signed.Signature),
-                    HashAlgorithmName.SHA256
-                )
-            )
-                throw new CryptographicException("Invalid package signature");
-        }
-        catch (FormatException)
-        {
-            throw new CryptographicException("Invalid package signature encoding");
-        }
+        Statement.Verify(Statement.ClientPackage, signed.Payload, signed.Signature, publicKeyPem);
         var package = Wire.Read<ClientPackage>(signed.Payload);
         Validate(package);
         return package;

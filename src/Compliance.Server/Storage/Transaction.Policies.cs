@@ -40,6 +40,22 @@ public sealed partial class Transaction
             ("policy", policy)
         );
 
+    public Task<List<(long Serial, SignedPolicy Release)>> AllReleases() =>
+        Query(
+            "SELECT version, payload, signature, key_id FROM policy_releases",
+            r => (r.GetInt64(0), new SignedPolicy(r.GetString(1), r.GetString(2), r.GetString(3)))
+        );
+
+    /// <summary>Replaces a release's signature; its payload, and so the release itself, stays as it was.</summary>
+    public Task SetReleaseSignature(long version, SignedPolicy signed) =>
+        Execute(
+            "UPDATE policy_releases SET signature = @signature, key_id = @key WHERE version = @version AND payload = @payload",
+            ("signature", signed.Signature),
+            ("key", signed.KeyId),
+            ("version", version),
+            ("payload", signed.Payload)
+        );
+
     /// <summary>A policy's releases with their serials, newest first.</summary>
     public Task<List<(long Serial, DateTimeOffset PublishedAt, SignedPolicy Release)>> PolicyReleases(
         string key,

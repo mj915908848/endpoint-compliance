@@ -1226,6 +1226,90 @@
           }
         }
       }
+    },
+    "/api/settings/signing-key": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SigningKeyState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/signing-key/rotation": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SigningKeyState"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SigningKeyState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/signing-key/rotation/complete": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteRotationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SigningKeyState"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1519,6 +1603,15 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "CompleteRotationRequest": {
+        "type": "object",
+        "properties": {
+          "force": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -1992,7 +2085,8 @@
           "gzipUploads",
           "lastSequence",
           "serverVersion",
-          "minimumAgentVersion"
+          "minimumAgentVersion",
+          "keyRotation"
         ],
         "type": "object",
         "properties": {
@@ -2011,6 +2105,16 @@
           },
           "minimumAgentVersion": {
             "type": "string"
+          },
+          "keyRotation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SignedKeyRotation"
+              }
+            ]
           }
         }
       },
@@ -2052,6 +2156,71 @@
             "items": {
               "$ref": "#/components/schemas/NetworkAdapter"
             }
+          },
+          "policyKeyIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "KeyRotationProgress": {
+        "required": [
+          "nextKeyId",
+          "startedAt",
+          "devices",
+          "ready",
+          "waiting"
+        ],
+        "type": "object",
+        "properties": {
+          "nextKeyId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ready": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "waiting": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeyRotationWait"
+            }
+          }
+        }
+      },
+      "KeyRotationWait": {
+        "required": [
+          "id",
+          "hostName",
+          "lastHeartbeat"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "lastHeartbeat": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -2834,6 +3003,25 @@
           }
         }
       },
+      "SignedKeyRotation": {
+        "required": [
+          "payload",
+          "signature",
+          "keyId"
+        ],
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          }
+        }
+      },
       "SignedPolicy": {
         "required": [
           "payload",
@@ -2850,6 +3038,28 @@
           },
           "keyId": {
             "type": "string"
+          }
+        }
+      },
+      "SigningKeyState": {
+        "required": [
+          "keyId",
+          "rotation"
+        ],
+        "type": "object",
+        "properties": {
+          "keyId": {
+            "type": "string"
+          },
+          "rotation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/KeyRotationProgress"
+              }
+            ]
           }
         }
       },

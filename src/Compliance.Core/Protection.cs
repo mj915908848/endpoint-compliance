@@ -19,6 +19,14 @@ public static class PolicyCrypto
         );
     }
 
+    /// <summary>The same release signed with another key: the payload stays byte for byte as it was.</summary>
+    public static SignedPolicy Resign(SignedPolicy policy, ECDsa key, string keyId) =>
+        new(
+            policy.Payload,
+            Convert.ToBase64String(key.SignData(Encoding.UTF8.GetBytes(policy.Payload), HashAlgorithmName.SHA256)),
+            keyId
+        );
+
     public static PolicyDocument Verify(
         SignedPolicy policy,
         string publicKeyPem,
