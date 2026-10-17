@@ -48,6 +48,15 @@ csrf = ""
 
 
 
+def stop_trays():
+    """Ends trays already running in this session; a new one would otherwise hand over to them and exit."""
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "Get-Process Compliance.Tray -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 1"],
+        capture_output=True, timeout=60,
+    )
+
+
 def screenshot(path):
     """Best effort: a hosted runner may have no visible desktop."""
     script = (
@@ -387,16 +396,21 @@ try:
             assert time.monotonic() < deadline, "No health alert for the repaired data directory permissions"
             time.sleep(2)
         print("PASS a user granted access to the data directory is removed at start and reported")
-        # The installed tray shares the service's runtime folder; it must load from there.
+        # The installed tray shares the service's runtime folder; it must load from there. The install script
+        # already started one, and only one runs per session, so stop it first.
         installed_tray = pathlib.Path(os.environ["ProgramFiles"]) / "ComplianceAgent" / "Compliance.Tray.exe"
+        stop_trays()
         viewer = subprocess.Popen([str(installed_tray), "--notices"])
         try:
             time.sleep(6)
             assert viewer.poll() is None, f"Installed tray exited with {viewer.returncode}"
+            # A second start hands over to the running tray and leaves.
+            second = subprocess.run([str(installed_tray)], timeout=30)
+            assert second.returncode == 0 and viewer.poll() is None, "A second tray kept running"
         finally:
             viewer.kill()
             viewer.wait(timeout=10)
-        print("PASS installed tray starts from the shared runtime folder")
+        print("PASS installed tray starts from the shared runtime folder, once per session")
         # Start the installed tray as the installer does, then uninstall: every runtime file must be removed.
         subprocess.Popen(["explorer.exe", str(installed_tray)])
         time.sleep(5)
@@ -500,6 +514,7 @@ try:
         setup_dir = data / "setup"
         setup_dir.mkdir()
         (setup_dir / "登记配置.json").write_text(json.dumps({"serverUrl": base, "code": code}), encoding="utf-8")
+        stop_trays()
         viewer = subprocess.Popen([str(program / "Compliance.Tray.exe"), "--setup", str(setup_dir / "client.msi")])
         try:
             time.sleep(8)
