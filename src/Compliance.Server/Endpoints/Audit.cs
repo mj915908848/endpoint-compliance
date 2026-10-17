@@ -8,10 +8,11 @@ static partial class Endpoints
 
         group.MapGet(
             "",
-            async (HttpContext c) =>
+            async (HttpContext c, DateTimeOffset? before, string? beforeId, int? limit) =>
             {
                 Require(c, "Reader");
-                return await s.Tx(async tx => (await tx.RecentAudit(500)).ToArray());
+                var size = Math.Clamp(limit ?? 500, 1, 500);
+                return await s.Tx(async tx => (await tx.AuditPage(before, beforeId ?? "", size)).ToArray());
             }
         );
     }

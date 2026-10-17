@@ -29,21 +29,39 @@ public sealed partial class Transaction
             ("limit", (long)limit)
         );
 
-    public Task<List<AuditRecord>> RecentAudit(int limit) =>
+    /// <summary>
+    /// Newest first; with <paramref name="before"/>, the page after the record at (<paramref name="before"/>,
+    /// <paramref name="beforeId"/>), so records sharing a timestamp are neither skipped nor repeated.
+    /// </summary>
+    public Task<List<AuditRecord>> AuditPage(DateTimeOffset? before, string beforeId, int limit) =>
         Query(
-            "SELECT id, actor, action, target, at FROM audit ORDER BY at DESC LIMIT @limit",
+            $"""
+            SELECT id, actor, action, target, at FROM audit
+            {(before is null ? "" : "WHERE at < @before OR (at = @before AND id < @id)")}
+            ORDER BY at DESC, id DESC LIMIT @limit
+            """,
             r => new AuditRecord(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), Time(r, 4)),
+            ("before", before ?? DateTimeOffset.MinValue),
+            ("id", beforeId),
             ("limit", (long)limit)
         );
 
-    public async Task<bool> AcceptNonce(string device, string nonce, DateTimeOffset now)
-    {
-        await Execute("DELETE FROM nonces WHERE expires < @now", ("now", now.ToUnixTimeSeconds()));
-        return await Execute(
-                "INSERT INTO nonces(device, nonce, expires) VALUES(@device, @nonce, @expires) ON CONFLICT(device, nonce) DO NOTHING",
-                ("device", device),
-                ("nonce", nonce),
-                ("expires", now.AddMinutes(10).ToUnixTimeSeconds())
-            ) == 1;
-    }
+    /// <summary>
+    /// False for a nonce seen in the last 10 minutes. Expired ones are removed by <see cref="PruneNonces"/>, not on
+    /// every request; until then an expired row counts as unseen.
+    /// </summary>
+    public async Task<bool> AcceptNonce(string device, string nonce, DateTimeOffset now) =>
+        await Execute(
+            """
+            INSERT INTO nonces(device, nonce, expires) VALUES(@device, @nonce, @expires)
+            ON CONFLICT(device, nonce) DO UPDATE SET expires = excluded.expires WHERE nonces.expires < @now
+            """,
+            ("device", device),
+            ("nonce", nonce),
+            ("expires", now.AddMinutes(10).ToUnixTimeSeconds()),
+            ("now", now.ToUnixTimeSeconds())
+        ) == 1;
+
+    public Task<int> PruneNonces(DateTimeOffset now) =>
+        Execute("DELETE FROM nonces WHERE expires < @now", ("now", now.ToUnixTimeSeconds()));
 }

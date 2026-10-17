@@ -12,8 +12,10 @@ export interface DeviceAlerts {
   lastSeen: string;
 }
 
+// Compared as instants: the text form can differ in offset or fraction digits.
+const ms = (at: string) => Date.parse(at);
 const newestFirst = (x: { lastSeen: string }, y: { lastSeen: string }) =>
-  y.lastSeen.localeCompare(x.lastSeen);
+  ms(y.lastSeen) - ms(x.lastSeen);
 
 /** Alerts grouped by device; the device with the newest alert first, and newest first within a device. */
 export function groupByDevice(alerts: Alert[], devices: DeviceSummary[]): DeviceAlerts[] {
@@ -27,7 +29,7 @@ export function groupByDevice(alerts: Alert[], devices: DeviceSummary[]): Device
       lastSeen: a.lastSeen,
     };
     group.alerts.push(a);
-    if (a.lastSeen > group.lastSeen) group.lastSeen = a.lastSeen;
+    if (ms(a.lastSeen) > ms(group.lastSeen)) group.lastSeen = a.lastSeen;
     byId.set(a.deviceId, group);
   }
   const groups = [...byId.values()].sort(newestFirst);

@@ -38,14 +38,19 @@ public record CodeRevoked(string Revoked);
 public record AppSettings(NotificationView Notifications, NotificationResult? LastNotification, int AuditRetentionDays);
 
 /// <summary><see cref="NotificationSettings"/> with the secret left out.</summary>
+/// <param name="Version">Changes with every save; sent back so a save over someone else's is refused.</param>
 public record NotificationView(
     bool Enabled,
     string Channel,
     string WebhookUrl,
     bool HasSecret,
     string[] Types,
-    string ConsoleUrl
+    string ConsoleUrl,
+    string Version
 );
+
+/// <param name="Version">The saved settings' new <see cref="NotificationView.Version"/>.</param>
+public record NotificationsSaved(string Version);
 
 public record NotificationTested(bool Ok, string? Error);
 
