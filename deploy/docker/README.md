@@ -57,7 +57,6 @@
 3. 安装（任选一种）：
    - **MSI（推荐）**：把 `compliance-client-<版本>-windows-x64.msi` 和 `登记配置.json` 放在同一个文件夹，拷到各台电脑双击 MSI，确认管理员提示。装完弹出“登记到管理端”窗口，地址和登记码已填好，点“登记”并再确认一次管理员提示。没有配置文件时在窗口里手动填写。
    - **批量静默安装**（域组策略、软件分发工具）：`msiexec /i compliance-client-<版本>-windows-x64.msi SERVERURL=https://compliance.example.com CODE=<登记码> /qn`。登记失败时整个安装回滚，msiexec 返回非 0。
-   - **脚本方式**：把 `登记配置.json` 放进解压后的 zip 安装包根目录（与 `安装客户端（正式环境）.bat` 同一层），双击 `安装客户端（正式环境）.bat`。
 4. 装完后在“终端登记”页撤销登记码，或等它到期。
 
 客户端会校验证书，所以必须用证书覆盖的域名访问，不能用 IP。没登记的电脑（例如装完关掉了登记窗口）在托盘图标上显示“尚未登记”，右键“登记到管理端…”可以随时登记。MSI 未做代码签名，首次运行时 Windows 可能提示“未知发布者”，点“更多信息 → 仍要运行”。
@@ -176,8 +175,9 @@ docker compose up -d
 
 积累一批改动后手动发布一个版本（Releases 页，版本号从 `0.2.0` 起每次加一），附带：
 
+- `compliance-server-<版本>-deploy.tar.gz`：管理端一键部署包（脚本 + 镜像）；
 - `compliance-server-<版本>.tar.gz`：管理端 Docker 镜像，服务器上直接加载，不用在服务器上构建；
-- `compliance-client-<版本>-windows.zip`：Windows 客户端安装包。
+- `compliance-client-<版本>-windows-x64.msi`：Windows 客户端安装包。
 
 管理端当前版本显示在“系统”页。
 
@@ -207,7 +207,7 @@ docker compose up -d
 docker compose exec db psql -U compliance -d compliance -c 'VACUUM FULL events'
 ```
 
-**升级客户端**：双击新版本的 MSI（或用 `msiexec /i 新版本.msi /qn` 批量下发），保留登记身份，不需要登记码；用脚本装过的电脑也可以直接装 MSI，登记身份同样保留。用脚本方式时，解压新的客户端包，在已安装的电脑上双击 `安装客户端（正式环境）.bat`，选“1 仅更新程序”。卸载：MSI 装的在“设置 → 应用”里卸载“终端合规客户端”，会同时删除登记身份和本地数据。
+**升级客户端**：双击新版本的 MSI（或用 `msiexec /i 新版本.msi /qn` 批量下发），保留登记身份，不需要登记码；以前用 zip 包脚本装过的电脑也直接装 MSI，登记身份同样保留。卸载：MSI 装的在“设置 → 应用”里卸载“终端合规客户端”，会同时删除登记身份和本地数据。
 
 ## 常用命令
 

@@ -1,7 +1,7 @@
 name: Release
 
 # Run by hand (gh workflow run release.yml) to publish main's latest commit as a GitHub release v<VERSION>.<n>
-# (n counts up from 0) with the Windows client package and the management server's Docker image (docker load -i).
+# (n counts up from 0) with the Windows client MSI and the management server's Docker image (docker load -i).
 # The commit's CI run must have passed.
 on:
   workflow_dispatch:
@@ -83,13 +83,6 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: "**/packages.lock.json"
-      - name: Windows 客户端包
-        run: python3 scripts/package.py --version ${{ needs.version.outputs.version }}
       - uses: actions/download-artifact@v5
         with:
           name: msi
@@ -109,7 +102,7 @@ jobs:
           cp deploy/docker/{compose.yml,.env.example,install.sh,backup.sh,README.md} $d/
           cp artifacts/compliance-server-$v.tar.gz $d/
           tar -C artifacts/deploy -czf artifacts/compliance-server-$v-deploy.tar.gz compliance-server-$v
-          ls -lh artifacts/*.zip artifacts/*.msi artifacts/*.tar.gz
+          ls -lh artifacts/*.msi artifacts/*.tar.gz
       - name: 发布
         run: |
           v=${{ needs.version.outputs.version }}
@@ -121,15 +114,14 @@ jobs:
             echo "## 安装与升级"
             echo "- 管理端首次部署：下载 \`compliance-server-$v-deploy.tar.gz\`，在装有 Docker 的 Linux 服务器上解压，进入目录运行 \`sudo ./install.sh --domain 管理端域名 --cert 证书.pem --key 私钥.key\`。"
             echo "- 管理端升级：下载 \`compliance-server-$v.tar.gz\`，放进服务器上的部署目录，运行 \`sudo ./install.sh\`（自动先备份再升级）。"
-            echo "- 客户端（推荐）：双击 \`compliance-client-$v-windows-x64.msi\` 安装或升级，装完在弹出的窗口中填写管理端地址和登记码；升级保留登记。批量部署：\`msiexec /i compliance-client-$v-windows-x64.msi SERVERURL=https://管理端域名 CODE=登记码 /qn\`。"
-            echo "- 客户端（脚本方式）：解压 \`compliance-client-$v-windows.zip\`，在已安装的电脑上双击“安装客户端（正式环境）.bat”，选“1 仅更新程序”。"
+            echo "- 客户端：双击 \`compliance-client-$v-windows-x64.msi\` 安装或升级，装完在弹出的窗口中填写管理端地址和登记码；升级保留登记。批量部署：\`msiexec /i compliance-client-$v-windows-x64.msi SERVERURL=https://管理端域名 CODE=登记码 /qn\`。"
             echo
             echo "## 校验"
-            echo "客户端和管理端都没有代码签名。安装前请用 \`SHA256SUMS.txt\` 核对下载的文件（Windows：\`Get-FileHash 文件名\`；Linux：\`sha256sum -c --ignore-missing SHA256SUMS.txt\`），并在只有自己和管理员能写入的文件夹里解压（例如自己的“下载”文件夹），不要用共享目录。"
+            echo "客户端和管理端都没有代码签名。安装前请用 \`SHA256SUMS.txt\` 核对下载的文件（Windows：\`Get-FileHash 文件名\`；Linux：\`sha256sum -c --ignore-missing SHA256SUMS.txt\`），并把文件放在只有自己和管理员能写入的文件夹里（例如自己的“下载”文件夹）再安装或解压，不要用共享目录。"
           } > notes.md
-          (cd artifacts && sha256sum "compliance-client-$v-windows-x64.msi" "compliance-client-$v-windows.zip" \
-            "compliance-server-$v.tar.gz" "compliance-server-$v-deploy.tar.gz" > SHA256SUMS.txt)
+          (cd artifacts && sha256sum "compliance-client-$v-windows-x64.msi" "compliance-server-$v.tar.gz" \
+            "compliance-server-$v-deploy.tar.gz" > SHA256SUMS.txt)
           gh release create "v$v" --target "$(git rev-parse HEAD)" --title "$v" --notes-file notes.md \
             "artifacts/compliance-client-$v-windows-x64.msi" \
-            "artifacts/compliance-client-$v-windows.zip" "artifacts/compliance-server-$v.tar.gz" \
+            "artifacts/compliance-server-$v.tar.gz" \
             "artifacts/compliance-server-$v-deploy.tar.gz" artifacts/SHA256SUMS.txt
