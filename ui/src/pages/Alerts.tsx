@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Alert as Notice, Button, Segmented, Space, Typography } from "antd";
+import { Alert as Notice, App, Button, Segmented, Space, Typography } from "antd";
 import { CloseCircleFilled, FileSearchOutlined } from "@ant-design/icons";
 import { request } from "../api";
 import { useResource, useRefresh } from "../useResource";
@@ -8,6 +8,7 @@ import {
   DeviceAlertCard,
   type DeviceAlerts,
   Empty,
+  errorText,
   Fresh,
   groupByDevice,
   PageHeading,
@@ -33,6 +34,7 @@ export function Alerts({
   openDevice: (id: string) => void;
 }) {
   const refresh = useRefresh();
+  const { message } = App.useApp();
   const data = useResource<Alert[]>("/api/alerts"),
     devices = useResource<DeviceSummary[]>("/api/devices");
   const [filter, setFilter] = useState("active");
@@ -66,16 +68,19 @@ export function Alerts({
   const loadOlder = async () => {
     const resolved = [...all, ...older].filter((a) => a.state === "Resolved");
     const last = older.at(-1);
-    // Start just before the 30-day window the list covers, or after the last page.
-    const before = last?.lastSeen ?? new Date(Date.now() - 30 * 86_400_000).toISOString();
+    // After the last page; the first page starts where the list above ends, which the server works out by its own
+    // clock (the browser's may be off).
+    const cursor = last
+      ? `before=${encodeURIComponent(last.lastSeen)}&beforeId=${encodeURIComponent(last.id)}&`
+      : "";
     setOlderLoading(true);
     try {
-      const page = await request<Alert[]>(
-        `/api/alerts/resolved?before=${encodeURIComponent(before)}&beforeId=${encodeURIComponent(last?.id ?? "")}&limit=${PAGE}`,
-      );
+      const page = await request<Alert[]>(`/api/alerts/resolved?${cursor}limit=${PAGE}`);
       const known = new Set(resolved.map((a) => a.id));
       setOlder((o) => [...o, ...page.filter((a) => !known.has(a.id))]);
       if (page.length < PAGE) setOlderDone(true);
+    } catch (e) {
+      message.error(`加载更早的已恢复告警失败：${errorText(e)}`);
     } finally {
       setOlderLoading(false);
     }
@@ -223,8 +228,19 @@ function DeviceGroups({
             onAck={
               canAck
                 ? async (ids) => {
-                    for (const id of ids) await ack(id);
+                    // One failure must not leave the rest unconfirmed, and the list always shows the outcome.
+                    const failed: unknown[] = [];
+                    for (const id of ids)
+                      try {
+                        await ack(id);
+                      } catch (e) {
+                        failed.push(e);
+                      }
                     refresh();
+                    if (failed.length)
+                      throw new Error(
+                        `已确认 ${ids.length - failed.length} 条，${failed.length} 条失败：${errorText(failed[0])}`,
+                      );
                   }
                 : undefined
             }

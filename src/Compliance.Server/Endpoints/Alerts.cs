@@ -17,14 +17,18 @@ static partial class Endpoints
             }
         );
 
-        // Older resolved alerts, a page at a time: pass the last alert shown as before/beforeId.
+        // Older resolved alerts, a page at a time: pass the last alert shown as before/beforeId. The first page leaves
+        // them out and starts where the list above ends, by the server's clock rather than the browser's.
         group.MapGet(
             "/resolved",
-            async (HttpContext c, DateTimeOffset before, string beforeId, int? limit) =>
+            async (HttpContext c, DateTimeOffset? before, string? beforeId, int? limit) =>
             {
                 Require(c, "Reader");
                 var size = Math.Clamp(limit ?? 100, 1, 500);
-                return await s.Tx(async tx => (await tx.ResolvedAlertsBefore(before, beforeId, size)).ToArray());
+                var start = before ?? s.Now - ComplianceService.RecentlyResolved;
+                return await s.Tx(async tx =>
+                    (await tx.ResolvedAlertsBefore(start, before is null ? "" : beforeId ?? "", size)).ToArray()
+                );
             }
         );
 

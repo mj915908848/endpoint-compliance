@@ -366,6 +366,8 @@ public class ApiTests
         var start = Uri.EscapeDataString(now.AddDays(-30).ToString("O"));
         var first = await Ids($"/api/alerts/resolved?before={start}&beforeId=&limit=2");
         Assert.Equal(["resolved-40b", "resolved-40a"], first);
+        // The first page can leave the cursor out: it then starts where the list above ends, by the server's clock.
+        Assert.Equal(first, await Ids("/api/alerts/resolved?limit=2"));
         var cursor = Uri.EscapeDataString(now.AddDays(-40).ToString("O"));
         Assert.Equal(
             ["resolved-100", "resolved-200"],
