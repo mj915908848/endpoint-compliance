@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { SensitiveFileTable } from "../src/components/report";
+import { EvidenceTable } from "../src/components/report";
 import type { Evidence } from "../src/types";
 
 const hits: Evidence[] = Array.from({ length: 45 }, (_, i) => ({
@@ -22,7 +22,7 @@ describe("report tables", () => {
     Element.prototype.scrollIntoView = scroll;
     render(
       <section>
-        <SensitiveFileTable values={hits} complete />
+        <EvidenceTable values={hits} />
       </section>,
     );
     expect(screen.getByText("C:\\Users\\a\\Documents\\机密资料-0.xlsx")).toBeTruthy();

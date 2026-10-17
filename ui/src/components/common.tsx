@@ -445,13 +445,13 @@ export function AgentVersion({ device }: { device: DeviceSummary }) {
 }
 
 /**
- * For a paged table: changing page brings the enclosing section or panel back into view. Otherwise the reader is
+ * For a paged table: changing page brings the enclosing section, collapsible group or panel back into view. Otherwise the reader is
  * left wherever the old page's pager was, and a page of different height leaves them far from the new rows.
  */
 export function usePageScroll() {
   const ref = useRef<HTMLDivElement>(null);
   const onPageChange = () => {
-    const target = ref.current?.closest("section, .panel") ?? ref.current;
+    const target = ref.current?.closest("section, .ant-collapse-item, .panel") ?? ref.current;
     target?.scrollIntoView({ block: "start" });
   };
   return { ref, onPageChange };

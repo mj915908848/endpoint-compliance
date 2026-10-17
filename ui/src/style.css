@@ -258,14 +258,119 @@ body {
 }
 
 /* Report */
-.report-section {
-  padding: 16px 0;
-  border-top: 1px solid #eef1f3;
-  /* Leaves room for the sticky top bar when a table's pager scrolls its section into view. */
+.report-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.report-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid #eef1f3;
+  border-radius: 8px;
+}
+.report-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(0, 0, 0, 0.6);
+}
+.report-metric strong {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: rgba(0, 0, 0, 0.85);
+}
+.report-meta,
+.report-sub {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+.report-meta {
+  margin: 10px 0 0;
+}
+.report-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #b7c2c8;
+}
+.report-dot-danger {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(194, 65, 59, 0.14);
+}
+.report-dot-warning {
+  background: var(--warning);
+}
+.report-dot-good {
+  background: var(--good);
+}
+.report-gaps,
+.report-clear {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+.report-gaps {
+  background: #fffaf0;
+}
+.report-gaps-title,
+.report-clear {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.report-gaps-title {
+  font-weight: 500;
+}
+.report-gaps .report-list {
+  margin: 4px 0;
+}
+.report-clear {
+  background: #f1f8f4;
+}
+.report-groups {
+  margin: 14px 0 8px;
+}
+/* Leaves room for the sticky top bar when a table's pager scrolls its group into view. */
+.report-groups .ant-collapse-item {
   scroll-margin-top: 72px;
 }
-.report-section:first-of-type {
-  margin-top: 12px;
+.report-group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+.report-group-label .report-sub {
+  font-weight: 400;
+}
+.report-groups .ant-collapse-item-disabled .ant-collapse-header {
+  cursor: default;
+  color: inherit;
+}
+.report-groups .ant-collapse-content-box > .report-list {
+  margin-bottom: 8px;
+}
+.report-record {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.report-record-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-bottom: 2px;
+}
+.report-record-head .ant-tag {
+  margin: 0 0 0 auto;
 }
 .report-list {
   margin: 0;

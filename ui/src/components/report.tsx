@@ -1,6 +1,5 @@
 import { type ReactNode } from "react";
-import { Collapse, List as AntList, Space, Table, Tag, Tooltip, Typography } from "antd";
-import { CheckCircleFilled, CloseCircleFilled, WarningOutlined } from "@ant-design/icons";
+import { Collapse, Grid, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { Empty, time, usePageScroll } from "./common";
 import {
   controlLabel,
@@ -50,6 +49,25 @@ function usePages(count: number) {
   return { ref, pagination };
 }
 
+/** A dot before a heading: red or amber when something needs attention, green when nothing was found. */
+type Tone = "danger" | "warning" | "good" | "muted";
+const Dot = ({ tone }: { tone: Tone }) => <span className={`report-dot report-dot-${tone}`} />;
+
+function KindTag({ e }: { e: Evidence }) {
+  if (e.kind === "Clue" || e.kind === "BlockedAttempt")
+    return <Tag variant="filled">{evidenceLabel(e.kind)}</Tag>;
+  return (
+    <Tag variant="filled" color={e.confirmed ? "error" : "warning"}>
+      {e.confirmed ? "" : "线索 · "}
+      {evidenceLabel(e.kind)}
+    </Tag>
+  );
+}
+
+/**
+ * Records in three columns: what and whose, what was seen and where, and the kind of record. Sensitive files show
+ * the path instead, with the owner and scanned scope beneath. On a phone the three stack in one cell.
+ */
 export function EvidenceTable({
   values,
   empty,
@@ -60,102 +78,75 @@ export function EvidenceTable({
   users?: UserAccount[];
 }) {
   const { ref, pagination } = usePages(values.length);
-  return (
-    <div ref={ref}>
-      <Table<Evidence>
-        rowKey={(e, i) => `${e.objectKey}-${i}`}
-        dataSource={values}
-        size="small"
-        pagination={pagination}
-        scroll={{ x: 640 }}
-        locale={{ emptyText: <Empty title={empty ?? "没有相关证据"} /> }}
-        columns={[
-          {
-            title: "产品",
-            key: "product",
-            render: (_, e) => (
-              <Space orientation="vertical" size={0}>
-                <Typography.Text strong>{e.productName || e.productId}</Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {e.productId}
-                </Typography.Text>
-              </Space>
-            ),
-          },
-          {
-            title: "类型",
-            key: "kind",
-            width: 150,
-            render: (_, e) => (
-              <Tag color={e.confirmed ? "error" : "warning"}>
-                {e.confirmed ? "确认" : "线索"} · {evidenceLabel(e.kind)}
-              </Tag>
-            ),
-          },
-          { title: "说明", dataIndex: "summary" },
-          { title: "来源", dataIndex: "source", width: 160 },
-          {
-            title: "范围",
-            key: "scope",
-            width: 140,
-            render: (_, e) => <Scope scope={e.userSid} users={users} />,
-          },
-        ]}
-      />
-    </div>
+  const narrow = !Grid.useBreakpoint().md;
+  const owner = (e: Evidence) => (
+    <>
+      {e.kind === "SensitiveFile" ? "所有者 " : ""}
+      {e.kind === "SensitiveFile" && !e.userSid ? (
+        "未知"
+      ) : (
+        <Scope scope={e.userSid} users={users} />
+      )}
+    </>
   );
-}
-
-/** Files and folders whose names contain a configured keyword; only names are compared. */
-export function SensitiveFileTable({
-  values,
-  users,
-  complete,
-}: {
-  values: Evidence[];
-  users?: UserAccount[];
-  complete: boolean;
-}) {
-  const { ref, pagination } = usePages(values.length);
+  const product = (e: Evidence) => (
+    <Typography.Text strong>{e.productName || e.productId}</Typography.Text>
+  );
+  const finding = (e: Evidence) =>
+    e.kind === "SensitiveFile" ? (
+      <div>
+        <span className="mono">{e.objectKey}</span>
+        <div className="report-sub">
+          {e.summary} · 扫描范围 <Scope scope={e.source} users={users} />
+        </div>
+      </div>
+    ) : (
+      <div>
+        {e.summary}
+        <div className="report-sub">{e.source}</div>
+      </div>
+    );
   return (
     <div ref={ref}>
       <Table<Evidence>
         rowKey={(e, i) => `${e.source}-${e.objectKey}-${i}`}
         dataSource={values}
         size="small"
+        showHeader={false}
         pagination={pagination}
-        scroll={{ x: 640 }}
-        locale={{
-          emptyText: (
-            <Empty
-              title={
-                complete
-                  ? "未发现文件名包含关键词的文件或文件夹"
-                  : "暂无命中记录；扫描尚未完整完成，不能据此认定没有敏感文件"
-              }
-            />
-          ),
-        }}
-        columns={[
-          {
-            title: "路径",
-            key: "path",
-            render: (_, e) => <span className="mono">{e.objectKey}</span>,
-          },
-          { title: "说明", dataIndex: "summary" },
-          {
-            title: "所有者",
-            key: "owner",
-            width: 140,
-            render: (_, e) => (e.userSid ? <Scope scope={e.userSid} users={users} /> : "未知"),
-          },
-          {
-            title: "扫描范围",
-            key: "scope",
-            width: 140,
-            render: (_, e) => <Scope scope={e.source} users={users} />,
-          },
-        ]}
+        locale={{ emptyText: <Empty title={empty ?? "没有相关证据"} /> }}
+        columns={
+          narrow
+            ? [
+                {
+                  key: "record",
+                  render: (_, e) => (
+                    <div className="report-record">
+                      <div className="report-record-head">
+                        {product(e)}
+                        <span className="report-sub">{owner(e)}</span>
+                        <KindTag e={e} />
+                      </div>
+                      {finding(e)}
+                    </div>
+                  ),
+                },
+              ]
+            : [
+                {
+                  key: "product",
+                  width: 220,
+                  render: (_, e) => (
+                    <div>
+                      {product(e)}
+                      <div className="report-sub">{owner(e)}</div>
+                    </div>
+                  ),
+                },
+                { key: "summary", render: (_, e) => finding(e) },
+                { key: "kind", width: 130, align: "right", render: (_, e) => <KindTag e={e} /> },
+              ]
+        }
       />
     </div>
   );
@@ -250,59 +241,15 @@ function Bullets({ items }: { items: string[] }) {
   );
 }
 
-function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
+function Metric({ tone, label, value }: { tone: Tone; label: string; value: number }) {
   return (
-    <section className="report-section">
-      <Typography.Title level={5}>{title}</Typography.Title>
-      {children}
-    </section>
-  );
-}
-
-/** One evidence group; an empty group is a single line rather than an empty table. */
-function EvidenceGroup({
-  title,
-  values,
-  empty,
-  users,
-}: {
-  title: string;
-  values: Evidence[];
-  empty: string;
-  users?: UserAccount[];
-}) {
-  return (
-    <Section title={`${title}（${values.length}）`}>
-      {values.length ? (
-        <EvidenceTable values={values} users={users} />
-      ) : (
-        <Typography.Text type="secondary">{empty}</Typography.Text>
-      )}
-    </Section>
-  );
-}
-
-function Issues({ items, icon, note }: { items: string[]; icon: ReactNode; note?: string }) {
-  return (
-    <>
-      <AntList
-        size="small"
-        dataSource={items}
-        renderItem={(item) => (
-          <AntList.Item>
-            <Space align="start">
-              {icon}
-              {item}
-            </Space>
-          </AntList.Item>
-        )}
-      />
-      {note && (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {note}
-        </Typography.Text>
-      )}
-    </>
+    <div className="report-metric">
+      <span className="report-metric-label">
+        <Dot tone={value ? tone : "good"} />
+        {label}
+      </span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -312,7 +259,8 @@ function Issues({ items, icon, note }: { items: string[]; icon: ReactNode; note?
  * Markdown report keeps all nine sections.
  */
 export function ReportFindings({ report: r }: { report: Report }) {
-  const s = r.snapshot;
+  const s = r.snapshot,
+    users = s.users;
   const installation = s.evidence.filter((e) =>
     ["Installation", "Process", "Extension"].includes(e.kind),
   );
@@ -320,63 +268,100 @@ export function ReportFindings({ report: r }: { report: Report }) {
   const sensitive = s.evidence.filter((e) => e.kind === "SensitiveFile");
   const sensitiveScopes = s.modules.filter((m) => m.module === "sensitive-files");
   const sensitiveNotes = r.sensitiveFileNotes ?? [];
+  const sensitiveComplete =
+    sensitiveScopes.length > 0 && sensitiveScopes.every((m) => m.status === "Complete");
   const clue = s.evidence.filter((e) => ["Clue", "BlockedAttempt"].includes(e.kind));
+  const groups: {
+    key: string;
+    label: string;
+    values: Evidence[];
+    tone: Tone;
+    none: string;
+    notes?: string[];
+  }[] = [
+    {
+      key: "software",
+      label: "软件安装与运行",
+      values: installation,
+      tone: "danger",
+      none: "未发现",
+    },
+    { key: "proxy", label: "代理设置", values: proxy, tone: "danger", none: "未发现" },
+    ...(sensitive.length > 0 || sensitiveNotes.length > 0 || sensitiveScopes.length > 0
+      ? [
+          {
+            key: "sensitive",
+            label: "敏感文件",
+            values: sensitive,
+            tone: "danger" as Tone,
+            none: sensitiveComplete ? "未发现" : "暂无命中，扫描尚未完整完成，不能据此认定没有",
+            notes: sensitiveNotes,
+          },
+        ]
+      : []),
+    { key: "clue", label: "网络线索与拦截记录", values: clue, tone: "muted", none: "没有" },
+  ];
+  // Groups holding confirmed records start open; clues and empty groups stay closed.
+  const open = groups
+    .filter((g) => g.tone === "danger" && g.values.some((e) => e.confirmed))
+    .map((g) => g.key);
   return (
     <div className="report">
-      <Typography.Text type="secondary">
+      <div className="report-metrics">
+        <Metric tone="danger" label="违规对象" value={r.reasons.length} />
+        <Metric tone="warning" label="检查缺口" value={r.coverageGaps.length} />
+        <Metric tone="danger" label="敏感文件" value={sensitive.length} />
+        <Metric tone="muted" label="待核查线索" value={clue.length} />
+      </div>
+      <div className="report-meta">
         本次检查采集于 {time(s.collectedAt)}
         {r.policyName ? `，按策略“${r.policyName}”v${r.policyVersion} 判定` : ""}
-      </Typography.Text>
-      {r.reasons.length > 0 && (
-        <Section title={`不通过项（${r.reasons.length}）`}>
-          <Issues
-            items={r.reasons}
-            icon={<CloseCircleFilled style={{ color: "var(--danger)" }} />}
-            note="同一产品在同一用户下的安装、进程和扩展记录合并计为一个违规对象。"
-          />
-        </Section>
-      )}
+        {r.reasons.length > 0 && "。同一产品在同一用户下的安装、进程和扩展记录合并计为一个违规对象"}
+      </div>
       {r.coverageGaps.length > 0 && (
-        <Section title={`检查缺口（${r.coverageGaps.length}）`}>
-          <Issues
-            items={r.coverageGaps}
-            icon={<WarningOutlined style={{ color: "var(--warning)" }} />}
-            note="缺口不代表发现了新的违规，但会让结论无法判定为通过。逐项状态见“检查覆盖”。"
-          />
-        </Section>
+        <div className="report-gaps">
+          <div className="report-gaps-title">
+            <Dot tone="warning" />
+            检查缺口（{r.coverageGaps.length}）
+          </div>
+          <Bullets items={r.coverageGaps} />
+          <div className="report-sub">
+            缺口不代表发现了新的违规，但会让结论无法判定为通过。逐项状态见“检查覆盖”。
+          </div>
+        </div>
       )}
       {r.reasons.length === 0 && r.coverageGaps.length === 0 && (
-        <Section title="未发现问题">
-          <Space align="start">
-            <CheckCircleFilled style={{ color: "var(--good)" }} />
-            所有检查项均已完成，未发现确认违规。
-          </Space>
-        </Section>
+        <div className="report-clear">
+          <Dot tone="good" />
+          所有检查项均已完成，未发现确认违规。
+        </div>
       )}
-      <EvidenceGroup
-        title="软件安装与运行"
-        values={installation}
-        empty="未发现相关软件的安装或运行记录。"
-        users={s.users}
-      />
-      {(sensitive.length > 0 || sensitiveNotes.length > 0 || sensitiveScopes.length > 0) && (
-        <Section title={`敏感文件（${sensitive.length}）`}>
-          {sensitiveNotes.length > 0 && <Bullets items={sensitiveNotes} />}
-          <SensitiveFileTable
-            values={sensitive}
-            users={s.users}
-            complete={
-              sensitiveScopes.length > 0 && sensitiveScopes.every((m) => m.status === "Complete")
-            }
-          />
-        </Section>
-      )}
-      <EvidenceGroup title="代理设置" values={proxy} empty="未发现代理设置。" users={s.users} />
-      <EvidenceGroup
-        title="网络线索与拦截记录"
-        values={clue}
-        empty="没有网络线索或拦截记录。"
-        users={s.users}
+      <Collapse
+        className="report-groups"
+        defaultActiveKey={open}
+        items={groups.map((g) => {
+          const has = g.values.length > 0 || (g.notes?.length ?? 0) > 0;
+          return {
+            key: g.key,
+            collapsible: has ? undefined : "disabled",
+            showArrow: has,
+            label: (
+              <span className="report-group-label">
+                <Dot tone={g.values.length ? g.tone : "good"} />
+                {g.label}
+                <span className="report-sub">
+                  {g.values.length ? `${g.values.length} 条` : g.none}
+                </span>
+              </span>
+            ),
+            children: (
+              <>
+                {g.notes && g.notes.length > 0 && <Bullets items={g.notes} />}
+                {g.values.length > 0 && <EvidenceTable values={g.values} users={users} />}
+              </>
+            ),
+          };
+        })}
       />
       <Collapse
         ghost
