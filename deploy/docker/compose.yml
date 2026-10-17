@@ -1,5 +1,9 @@
-# 终端合规管理端：PostgreSQL + 管理端。用法见同目录 README.md。
+# 终端合规管理端：PostgreSQL + 管理端。部署只需要这一个文件和证书，用法见 deploy/docker/README.md。
+# 首次启动前改掉下面标着「改」的几处。
 name: compliance
+
+# 数据库密码：只在两个容器之间使用，只能用字母和数字（可用 openssl rand -hex 16 生成）。【改】
+x-db-password: &db-password 改成数据库密码
 
 # Container output is kept in rotated files: 3 × 10 MB per container, instead of one file that grows until the disk is full.
 x-logging: &logging
@@ -16,7 +20,7 @@ services:
     environment:
       POSTGRES_DB: compliance
       POSTGRES_USER: compliance
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?在 .env 中设置 DB_PASSWORD}
+      POSTGRES_PASSWORD: *db-password
     volumes:
       - db:/var/lib/postgresql
     healthcheck:
@@ -26,20 +30,28 @@ services:
       retries: 20
 
   server:
-    # Published by each release; COMPLIANCE_VERSION in .env pins one (default latest). compose.build.yml builds it instead.
-    image: ghcr.io/mj915908848/compliance-server:${COMPLIANCE_VERSION:-latest}
+    # latest 跟随最新版；要停在某个版本时写成如 compliance-server:0.2.24。
+    image: ghcr.io/mj915908848/compliance-server:latest
     restart: unless-stopped
     logging: *logging
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "${HTTPS_PORT:-443}:8443"
-    # The certificate settings (Kestrel__Certificates__Default__*) come from .env.
-    env_file: .env
+      # 对外端口:容器端口。对外端口不是 443 时改前一个数字，如 "8443:8443"。
+      - "443:8443"
     environment:
-      Compliance__Database: Host=db;Database=compliance;Username=compliance;Password=${DB_PASSWORD}
-      Compliance__BootstrapUsers: '[{"username":"${ADMIN_USER:-admin}","password":"${ADMIN_PASSWORD:?在 .env 中设置 ADMIN_PASSWORD}","roles":["Reader","Operator","Publisher"]}]'
+      Compliance__Database: Host=db;Database=compliance;Username=compliance
+      PGPASSWORD: *db-password
+      # 首个管理员账号，只在第一次启动时创建，之后改这里不会改已有账号的密码。
+      # 密码至少 16 位，不要包含 " 和 \ 。【改】
+      Compliance__BootstrapUsers: '[{"username":"admin","password":"改成管理员密码","roles":["Reader","Operator","Publisher"]}]'
+      # 证书放在本文件旁的 certs 目录。PEM 格式（含中间证书的完整链 + 私钥）：
+      Kestrel__Certificates__Default__Path: /certs/cert.pem
+      Kestrel__Certificates__Default__KeyPath: /certs/key.pem
+      # PFX 格式时删掉上面两行，改为：
+      # Kestrel__Certificates__Default__Path: /certs/cert.pfx
+      # Kestrel__Certificates__Default__Password: 证书密码
       TZ: Asia/Shanghai
     volumes:
       - ./certs:/certs:ro

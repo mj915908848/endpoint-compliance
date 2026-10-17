@@ -291,16 +291,29 @@ jobs:
         working-directory: deploy/docker
     steps:
       - uses: actions/checkout@v5
-      # The documented steps (README.md, 部署): a certificate in certs/, .env from the example, then compose up.
+      # The compose.yml shown in README.md must be this directory's file, word for word.
+      - name: 部署说明里的 compose.yml 与本目录一致
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, textwrap
+          readme = pathlib.Path("README.md").read_text()
+          block = re.search(r"<!-- compose.yml:.*?-->\n   ```yaml\n(.*?)\n   ```", readme, re.S).group(1)
+          shown = textwrap.dedent(block).strip()
+          actual = pathlib.Path("compose.yml").read_text().strip()
+          assert shown == actual, "README.md 里的 compose.yml 与 deploy/docker/compose.yml 不一致"
+          PY
+      # The documented steps (README.md, 部署): edit the passwords and port in compose.yml, a certificate in certs/, compose up.
       - name: 部署
         run: |
           set -e
+          ADMIN_PASSWORD=$(openssl rand -hex 12)
+          echo "ADMIN_PASSWORD=$ADMIN_PASSWORD" >> "$GITHUB_ENV"
+          sed -i "s/改成数据库密码/$(openssl rand -hex 16)/; s/改成管理员密码/$ADMIN_PASSWORD/; s/\"443:8443\"/\"8443:8443\"/" compose.yml
+          grep -q '"8443:8443"' compose.yml && ! grep -q '改成' compose.yml
           mkdir certs
           openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=ci.example.test" \
             -addext "subjectAltName=DNS:ci.example.test" -keyout certs/key.pem -out certs/cert.pem 2> /dev/null
           sudo chown -R 1654:1654 certs && sudo chmod 600 certs/*
-          cp .env.example .env
-          sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=$(openssl rand -hex 16)/; s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$(openssl rand -hex 12)/; s/^HTTPS_PORT=.*/HTTPS_PORT=8443/" .env
           docker compose -f compose.yml -f compose.build.yml up -d --build --wait --wait-timeout 180
       - name: 登录、读取策略、重启后签名密钥不变、备份
         run: |
@@ -312,7 +325,7 @@ jobs:
             done
             curl -sfk --resolve ci.example.test:8443:127.0.0.1 "$url/" | grep -q '<div id="root">'
             curl -sfk --resolve ci.example.test:8443:127.0.0.1 -c jar -H 'Content-Type: application/json' \
-              -d "{\"username\":\"admin\",\"password\":\"$(sed -n 's/^ADMIN_PASSWORD=//p' .env)\"}" "$url/api/auth/login" > /dev/null
+              -d "{\"username\":\"admin\",\"password\":\"$ADMIN_PASSWORD\"}" "$url/api/auth/login" > /dev/null
             curl -sfk --resolve ci.example.test:8443:127.0.0.1 -b jar "$url/api/policies" | grep -q '"isDefault":true'
           }
           check
