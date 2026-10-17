@@ -117,7 +117,7 @@ python3 integration/e2e.py
 
 ## 生产部署
 
-- 管理端：推荐用 Docker 部署（含 PostgreSQL）：在 Linux 服务器上照 `deploy/docker/README.md` 存一个 `compose.yml`（改掉里面的密码），放证书，`docker compose up -d` 启动，从 ghcr.io 拉取镜像；升级用 `./backup.sh && docker compose pull && docker compose up -d`。可经网关反向代理，见 `deploy/docker/README.md`；不用 Docker 时需要 PostgreSQL、客户信任的 HTTPS 证书、持久的策略签名密钥和独立的管理账号，见 `deploy/server/README.md`。
+- 管理端：推荐用 Docker 部署（含 PostgreSQL）：在 Linux 服务器上照 `deploy/docker/README.md` 存一个 `compose.yml`（改掉里面的密码），放证书，`docker compose up -d` 启动，从 ghcr.io 拉取镜像；升级用 `./backup.sh && docker compose pull && docker compose up -d`。可经网关反向代理，见 `deploy/docker/ADVANCED.md`；不用 Docker 时需要 PostgreSQL、客户信任的 HTTPS 证书、持久的策略签名密钥和独立的管理账号，见 `deploy/server/README.md`。
 - 客户端：双击发布的 MSI，装完在弹出的窗口填写管理端地址和登记码（MSI 旁放“终端登记”页下载的登记配置时自动填好），或用 `msiexec /i … SERVERURL=… CODE=… /qn` 批量静默安装；升级直接装新版本 MSI，以前用 zip 包脚本装过的电脑也一样，登记保留。正式部署只连接 HTTPS 管理端，不支持跳过证书校验。见 `deploy/windows/客户端安装说明.md` 和 `deploy/windows/README.md`。
 - 初始策略为审计模式。强制模式只能发布给新建策略中指定的终端，且这些终端必须先报告所需防护措施「可启用」。
 
@@ -135,6 +135,6 @@ python3 integration/e2e.py
 - `docs/server-api.md`：管理端与终端 API
 - `docs/compatibility.md`：管理端与客户端的版本兼容约定
 - `docs/capabilities.md`：已实现能力与待验收项
-- `deploy/docker/README.md`：管理端 Docker 部署、反向代理、备份与升级
+- `deploy/docker/README.md`：管理端 Docker 部署、升级与备份；`deploy/docker/ADVANCED.md`：证书、反向代理、密码重置、恢复等
 - `deploy/windows/客户端安装说明.md`：客户端安装、升级、卸载（随客户端包发布）
 - `deploy/server/README.md`、`deploy/windows/README.md`：不用 Docker 的部署与客户端细节
