@@ -901,6 +901,57 @@
         }
       }
     },
+    "/api/agent/client-packages/{version}": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedClientPackage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/client-packages/{version}/file": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/agent/commands": {
       "get": {
         "tags": [
@@ -1051,6 +1102,124 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/client-packages": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClientPackageItem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "byte"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientPackageItem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/client-packages/{version}": {
+      "delete": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/client-packages/{version}/rollout": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpgradeRollout"
                 }
               }
             }
@@ -1251,6 +1420,40 @@
           }
         }
       },
+      "ClientPackageItem": {
+        "required": [
+          "version",
+          "sha256",
+          "size",
+          "uploadedAt",
+          "uploadedBy",
+          "outdated"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "uploadedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uploadedBy": {
+            "type": "string"
+          },
+          "outdated": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "CodeRequest": {
         "type": "object",
         "properties": {
@@ -1310,6 +1513,12 @@
         "properties": {
           "type": {
             "type": "string"
+          },
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -1414,7 +1623,8 @@
         "required": [
           "id",
           "type",
-          "expiresAt"
+          "expiresAt",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -1427,6 +1637,12 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2599,6 +2815,25 @@
           }
         }
       },
+      "SignedClientPackage": {
+        "required": [
+          "payload",
+          "signature",
+          "keyId"
+        ],
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          }
+        }
+      },
       "SignedPolicy": {
         "required": [
           "payload",
@@ -2640,6 +2875,18 @@
             "format": "int32"
           },
           "unknown": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "UpgradeRollout": {
+        "required": [
+          "queued"
+        ],
+        "type": "object",
+        "properties": {
+          "queued": {
             "type": "integer",
             "format": "int32"
           }

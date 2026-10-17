@@ -216,6 +216,40 @@ public sealed class AgentApi(HttpClient client, Uri baseUri, string? deviceId, E
         }
     }
 
+    /// <summary>
+    /// Downloads a file the server hosts into <paramref name="destination"/>, refusing more than
+    /// <paramref name="maxSize"/> bytes. Large files may take longer than an API request is allowed to.
+    /// </summary>
+    public async Task DownloadAsync(string path, string destination, long maxSize, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUri, path));
+        var timestamp = DateTimeOffset
+            .UtcNow.ToUnixTimeSeconds()
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var nonce = Guid.NewGuid().ToString("D");
+        request.Headers.Add("X-Device-Id", deviceId);
+        request.Headers.Add("X-Timestamp", timestamp);
+        request.Headers.Add("X-Nonce", nonce);
+        request.Headers.Add("X-Signature", RequestAuthentication.Sign(key, "GET", path, timestamp, nonce, []));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromMinutes(30));
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException($"Agent API {path}: {(int)response.StatusCode}", response.StatusCode, null);
+        await using var body = await response.Content.ReadAsStreamAsync(timeout.Token);
+        await using var file = File.Create(destination);
+        var buffer = new byte[81920];
+        long size = 0;
+        int read;
+        while ((read = await body.ReadAsync(buffer, timeout.Token)) > 0)
+        {
+            size += read;
+            if (size > maxSize)
+                throw new HttpRequestException($"Agent API {path}: larger than announced");
+            await file.WriteAsync(buffer.AsMemory(0, read), timeout.Token);
+        }
+    }
+
     public static byte[] Compress(byte[] plain)
     {
         using var output = new MemoryStream();
@@ -743,8 +777,13 @@ public sealed class AgentRuntime(
         var scanCommands = commands.Where(x => x.Type == "ScanNow" && x.ExpiresAt > DateTimeOffset.UtcNow).ToArray();
         if (scanCommands.Length > 0)
             Console.WriteLine("管理端请求重新检查，开始完整检查");
-        foreach (var unsupported in commands.Except(scanCommands))
+        var upgrade = commands.FirstOrDefault(x =>
+            x.Type == ClientUpgrade.Command && x.ExpiresAt > DateTimeOffset.UtcNow
+        );
+        foreach (var unsupported in commands.Except(scanCommands).Where(x => x != upgrade))
             await AckAsync(api, unsupported, new CommandReply(false, "Unsupported or expired command"), ct);
+        if (upgrade != null)
+            await UpgradeAsync(api, upgrade, ct);
         if (scanCommands.Length > 0)
             forceFull = true;
         bool full =
@@ -829,6 +868,45 @@ public sealed class AgentRuntime(
             foreach (var command in scanCommands)
                 await AckAsync(api, command, new CommandReply(true, "Full scan completed and queued"), ct);
         }
+    }
+
+    /// <summary>
+    /// Installs the client package an upgrade command names. Only the installed service upgrades: a console run or a
+    /// simulation has no installation to replace. A download that fails is tried again at the next check.
+    /// </summary>
+    private async Task UpgradeAsync(AgentApi api, DeviceCommand command, CancellationToken ct)
+    {
+        if (
+            !OperatingSystem.IsWindows()
+            || simulated
+            || !Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService()
+        )
+        {
+            await AckAsync(api, command, new CommandReply(false, "只有安装为 Windows 服务的客户端可以远程升级"), ct);
+            return;
+        }
+        Console.WriteLine($"管理端要求升级客户端到 {command.Version}");
+        (CommandReply Reply, string? Installer) prepared;
+        try
+        {
+            prepared = await ClientUpgrade.PrepareAsync(
+                api,
+                command,
+                config.PolicyPublicKeyPem!,
+                config.DataDirectory,
+                ct
+            );
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException)
+        {
+            Console.Error.WriteLine("客户端安装包下载失败，下次检查时重试：" + e.GetType().Name);
+            return;
+        }
+        Console.WriteLine(prepared.Reply.Detail);
+        // The reply goes first: the installer stops this service.
+        await AckAsync(api, command, prepared.Reply, ct);
+        if (prepared.Installer != null)
+            ClientUpgrade.Install(prepared.Installer);
     }
 
     /// <summary>

@@ -22,6 +22,9 @@ public sealed class Settings
 
     /// <summary>Minutes without keyboard or mouse use after which a management session ends; 0 turns this off.</summary>
     public int SessionIdleMinutes { get; set; } = 30;
+
+    /// <summary>Where uploaded client installers are kept; empty for client-packages next to the signing key.</summary>
+    public string PackageDirectory { get; set; } = "";
 }
 
 public sealed record UserRecord(string Username, string PasswordHash, string[] Roles);
@@ -168,3 +171,5 @@ public static class Secrets
         return CryptographicOperations.FixedTimeEquals(expected, actual);
     }
 }
+
+public sealed record ClientPackageRecord(ClientPackage Package, string UploadedBy, SignedClientPackage Signed);

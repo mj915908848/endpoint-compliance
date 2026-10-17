@@ -1162,6 +1162,78 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/agent/client-packages/{version}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          version: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SignedClientPackage"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/agent/client-packages/{version}/file": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          version: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/agent/commands": {
     parameters: {
       query?: never;
@@ -1386,6 +1458,140 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/client-packages": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ClientPackageItem"][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query: {
+          version: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/octet-stream": string;
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ClientPackageItem"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/client-packages/{version}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          version: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Done"];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/client-packages/{version}/rollout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          version: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["UpgradeRollout"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1442,6 +1648,17 @@ export interface components {
       /** Format: int32 */
       days: number;
     };
+    ClientPackageItem: {
+      version: string;
+      sha256: string;
+      /** Format: int64 */
+      size: number;
+      /** Format: date-time */
+      uploadedAt: string;
+      uploadedBy: string;
+      /** Format: int32 */
+      outdated: number;
+    };
     CodeRequest: {
       /** Format: int32 */
       expiresMinutes?: null | number;
@@ -1458,6 +1675,7 @@ export interface components {
     };
     CommandRequest: {
       type: string;
+      version?: null | string;
     };
     ComplianceReport: {
       verdict: components["schemas"]["Verdict"];
@@ -1491,6 +1709,7 @@ export interface components {
       type: string;
       /** Format: date-time */
       expiresAt: string;
+      version: null | string;
     };
     DeviceDeleted: {
       deleted: string;
@@ -1794,6 +2013,11 @@ export interface components {
       /** Format: double */
       idleMinutes: number;
     };
+    SignedClientPackage: {
+      payload: string;
+      signature: string;
+      keyId: string;
+    };
     SignedPolicy: {
       payload: string;
       signature: string;
@@ -1808,6 +2032,10 @@ export interface components {
       fail: number;
       /** Format: int32 */
       unknown: number;
+    };
+    UpgradeRollout: {
+      /** Format: int32 */
+      queued: number;
     };
     UserAccount: {
       sid: string;

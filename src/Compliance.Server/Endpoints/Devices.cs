@@ -154,11 +154,24 @@ static partial class Endpoints
                 {
                     var u = Require(c, "Operator");
                     var r = await Body<CommandRequest>(c);
-                    if (r.Type != "ScanNow")
-                        throw new ApiError(400, "Only ScanNow is supported");
+                    if (r.Type is not ("ScanNow" or PackageService.Upgrade))
+                        throw new ApiError(400, "Only ScanNow and Upgrade are supported");
                     return await s.Tx(async tx =>
                     {
-                        await s.Device(tx, id);
+                        var d = await s.Device(tx, id);
+                        if (r.Type == PackageService.Upgrade)
+                        {
+                            var package = await NewestPackage(tx, r.Version);
+                            var upgrade = s.Packages.UpgradeCommand(d, package.Package);
+                            await tx.InsertCommand(new CommandRecord(id, upgrade));
+                            await tx.Audit(
+                                u.Username,
+                                "RequestUpgrade",
+                                $"{d.HostName}（{id}）→ {upgrade.Version}",
+                                s.Now
+                            );
+                            return upgrade;
+                        }
                         var command = new DeviceCommand(Guid.NewGuid().ToString(), "ScanNow", s.Now.AddMinutes(10));
                         await tx.InsertCommand(new CommandRecord(id, command));
                         await tx.Audit(u.Username, "RequestScan", id, s.Now);
