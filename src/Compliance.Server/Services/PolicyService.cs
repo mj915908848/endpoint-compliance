@@ -232,7 +232,6 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
             doc.RequiredModules == null
             || doc.RequiredModules.Length == 0
             || doc.Products == null
-            || doc.Products.Length > 5000
             || doc.BlockDomains == null
             || doc.BlockDomains.Length > 1000
             || doc.ApplicationRules == null
