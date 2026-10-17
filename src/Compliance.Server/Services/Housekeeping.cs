@@ -7,6 +7,9 @@ public sealed class Housekeeping(Store store, Settings settings, TimeProvider cl
 {
     DateTimeOffset Now => clock.GetUtcNow();
 
+    /// <summary>When this server started; devices could not report while it was down.</summary>
+    readonly DateTimeOffset started = clock.GetUtcNow();
+
     Task<T> Tx<T>(Func<Transaction, Task<T>> action) => store.Transaction(action);
 
     public static readonly TimeSpan SnapshotEventRetention = TimeSpan.FromDays(1);
@@ -77,12 +80,15 @@ public sealed class Housekeeping(Store store, Settings settings, TimeProvider cl
 
     /// <summary>
     /// Opens an offline alert for devices silent for 5 minutes and resolves it once they are Online again.
-    /// Only devices whose state actually changes are loaded.
+    /// Only devices whose state actually changes are loaded. Silence is counted from this server's start at the
+    /// earliest, so restarting it after an outage does not report every device offline at once.
     /// </summary>
     public async Task UpdateOffline(Transaction tx)
     {
         await tx.Lock("offline");
-        foreach (var (id, hostName) in await tx.DevicesGoingOffline(Now - TimeSpan.FromMinutes(5)))
+        var silentSince = Now - TimeSpan.FromMinutes(5);
+        var goingOffline = started < silentSince ? await tx.DevicesGoingOffline(silentSince) : [];
+        foreach (var (id, hostName) in goingOffline)
         {
             await tx.UpsertAlert(
                 new AlertSummary(

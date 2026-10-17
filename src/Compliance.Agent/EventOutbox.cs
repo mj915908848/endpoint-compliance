@@ -116,14 +116,23 @@ public sealed class EventOutbox : IAsyncDisposable
         db = new SqliteConnection(
             new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadWriteCreate }.ToString()
         );
-        db.Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText =
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; "
-            + "CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, json TEXT NOT NULL, next_attempt TEXT, attempts INTEGER NOT NULL DEFAULT 0, error TEXT); "
-            + "CREATE TABLE IF NOT EXISTS quarantine(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, json TEXT NOT NULL, error TEXT NOT NULL, at TEXT NOT NULL); "
-            + "CREATE TABLE IF NOT EXISTS local_incidents(key TEXT PRIMARY KEY,detail TEXT NOT NULL,sid TEXT,active INTEGER NOT NULL,last_notice TEXT NOT NULL);";
-        cmd.ExecuteNonQuery();
+        try
+        {
+            db.Open();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText =
+                "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; "
+                + "CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, json TEXT NOT NULL, next_attempt TEXT, attempts INTEGER NOT NULL DEFAULT 0, error TEXT); "
+                + "CREATE TABLE IF NOT EXISTS quarantine(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, json TEXT NOT NULL, error TEXT NOT NULL, at TEXT NOT NULL); "
+                + "CREATE TABLE IF NOT EXISTS local_incidents(key TEXT PRIMARY KEY,detail TEXT NOT NULL,sid TEXT,active INTEGER NOT NULL,last_notice TEXT NOT NULL);";
+            cmd.ExecuteNonQuery();
+        }
+        catch
+        {
+            // Releases the file so a damaged one can be set aside.
+            db.Dispose();
+            throw;
+        }
     }
 
     public async Task<AgentEvent> EnqueueAsync(
@@ -146,6 +155,8 @@ public sealed class EventOutbox : IAsyncDisposable
                     Wire.Serialize(new AgentEvent(id, long.MaxValue, when, type, objectKey, snapshot, detail))
                 ) + 8192L;
             await PruneQuarantineAsync(tx, ct);
+            if (type == "Snapshot")
+                await DropSameHourSnapshotsAsync(tx, when, ct);
             var dropped = 0;
             while (await FullAsync(tx, needed, ct) && await DropOldestSnapshotAsync(tx, ct) is > 0 and var n)
                 dropped += n;
@@ -220,6 +231,45 @@ public sealed class EventOutbox : IAsyncDisposable
         drop.CommandText =
             "DELETE FROM events WHERE seq IN (SELECT seq FROM events WHERE json_extract(json,'$.type')='Snapshot' ORDER BY seq LIMIT 1)";
         return await drop.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Keeps one waiting snapshot per hour: a new one replaces those from the same hour that are still queued. The
+    /// server keeps only the newest snapshot and the verdict changes between them, so a device that was offline for a
+    /// week sends about 170 snapshots when it is back rather than 2000, and its current state arrives sooner.
+    /// </summary>
+    private async Task DropSameHourSnapshotsAsync(SqliteTransaction tx, DateTimeOffset when, CancellationToken ct)
+    {
+        var hour = when.UtcDateTime.ToString("yyyyMMddHH");
+        var replaced = new List<long>();
+        using (var find = db.CreateCommand())
+        {
+            find.Transaction = tx;
+            find.CommandText =
+                "SELECT seq, json_extract(json,'$.sourceTime') FROM events WHERE json_extract(json,'$.type')='Snapshot'";
+            using var reader = await find.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                if (
+                    !reader.IsDBNull(1)
+                    && DateTimeOffset.TryParse(
+                        reader.GetString(1),
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None,
+                        out var at
+                    )
+                    && at.UtcDateTime.ToString("yyyyMMddHH") == hour
+                )
+                    replaced.Add(reader.GetInt64(0));
+        }
+        using var drop = db.CreateCommand();
+        drop.Transaction = tx;
+        drop.CommandText = "DELETE FROM events WHERE seq=$seq";
+        var seq = drop.Parameters.Add("$seq", SqliteType.Integer);
+        foreach (var s in replaced)
+        {
+            seq.Value = s;
+            await drop.ExecuteNonQueryAsync(ct);
+        }
     }
 
     /// <summary>How long a quarantined event is kept for diagnosis; it is never sent again.</summary>
