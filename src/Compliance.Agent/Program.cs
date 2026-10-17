@@ -255,11 +255,25 @@ public sealed class AgentWorker(Func<AgentRuntime?> load) : BackgroundService
                     ? new NotificationPipe(null).RunAsync(waiting.Token)
                     : Task.CompletedTask;
                 while ((runtime = load()) is null)
+                {
                     await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                    if (pipe.IsFaulted && OperatingSystem.IsWindows())
+                    {
+                        Console.Error.WriteLine(
+                            $"托盘通知管道出错，已重新启动：{pipe.Exception!.GetBaseException().Message}"
+                        );
+                        pipe = new NotificationPipe(null).RunAsync(waiting.Token);
+                    }
+                }
                 waiting.Cancel();
                 try
                 {
                     await pipe;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // The waiting pipe has done its job; its failure must not stop the enrolled service from starting.
+                    Console.Error.WriteLine($"托盘通知管道已停止：{ex.GetType().Name}: {ex.Message}");
                 }
                 catch (OperationCanceledException) { }
             }
