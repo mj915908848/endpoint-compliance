@@ -9,7 +9,12 @@ namespace Compliance.Agent;
 /// <summary>A user profile from ProfileList; per-user collectors need its hive, its folder, or both.</summary>
 public sealed record Profile(string Sid, string Path, bool HiveLoaded, bool PathAvailable, string? Name = null);
 
-public sealed record ScanContext(PolicyDocument Policy, IReadOnlyList<Profile> Profiles);
+/// <param name="Volumes">Opens a volume's file records; the shared <see cref="VolumeCatalog"/> in the service.</param>
+public sealed record ScanContext(
+    PolicyDocument Policy,
+    IReadOnlyList<Profile> Profiles,
+    Func<string, IVolumeIndex?>? Volumes = null
+);
 
 /// <summary>One scope a collector covers. When <see cref="Unavailable"/> is set the scope is reported as not covered.</summary>
 public readonly record struct CollectorScope(string Scope, Profile? Profile = null, string? Unavailable = null)
@@ -92,8 +97,9 @@ public static class FixtureCollector
     }
 }
 
+/// <param name="volumes">Opens a volume's file records; by default each scan reads the file table itself.</param>
 [SupportedOSPlatform("windows")]
-public sealed partial class WindowsCollector
+public sealed partial class WindowsCollector(Func<string, IVolumeIndex?>? volumes = null)
 {
     // One per process: each cycle creates a new collector, and runs abandoned by earlier cycles must stay known.
     private static readonly AbandonedRuns Abandoned = new();
@@ -174,7 +180,7 @@ public sealed partial class WindowsCollector
             );
         }
 
-        var context = new ScanContext(policy, profiles);
+        var context = new ScanContext(policy, profiles, volumes);
         // Modules the policy leaves out are not run at all.
         foreach (
             var collector in Collectors.Where(c => (full || !c.Inventory) && policy.RequiredModules.Contains(c.Module))

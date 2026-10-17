@@ -159,8 +159,11 @@ internal sealed class ProgramFilesCollector : ICollector
             .Where(n => n.Length > 0)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         using var index =
-            NtfsVolume.TryOpen(scope.Scope[^1] + @":\") ?? throw new IOException("无法读取该分区的文件表");
+            (context.Volumes ?? NtfsVolume.TryOpen)(scope.Scope[^1] + @":\")
+            ?? throw new IOException("无法读取该分区的文件表");
         var found = new List<Evidence>();
+        // Version information is read from disk: behind what the user is doing.
+        using var background = BackgroundIo.Enter();
         foreach (var path in WindowsCollector.FindProgramFiles(index, names, Limit, ct))
         {
             ct.ThrowIfCancellationRequested();

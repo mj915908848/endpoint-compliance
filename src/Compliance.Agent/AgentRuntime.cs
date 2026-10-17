@@ -327,6 +327,7 @@ public sealed class AgentRuntime(
     private PolicyDocument? policy;
     private SignedPolicy? signedPolicy;
     private DateTimeOffset lastFull = DateTimeOffset.MinValue;
+    private VolumeCatalog? volumes;
     private DateTimeOffset lastLight = DateTimeOffset.MinValue;
     private ScanSnapshot? latest;
 
@@ -478,13 +479,15 @@ public sealed class AgentRuntime(
         var pipeTask =
             OperatingSystem.IsWindows() && !once ? new NotificationPipe(notices).RunAsync(ct) : Task.CompletedTask;
         await LoadCachedPolicy();
+        // One copy of each volume's file records serves the sensitive file scan and the program file scan.
+        volumes = OperatingSystem.IsWindows() && !simulated ? new VolumeCatalog(NtfsVolume.TryOpen) : null;
         using var scanner =
             OperatingSystem.IsWindows() && !simulated
                 ? new SensitiveFileScanner(
                     Path.Combine(config.DataDirectory, "sensitive-files.json"),
                     SensitiveFileScanner.WindowsTargets,
                     SensitiveFileScanner.WindowsOwner,
-                    NtfsVolume.TryOpen
+                    volume => volumes!.Open(volume)
                 )
                 : null;
         sensitiveFiles = scanner;
@@ -874,6 +877,12 @@ public sealed class AgentRuntime(
         bool light = due || sensitiveNews;
         if (light)
         {
+            // Both scans' names are declared before either reads a volume, so one read of a file table serves both.
+            volumes?.Want(VolumeInterest.SensitiveFiles, VolumeInterest.Sensitive(policy.SensitiveFiles));
+            volumes?.Want(
+                VolumeInterest.ProgramFiles,
+                policy.RequiredModules.Contains("programs") ? VolumeInterest.Programs(policy) : null
+            );
             if (sensitiveFiles is not null)
             {
                 sensitiveFiles.Update(policy.SensitiveFiles, scanCommands.Length > 0, DateTimeOffset.UtcNow);
@@ -886,7 +895,7 @@ public sealed class AgentRuntime(
             }
             ScanSnapshot scan = simulated
                 ? await FixtureCollector.LoadAsync(fixturePath!, ct)
-                : await CollectNativeAsync(config.DeviceId!, policy, full ? null : latest, ct);
+                : await CollectNativeAsync(config.DeviceId!, policy, full ? null : latest, volumes, ct);
             if (sensitiveFiles is not null)
             {
                 reportedSensitiveRevision = sensitiveFiles.Revision;
@@ -1118,12 +1127,18 @@ public sealed class AgentRuntime(
         string deviceId,
         PolicyDocument policy,
         ScanSnapshot? previous,
+        VolumeCatalog? volumes,
         CancellationToken ct
     )
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException();
-        return new WindowsCollector().CollectAsync(deviceId, policy, ct, previous);
+        return new WindowsCollector(volumes is null ? null : v => volumes.Open(v, ct)).CollectAsync(
+            deviceId,
+            policy,
+            ct,
+            previous
+        );
     }
 
     // Direct on purpose: a proxy on this machine is what the client checks for, and one could intercept or block its
