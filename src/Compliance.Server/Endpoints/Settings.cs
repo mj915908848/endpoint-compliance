@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Compliance.Core;
 
 namespace Compliance.Server;
@@ -12,7 +14,9 @@ static partial class Endpoints
         // null keeps the saved secret, "" removes it.
         string? Secret,
         string[]? Types,
-        string? ConsoleUrl
+        string? ConsoleUrl,
+        // The version the form was filled from; null skips the check (older pages).
+        string? Version = null
     );
 
     sealed record AuditRetentionRequest(int Days);
@@ -28,6 +32,12 @@ static partial class Endpoints
         var host = Uri.TryCreate(url, UriKind.Absolute, out var u) ? $"{u.Scheme}://{u.Host}/" : "";
         return $"{host}****{url[^Math.Min(4, url.Length)..]}";
     }
+
+    /// <summary>Identifies what is saved, so a form filled before someone else's save can be told apart.</summary>
+    static async Task<string> NotificationsVersion(Transaction tx) =>
+        Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(await tx.GetSetting(NotificationSettings.Key) ?? ""))
+        )[..16];
 
     static void MapSettings(IEndpointRouteBuilder routes, ComplianceService s, AlertNotifier notifier)
     {
@@ -48,7 +58,8 @@ static partial class Endpoints
                             MaskWebhook(n.WebhookUrl),
                             n.Secret.Length > 0,
                             n.Types,
-                            n.ConsoleUrl
+                            n.ConsoleUrl,
+                            await NotificationsVersion(tx)
                         ),
                         notifier.Last,
                         await Housekeeping.AuditRetentionDays(tx)
@@ -108,6 +119,8 @@ static partial class Endpoints
                     {
                         await tx.Lock(NotificationSettings.Key);
                         var current = await AlertNotifier.Settings(tx);
+                        if (r.Version is { } version && version != await NotificationsVersion(tx))
+                            throw new ApiError(409, "告警推送设置刚被其他人修改，请载入最新设置后再改");
                         // Changed meanwhile: the masked form now names an address nobody here has seen.
                         if (kept && current.WebhookUrl != saved.WebhookUrl)
                             throw new ApiError(409, "机器人地址刚被其他人修改，请刷新后重试");
@@ -127,7 +140,7 @@ static partial class Endpoints
                             r.Enabled ? $"开启（{channel}）" : "关闭",
                             s.Now
                         );
-                        return new Done();
+                        return new NotificationsSaved(await NotificationsVersion(tx));
                     });
                 }
             )

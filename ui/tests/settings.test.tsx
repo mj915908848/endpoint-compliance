@@ -20,6 +20,7 @@ const settings: AppSettings = {
     hasSecret: false,
     types: ["Violation", "SensitiveFile", "Health"],
     consoleUrl: "",
+    version: "v1",
   },
   lastNotification: null,
   auditRetentionDays: 0,
@@ -58,7 +59,7 @@ describe("system settings", () => {
             ? []
             : c.url === "/api/settings/signing-key"
               ? { keyId: "k", rotation: null }
-              : { ok: true },
+              : { ok: true, version: "v1" },
     );
     render(
       <Providers>
@@ -81,6 +82,7 @@ describe("system settings", () => {
         secret: null,
         types: ["Violation", "SensitiveFile", "Health", "Offline"],
         consoleUrl: window.location.origin,
+        version: "v1",
       }),
     );
 
@@ -93,6 +95,57 @@ describe("system settings", () => {
     expect(calls.find((c) => c.url === "/api/settings/audit-retention")?.body).toEqual({
       days: 365,
     });
+  });
+
+  it("warns when someone else saved the robot meanwhile and loads their settings", async () => {
+    let reads = 0;
+    const theirs = {
+      ...settings,
+      notifications: {
+        ...settings.notifications,
+        enabled: true,
+        webhookUrl: "https://qyapi.weixin.qq.com/****abcd",
+        version: "v2",
+      },
+    };
+    const calls = stub((c) =>
+      c.url === "/api/settings"
+        ? reads++ === 0
+          ? settings
+          : theirs
+        : c.url === "/api/status"
+          ? { mode: "Production", storage: "Postgres", networkCapabilities: [], policyKeyId: "k" }
+          : c.url === "/api/client-packages"
+            ? []
+            : c.url === "/api/settings/signing-key"
+              ? { keyId: "k", rotation: null }
+              : { ok: true, version: "v2" },
+    );
+    render(
+      <Providers>
+        <SystemPage session={session} />
+      </Providers>,
+    );
+    // Saving the retention re-reads the settings, which someone else has changed by now.
+    await userEvent.click(await screen.findByLabelText("审计记录保留期限"));
+    await userEvent.click(await screen.findByTitle("1 年"));
+    await userEvent.click(screen.getAllByRole("button", { name: "保存" })[1]);
+    expect(await screen.findByText(/已被其他人修改/)).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>("机器人地址").value).toBe("");
+
+    await userEvent.click(screen.getByRole("button", { name: "载入最新设置" }));
+    expect(screen.queryByText(/已被其他人修改/)).toBeNull();
+    expect(screen.getByLabelText<HTMLInputElement>("机器人地址").value).toBe(
+      "https://qyapi.weixin.qq.com/****abcd",
+    );
+    await userEvent.click(screen.getAllByRole("button", { name: "保存" })[0]);
+    await waitFor(() =>
+      expect(calls.find((c) => c.url === "/api/settings/notifications")?.body).toMatchObject({
+        enabled: true,
+        webhookUrl: "https://qyapi.weixin.qq.com/****abcd",
+        version: "v2",
+      }),
+    );
   });
 
   it("shows operators the saved robot masked and the audit retention without a way to change it", async () => {

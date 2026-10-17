@@ -194,7 +194,11 @@ export interface paths {
     };
     get: {
       parameters: {
-        query?: never;
+        query?: {
+          before?: string;
+          beforeId?: string;
+          limit?: number;
+        };
         header?: never;
         path?: never;
         cookie?: never;
@@ -1372,7 +1376,7 @@ export interface paths {
             [name: string]: unknown;
           };
           content: {
-            "application/json": components["schemas"]["Done"];
+            "application/json": components["schemas"]["NotificationsSaved"];
           };
         };
       };
@@ -2020,6 +2024,7 @@ export interface components {
       secret: null | string;
       types: null | string[];
       consoleUrl: null | string;
+      version?: null | string;
     };
     NotificationResult: {
       /** Format: date-time */
@@ -2028,6 +2033,9 @@ export interface components {
       error: string;
       /** Format: int32 */
       sent: number;
+    };
+    NotificationsSaved: {
+      version: string;
     };
     NotificationTested: {
       ok: boolean;
@@ -2040,6 +2048,7 @@ export interface components {
       hasSecret: boolean;
       types: string[];
       consoleUrl: string;
+      version: string;
     };
     PasswordChanged: {
       /** Format: int32 */

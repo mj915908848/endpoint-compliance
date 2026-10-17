@@ -118,6 +118,31 @@
         "tags": [
           "Compliance.Server"
         ],
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -1053,7 +1078,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Done"
+                  "$ref": "#/components/schemas/NotificationsSaved"
                 }
               }
             }
@@ -2409,6 +2434,12 @@
               "null",
               "string"
             ]
+          },
+          "version": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2437,6 +2468,17 @@
           }
         }
       },
+      "NotificationsSaved": {
+        "required": [
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "NotificationTested": {
         "required": [
           "ok",
@@ -2462,7 +2504,8 @@
           "webhookUrl",
           "hasSecret",
           "types",
-          "consoleUrl"
+          "consoleUrl",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -2485,6 +2528,9 @@
             }
           },
           "consoleUrl": {
+            "type": "string"
+          },
+          "version": {
             "type": "string"
           }
         }

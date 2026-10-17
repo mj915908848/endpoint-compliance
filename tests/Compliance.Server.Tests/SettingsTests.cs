@@ -282,4 +282,77 @@ public class SettingsTests
             (await f.Client.PutAsJsonAsync("/api/settings/audit-retention", new { days = 180 })).StatusCode
         );
     }
+
+    [Fact]
+    public async Task A_notification_form_filled_before_someone_elses_save_is_refused()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        async Task<string> Version() =>
+            (await f.Client.GetFromJsonAsync<JsonElement>("/api/settings"))
+                .GetProperty("notifications")
+                .GetProperty("version")
+                .GetString()!;
+        var opened = await Version();
+
+        var first = await f.Client.PutAsJsonAsync(
+            "/api/settings/notifications",
+            new
+            {
+                enabled = true,
+                channel = "WeCom",
+                webhookUrl = WeCom,
+                types = new[] { "Violation" },
+                version = opened,
+            }
+        );
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        var saved = (await first.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("version").GetString();
+        Assert.NotEqual(opened, saved);
+        Assert.Equal(saved, await Version());
+
+        var stale = await f.Client.PutAsJsonAsync(
+            "/api/settings/notifications",
+            new
+            {
+                enabled = false,
+                channel = "WeCom",
+                webhookUrl = "",
+                types = Array.Empty<string>(),
+                version = opened,
+            }
+        );
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        Assert.True((await f.Services.GetRequiredService<ComplianceService>().Tx(AlertNotifier.Settings)).Enabled);
+    }
+
+    [Fact]
+    public async Task Audit_records_are_paged_back_without_gaps_or_repeats()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        // Several records share each timestamp, so the cursor has to break ties by id.
+        await service.Tx(async tx =>
+        {
+            for (var i = 0; i < 30; i++)
+                await tx.Audit("system", "Paging", i.ToString(), f.Clock.Now.AddSeconds(-1 - i / 4));
+            return true;
+        });
+        var all = (await f.Client.GetFromJsonAsync<AuditRecord[]>("/api/audit", Wire.Json))!;
+        var paged = new List<AuditRecord>();
+        string query = "limit=7";
+        while (true)
+        {
+            var page = (await f.Client.GetFromJsonAsync<AuditRecord[]>("/api/audit?" + query, Wire.Json))!;
+            paged.AddRange(page);
+            if (page.Length < 7)
+                break;
+            var last = page[^1];
+            query =
+                $"limit=7&before={Uri.EscapeDataString(last.At.ToString("O"))}&beforeId={Uri.EscapeDataString(last.Id)}";
+        }
+        Assert.Equal(all.Select(a => a.Id), paged.Select(a => a.Id));
+        Assert.Equal(30, paged.Count(a => a.Action == "Paging"));
+    }
 }

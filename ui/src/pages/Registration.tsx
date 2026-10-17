@@ -125,6 +125,7 @@ export function Registration({ session }: { session: Session }) {
               <Col xs={12} md={5}>
                 <Form.Item label="可登记台数">
                   <InputNumber
+                    precision={0}
                     aria-label="可登记台数"
                     min={1}
                     max={500}

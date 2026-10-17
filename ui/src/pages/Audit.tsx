@@ -1,7 +1,21 @@
-import { Table, Typography } from "antd";
+import { useState } from "react";
+import { App, Button, Table, Typography } from "antd";
+import { request } from "../api";
 import { useResource } from "../useResource";
-import { auditActionLabel, Empty, Fresh, PageHeading, Panel, time, UpdatedAt } from "../components";
+import {
+  auditActionLabel,
+  Empty,
+  errorText,
+  Fresh,
+  PageHeading,
+  Panel,
+  time,
+  UpdatedAt,
+} from "../components";
 import type { Audit } from "../types";
+
+/** The page refreshes the newest records; earlier ones are fetched a page at a time behind them. */
+const PAGE = 500;
 
 const systemActors: Record<string, string> = {
   system: "系统",
@@ -10,7 +24,34 @@ const systemActors: Record<string, string> = {
 };
 
 export function AuditPage() {
-  const data = useResource<Audit[]>("/api/audit");
+  const { message } = App.useApp();
+  const data = useResource<Audit[]>(`/api/audit?limit=${PAGE}`);
+  const [older, setOlder] = useState<Audit[]>([]);
+  const [olderDone, setOlderDone] = useState(false);
+  const [olderLoading, setOlderLoading] = useState(false);
+  const latest = data.data ?? [];
+  const known = new Set(latest.map((a) => a.id));
+  const rows = [...latest, ...older.filter((a) => !known.has(a.id))];
+  const done = olderDone || (data.data !== undefined && latest.length < PAGE);
+  const loadOlder = async () => {
+    const last = rows.at(-1);
+    if (!last) return;
+    setOlderLoading(true);
+    try {
+      const page = await request<Audit[]>(
+        `/api/audit?before=${encodeURIComponent(last.at)}&beforeId=${encodeURIComponent(last.id)}&limit=${PAGE}`,
+      );
+      setOlder((o) => {
+        const seen = new Set(o.map((a) => a.id));
+        return [...o, ...page.filter((a) => !seen.has(a.id))];
+      });
+      if (page.length < PAGE) setOlderDone(true);
+    } catch (e) {
+      message.error(`加载更早的审计记录失败：${errorText(e)}`);
+    } finally {
+      setOlderLoading(false);
+    }
+  };
   return (
     <>
       <PageHeading
@@ -22,7 +63,7 @@ export function AuditPage() {
         <Fresh error={data.error} loading={data.loading}>
           <Table<Audit>
             rowKey="id"
-            dataSource={data.data ?? []}
+            dataSource={rows}
             size="middle"
             scroll={{ x: 640 }}
             pagination={{ pageSize: 50, hideOnSinglePage: true, showSizeChanger: false }}
@@ -50,6 +91,19 @@ export function AuditPage() {
               },
             ]}
           />
+          {rows.length > 0 && (
+            <div style={{ marginTop: 16, textAlign: "center" }}>
+              {done ? (
+                <Typography.Text type="secondary">
+                  已显示全部 {rows.length} 条审计记录
+                </Typography.Text>
+              ) : (
+                <Button loading={olderLoading} onClick={loadOlder}>
+                  已显示最近 {rows.length} 条，加载更早的记录
+                </Button>
+              )}
+            </div>
+          )}
         </Fresh>
       </Panel>
     </>

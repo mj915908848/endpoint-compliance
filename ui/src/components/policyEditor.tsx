@@ -384,6 +384,7 @@ export function PolicyEditor({
           <Space wrap>
             <span>快速检查每</span>
             <InputNumber
+              precision={0}
               aria-label="快速检查间隔"
               min={1}
               max={60}
@@ -395,6 +396,7 @@ export function PolicyEditor({
             />
             <span>，完整检查每</span>
             <InputNumber
+              precision={0}
               aria-label="完整检查间隔"
               min={10}
               max={1440}
@@ -586,6 +588,7 @@ function SensitiveFilesSettings({
             <Space wrap>
               <span>每</span>
               <InputNumber
+                precision={0}
                 aria-label="敏感文件扫描间隔"
                 min={1}
                 max={168}
@@ -597,6 +600,7 @@ function SensitiveFilesSettings({
               />
               <span>扫描一次，每个范围最多上报</span>
               <InputNumber
+                precision={0}
                 aria-label="每个范围最多上报"
                 min={1}
                 max={1000}

@@ -94,21 +94,36 @@ function NotificationPanel({
     [secret, setSecret] = useState<string | null>(null),
     [types, setTypes] = useState(start.types),
     [consoleUrl, setConsoleUrl] = useState(start.consoleUrl || window.location.origin),
+    // The saved settings this form was filled from; a save over a newer one is refused.
+    [base, setBase] = useState(start.version),
     [busy, setBusy] = useState(false),
     [testing, setTesting] = useState(false),
     [error, setError] = useState<string | null>(null);
   const current = channels.find((c) => c.value === channel) ?? channels[0];
   const last = live.lastNotification;
 
+  const stale = !busy && saved.version !== base;
+  function reload() {
+    setEnabled(saved.enabled);
+    setChannel(saved.channel);
+    setUrl(saved.webhookUrl);
+    setSecret(null);
+    setTypes(saved.types);
+    setConsoleUrl(saved.consoleUrl || window.location.origin);
+    setBase(saved.version);
+    setError(null);
+  }
+
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      await request("/api/settings/notifications", {
+      const r = await request<{ version: string }>("/api/settings/notifications", {
         method: "PUT",
-        body: { enabled, channel, webhookUrl: url, secret, types, consoleUrl },
+        body: { enabled, channel, webhookUrl: url, secret, types, consoleUrl, version: base },
         csrfToken: session.csrfToken,
       });
+      setBase(r.version);
       setSecret(null);
       void message.success(enabled ? "已保存，出现新告警时会推送到群里" : "已保存，告警推送已关闭");
       refresh();
@@ -143,6 +158,19 @@ function NotificationPanel({
 
   return (
     <Panel title="告警推送">
+      {stale && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16, maxWidth: 640 }}
+          title="告警推送设置已被其他人修改。载入最新设置后再改，否则无法保存。"
+          action={
+            <Button size="small" onClick={reload}>
+              载入最新设置
+            </Button>
+          }
+        />
+      )}
       <Form layout="vertical" style={{ maxWidth: 640 }} onFinish={save}>
         <Form.Item
           label="推送新告警"
