@@ -143,6 +143,7 @@ public sealed class NotificationPipe(NotificationStore? store)
             )
         );
         using var slots = new SemaphoreSlim(5, 5);
+        var failed = false;
         while (!ct.IsCancellationRequested)
         {
             await slots.WaitAsync(ct);
@@ -178,11 +179,22 @@ public sealed class NotificationPipe(NotificationStore? store)
                 );
                 pipe = null;
             }
+            catch (IOException ex)
+            {
+                // A client that disconnects before the accept completes breaks only this instance; keep listening.
+                Console.Error.WriteLine($"托盘通知管道连接失败：{ex.Message}");
+                failed = true;
+            }
             finally
             {
                 pipe?.Dispose();
                 if (pipe is not null)
                     slots.Release();
+            }
+            if (failed)
+            {
+                failed = false;
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);
             }
         }
     }
