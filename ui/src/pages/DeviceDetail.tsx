@@ -44,6 +44,8 @@ export function DeviceDetailPage({
     report = useResource<Report>(detail.data?.snapshot ? `/api/devices/${encoded}/report` : null);
   const [busy, setBusy] = useState(false);
   const d = detail.data?.device;
+  // The name and note stay while a refresh fails, so a note being typed is not thrown away.
+  const known = d ?? detail.lastData?.device;
   const snapshot = detail.data?.snapshot;
   const pending = detail.data?.pendingCommands ?? 0;
   const complete = snapshot?.modules.filter((m) => m.status === "Complete").length ?? 0;
@@ -113,17 +115,16 @@ export function DeviceDetailPage({
         返回终端列表
       </Button>
       <PageHeading
-        title={d?.hostName ?? "终端详情"}
+        title={known?.hostName ?? "终端详情"}
         description={
-          d ? (
+          known ? (
             <Space orientation="vertical" size={2}>
               <DeviceNote
-                key={d.note}
-                note={d.note ?? ""}
+                note={known.note ?? ""}
                 canEdit={role(session, "Operator")}
                 onSave={saveNote}
               />
-              <span className="mono">设备 ID：{d.id}</span>
+              <span className="mono">设备 ID：{known.id}</span>
             </Space>
           ) : (
             "正在读取终端信息"

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultSensitiveFiles, describeChanges } from "../src/components";
@@ -177,6 +177,51 @@ describe("policy editor", () => {
       expect((screen.getByLabelText("策略名称") as HTMLInputElement).value).toBe("Renamed"),
     );
     expect(screen.queryByText(/已被他人更新/)).toBeNull();
+  });
+
+  it("refuses policy JSON the editor cannot show, naming the field, and keeps the draft", async () => {
+    stub(base, base);
+    renderPage();
+    const name = await screen.findByLabelText("策略名称");
+    await userEvent.type(name, "-mine");
+    for (const [json, problem] of [
+      ['{"products": [], "blockDomains": null}', "策略.blockDomains 应为文本列表"],
+      ['{"products": [{"id": "x", "name": "X"}]}', "策略.products[0].packageIds 应为文本列表"],
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name: "以 JSON 编辑" }));
+      fireEvent.change(await screen.findByLabelText("策略内容（JSON）"), {
+        target: { value: json },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "应用到编辑器" }));
+      expect(await screen.findByText((text) => text.includes(problem))).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    }
+    expect((screen.getByLabelText("策略名称") as HTMLInputElement).value).toBe("Default-mine");
+    // Role queries over the whole editor are slow in jsdom, and this opens the JSON dialog twice.
+  }, 60_000);
+
+  it("keeps the editor and unsaved changes when a refresh fails", async () => {
+    const release = (doc: Policy) => ({ payload: JSON.stringify(doc), signature: "s", keyId: "k" });
+    let failing = false;
+    vi.stubGlobal("fetch", async (url: string) => {
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (failing) return json({ error: "管理端不可用" }, 503);
+      if (url === "/api/policies")
+        return json([{ key: "default", isDefault: true, release: release(base), devices: 3 }]);
+      if (url === "/api/policies/template") return json(base);
+      return json([]);
+    });
+    renderPage();
+    await userEvent.type(await screen.findByLabelText("策略名称"), "-mine");
+    expect((screen.getByLabelText("策略名称") as HTMLInputElement).value).toBe("Default-mine");
+    failing = true;
+    await userEvent.click(screen.getByRole("button", { name: "刷新" }));
+    expect(await screen.findByText(/刷新失败，下面是上次读取的策略/)).toBeTruthy();
+    expect((screen.getByLabelText("策略名称") as HTMLInputElement).value).toBe("Default-mine");
   });
 
   it("shows result validity as twice the check intervals, without an input", async () => {
