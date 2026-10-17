@@ -27,6 +27,7 @@ public static class Migrations
         new(8, "device network addresses", DeviceNetwork),
         new(9, "session idle timeout", SessionActivity),
         new(10, "stored verdicts", StoredVerdicts),
+        new(11, "verdict history", VerdictHistory),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -178,6 +179,24 @@ public static class Migrations
         )
             await tx.Execute("ALTER TABLE devices ADD COLUMN " + column);
         await tx.Execute("CREATE INDEX IF NOT EXISTS devices_verdict_valid_until ON devices(verdict_valid_until)");
+    }
+
+    /// <summary>One row each time a device's stored verdict changes; existing devices get theirs on the next refresh.</summary>
+    static async Task VerdictHistory(Transaction tx)
+    {
+        await tx.Execute(
+            """
+            CREATE TABLE IF NOT EXISTS verdict_history(
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                at BIGINT NOT NULL,
+                verdict TEXT NOT NULL,
+                violation_count BIGINT NOT NULL,
+                policy_version BIGINT NOT NULL)
+            """
+        );
+        await tx.Execute("CREATE INDEX IF NOT EXISTS verdict_history_device ON verdict_history(device_id, at)");
+        await tx.Execute("CREATE INDEX IF NOT EXISTS verdict_history_at ON verdict_history(at)");
     }
 
     static async Task SettingsAndNotifications(Transaction tx)

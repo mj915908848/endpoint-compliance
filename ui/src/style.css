@@ -203,3 +203,11 @@ body {
     padding: 4px 12px 12px;
   }
 }
+
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 6px;
+}

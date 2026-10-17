@@ -24,9 +24,10 @@ import {
   ReportFindings,
   time,
   UpdatedAt,
+  VerdictHistory,
 } from "../components";
 import { role } from "../session";
-import type { DeviceDetail, Report, Session } from "../types";
+import type { DeviceDetail, Report, Session, VerdictChange } from "../types";
 
 export function DeviceDetailPage({
   id,
@@ -41,7 +42,8 @@ export function DeviceDetailPage({
   const refresh = useRefresh();
   const encoded = encodeURIComponent(id),
     detail = useResource<DeviceDetail>(`/api/devices/${encoded}`),
-    report = useResource<Report>(detail.data?.snapshot ? `/api/devices/${encoded}/report` : null);
+    report = useResource<Report>(detail.data?.snapshot ? `/api/devices/${encoded}/report` : null),
+    history = useResource<VerdictChange[]>(`/api/devices/${encoded}/history`);
   const [busy, setBusy] = useState(false);
   const d = detail.data?.device;
   // The name and note stay while a refresh fails, so a note being typed is not thrown away.
@@ -222,6 +224,15 @@ export function DeviceDetailPage({
                       </Space>
                     ) : (
                       <Empty title="暂无检查数据" />
+                    ),
+                  },
+                  {
+                    key: "history",
+                    label: "结论变化",
+                    children: (
+                      <Fresh error={history.error} loading={history.loading}>
+                        {history.data && <VerdictHistory changes={history.data} />}
+                      </Fresh>
                     ),
                   },
                   {

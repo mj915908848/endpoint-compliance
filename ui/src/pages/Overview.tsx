@@ -11,9 +11,11 @@ import {
   OverviewGuide,
   PageHeading,
   Panel,
+  trendOffset,
   UpdatedAt,
+  VerdictTrendChart,
 } from "../components";
-import type { Alert, DeviceSummary } from "../types";
+import type { Alert, DeviceSummary, TrendDay } from "../types";
 
 export function Overview({
   openDevice,
@@ -23,7 +25,8 @@ export function Overview({
   openAlerts: () => void;
 }) {
   const devices = useResource<DeviceSummary[]>("/api/devices"),
-    alerts = useResource<Alert[]>("/api/alerts");
+    alerts = useResource<Alert[]>("/api/alerts"),
+    trend = useResource<TrendDay[]>(`/api/devices/trend?days=30&offset=${trendOffset()}`);
   const stats = useMemo(() => {
     const all = devices.data ?? [];
     const online = all.filter((d) => d.onlineState === "Online");
@@ -73,6 +76,11 @@ export function Overview({
               />
             </Col>
           </Row>
+          <Panel title="近 30 天合规趋势">
+            <Fresh error={trend.error} loading={trend.loading}>
+              {trend.data && <VerdictTrendChart days={trend.data} />}
+            </Fresh>
+          </Panel>
           <Row gutter={[16, 16]}>
             <Col xs={24} xl={15}>
               <Panel title={`需要关注的终端（${attention.length}）`}>

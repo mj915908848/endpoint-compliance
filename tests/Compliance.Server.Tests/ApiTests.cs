@@ -436,6 +436,106 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Verdict_changes_are_recorded_once_each_and_shown_as_history_and_trend()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        async Task<VerdictChange[]> History() =>
+            (await f.Client.GetFromJsonAsync<VerdictChange[]>($"/api/devices/{f.Device}/history", Wire.Json))!;
+        async Task Snapshot(string id, long sequence) =>
+            await f.Agent(
+                "POST",
+                "/api/agent/events",
+                new EventBatch([
+                    new(
+                        id,
+                        sequence,
+                        f.Clock.Now,
+                        "Snapshot",
+                        "scan",
+                        new ScanSnapshot
+                        {
+                            DeviceId = f.Device,
+                            HostName = "host",
+                            CollectedAt = f.Clock.Now,
+                            PolicyVersion = 1,
+                            Evidence =
+                            [
+                                new("cursor", "Cursor", EvidenceKind.Installation, "Cursor", "registry", "已安装"),
+                            ],
+                        }
+                    ),
+                ])
+            );
+
+        // Enrolled without a scan: unknown, recorded by the first refresh.
+        Assert.Equal(1, await service.RefreshVerdicts());
+        Assert.Equal([Verdict.UNKNOWN], (await History()).Select(h => h.Verdict));
+        await Snapshot("s1", 1);
+        f.Clock.Now += TimeSpan.FromMinutes(1);
+        await Snapshot("s2", 2);
+        var changes = await History();
+        Assert.Equal([Verdict.UNKNOWN, Verdict.FAIL], changes.Select(h => h.Verdict));
+        Assert.Equal(1, changes[1].ViolationCount);
+
+        // The scan going stale makes the device unknown again once the refresh stores it.
+        f.Clock.Now += TimeSpan.FromHours(1);
+        // An hour idle signs the administrator out.
+        await f.Login();
+        Assert.Equal(1, await service.RefreshVerdicts());
+        Assert.Equal([Verdict.UNKNOWN, Verdict.FAIL, Verdict.UNKNOWN], (await History()).Select(h => h.Verdict));
+
+        var trend = (await f.Client.GetFromJsonAsync<TrendDay[]>("/api/devices/trend?days=3&offset=480", Wire.Json))!;
+        Assert.Equal(3, trend.Length);
+        Assert.Equal(new TrendDay(trend[2].Date, 0, 0, 1), trend[2]);
+
+        // Pruning old history keeps each device's latest change, so its state stays known.
+        f.Clock.Now += ComplianceService.VerdictHistoryRetention + TimeSpan.FromDays(1);
+        await service.Maintain();
+        await f.Login();
+        Assert.Equal(
+            [Verdict.UNKNOWN],
+            (await service.Tx(tx => tx.DeviceVerdictChanges(f.Device, DateTimeOffset.MinValue))).Select(h => h.Verdict)
+        );
+        Assert.Equal(HttpStatusCode.NotFound, (await f.Client.GetAsync("/api/devices/missing/history")).StatusCode);
+    }
+
+    [Fact]
+    public void Trend_counts_each_device_by_its_last_verdict_of_each_day_in_the_given_time_zone()
+    {
+        var zone = TimeSpan.FromHours(8);
+        // 2026-10-17 09:00 in UTC+8.
+        var now = new DateTimeOffset(2026, 10, 17, 1, 0, 0, TimeSpan.Zero);
+        var day1 = new DateTimeOffset(2026, 10, 15, 0, 0, 0, zone);
+        Assert.Equal(day1, VerdictTrend.Start(now, 3, zone));
+        VerdictChange C(string device, DateTimeOffset at, Verdict v) => new(device, at, v, 0, 1);
+        var trend = VerdictTrend.Daily(
+            now,
+            3,
+            zone,
+            [C("a", day1.AddDays(-3), Verdict.PASS)],
+            [
+                C("b", day1.AddHours(5), Verdict.FAIL),
+                C("a", day1.AddHours(6), Verdict.FAIL),
+                C("a", day1.AddHours(7), Verdict.UNKNOWN),
+                // 23:59 on the second day still counts for it; midnight belongs to the next.
+                C("b", day1.AddDays(2).AddMinutes(-1), Verdict.PASS),
+                C("c", day1.AddDays(2), Verdict.PASS),
+            ]
+        );
+        Assert.Equal(
+            [
+                new TrendDay(new(2026, 10, 15), 0, 1, 1),
+                new TrendDay(new(2026, 10, 16), 1, 0, 1),
+                new TrendDay(new(2026, 10, 17), 2, 0, 1),
+            ],
+            trend
+        );
+    }
+
+    [Fact]
     public async Task Publishing_a_policy_leaves_stored_verdicts_to_the_background_refresh()
     {
         await using var f = new Fixture();
