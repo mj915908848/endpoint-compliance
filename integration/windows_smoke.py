@@ -67,7 +67,7 @@ def screenshot(path):
         "$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size);"
         f"$i.Save('{path}')"
     )
-    result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True)
+    result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, errors="replace")
     if result.returncode != 0:
         print(f"Screenshot {path.name} failed: {result.stderr.strip()[:300]}")
 
@@ -308,7 +308,7 @@ try:
             with (data / name).open("w", encoding="utf-8") as log:
                 # Without an answer there is no console input: a prompt the config should have answered fails.
                 result = subprocess.run(install, input=answer, stdout=log, stderr=subprocess.STDOUT,
-                                        text=True, timeout=300)
+                                        text=True, errors="replace", timeout=300)
             print((data / name).read_text(encoding="utf-8", errors="replace"))
             assert (result.returncode == 0) == succeeds, f"Installer exited with {result.returncode}"
 
@@ -353,7 +353,7 @@ try:
              f"(@(Get-Item -LiteralPath '{agent_data}' -Force) + @(Get-ChildItem -LiteralPath '{agent_data}' -Force)) | "
              "ForEach-Object { $_.Name + ' ' + (Get-Acl -LiteralPath $_.FullName).GetOwner("
              "[Security.Principal.SecurityIdentifier]).Value }"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, errors="replace", timeout=60,
         ).stdout
         assert owners.strip() and all(
             line.split()[-1] in ("S-1-5-18", "S-1-5-32-544") for line in owners.splitlines() if line.strip()
@@ -370,7 +370,7 @@ try:
              f"$acl = Get-Acl -LiteralPath '{logs}'; 'protected ' + $acl.AreAccessRulesProtected; "
              "$acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | "
              "ForEach-Object { $_.IdentityReference.Value + ' ' + $_.AccessControlType + ' ' + $_.FileSystemRights }"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, errors="replace", timeout=60,
         ).stdout
         users = [line for line in rules.splitlines() if line.startswith("S-1-5-32-545 ")]
         assert "protected True" in rules and users and all(
@@ -389,10 +389,10 @@ try:
             ["powershell", "-NoProfile", "-Command",
              f"icacls '{agent_data}' /grant '*S-1-5-32-545:(OI)(CI)R' /Q | Out-Null; "
              "Restart-Service ComplianceAgent; (Get-Service ComplianceAgent).Status"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, errors="replace", timeout=120,
         )
         assert grant.returncode == 0 and "Running" in grant.stdout, f"Service did not restart: {grant.stdout}{grant.stderr}"
-        acl = subprocess.run(["icacls", str(agent_data)], capture_output=True, text=True).stdout
+        acl = subprocess.run(["icacls", str(agent_data)], capture_output=True, text=True, errors="replace").stdout
         assert "S-1-5-32-545" not in acl and "BUILTIN\\Users" not in acl, f"Users grant kept: {acl}"
         wait_reporting(before)
         deadline = time.monotonic() + 120
@@ -421,7 +421,7 @@ try:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
              str(package / "deploy/windows/Uninstall-TrialService.ps1"), "-Quiet"],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace", timeout=180,
         )
         installed = False
         assert result.returncode == 0 and not installed_tray.parent.exists(), \
@@ -473,7 +473,7 @@ try:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
              str(package / "deploy/windows/Install-TrialService.ps1"), "-PackageRoot", str(package)],
-            input="", stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, text=True, timeout=300,
+            input="", stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, text=True, errors="replace", timeout=300,
         )
         installed = True
         assert result.returncode == 0, "Script install before the MSI failed"
@@ -481,9 +481,9 @@ try:
         msiexec("/i", "msi-takeover.log")
         installed = False
         taken = wait_device(scripted["id"], since=scripted["lastHeartbeat"])
-        config = subprocess.run(["sc.exe", "qc", "ComplianceAgent"], capture_output=True, text=True).stdout
+        config = subprocess.run(["sc.exe", "qc", "ComplianceAgent"], capture_output=True, text=True, errors="replace").stdout
         assert "--config" in config and str(program).lower() in config.lower(), f"Service not the MSI's: {config}"
-        failure = subprocess.run(["sc.exe", "qfailure", "ComplianceAgent"], capture_output=True, text=True).stdout
+        failure = subprocess.run(["sc.exe", "qfailure", "ComplianceAgent"], capture_output=True, text=True, errors="replace").stdout
         assert failure.count("RESTART") >= 3, f"Service restarts on failure not configured: {failure}"
         print(f"PASS the MSI takes over a script install and keeps its enrollment ({taken['hostName']})")
         msiexec("/x", "msi-uninstall.log")
@@ -532,7 +532,7 @@ try:
         result = subprocess.run(
             [str(program / "Compliance.Agent.exe"), "--config", str(agent_data / "agent.json"), "--server", base,
              "--enroll", "--code", code, "--result", str(outcome)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, errors="replace", timeout=120,
         )
         assert result.returncode == 0, f"Enrollment failed: {outcome.read_text(encoding='utf-8') if outcome.exists() else result.stdout}"
         assert "登记成功" in outcome.read_text(encoding="utf-8")
