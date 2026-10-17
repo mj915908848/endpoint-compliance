@@ -111,13 +111,13 @@ python3 integration/e2e.py
 需要发版时手动运行 [Release 流程](.github/workflows/release.yml)（`gh workflow run release.yml`），它把 main 上最新且 CI 已通过的提交发布为一个版本：版本号为 `VERSION` 文件（如 `0.2`）加发布序号，依次为 0.2.0、0.2.1……附带：
 
 - `compliance-client-<版本>-windows-x64.msi`：Windows 客户端安装包，附在 Releases 页；
-- 管理端镜像 `ghcr.io/mj915908848/compliance-server:<版本>`（同时更新 `latest`），服务器上用 `install.sh` 拉取。
+- 管理端镜像 `ghcr.io/mj915908848/compliance-server:<版本>`（同时更新 `latest`），服务器上 `docker compose pull` 拉取。
 
 发布说明自动列出上个版本以来的提交。要升大版本时修改 `VERSION`，序号从 0 重新开始。本地打包 MSI 用 `python3 scripts/package.py --msi`（仅 Windows），生成的版本号带 `-dev` 后缀。
 
 ## 生产部署
 
-- 管理端：推荐用 Docker 部署（含 PostgreSQL）：在 Linux 服务器上下载 `deploy/docker` 的部署文件，运行 `sudo ./install.sh --domain 域名 --cert 证书 --key 私钥`，从 ghcr.io 拉取镜像，自动生成密码和配置并启动；再次运行即备份并升级。可经网关反向代理，见 `deploy/docker/README.md`；不用 Docker 时需要 PostgreSQL、客户信任的 HTTPS 证书、持久的策略签名密钥和独立的管理账号，见 `deploy/server/README.md`。
+- 管理端：推荐用 Docker 部署（含 PostgreSQL）：在 Linux 服务器上下载 `deploy/docker` 的 `compose.yml` 等文件，放证书、填 `.env`，`docker compose up -d` 启动，从 ghcr.io 拉取镜像；升级用 `./backup.sh && docker compose pull && docker compose up -d`。可经网关反向代理，见 `deploy/docker/README.md`；不用 Docker 时需要 PostgreSQL、客户信任的 HTTPS 证书、持久的策略签名密钥和独立的管理账号，见 `deploy/server/README.md`。
 - 客户端：双击发布的 MSI，装完在弹出的窗口填写管理端地址和登记码（MSI 旁放“终端登记”页下载的登记配置时自动填好），或用 `msiexec /i … SERVERURL=… CODE=… /qn` 批量静默安装；升级直接装新版本 MSI，以前用 zip 包脚本装过的电脑也一样，登记保留。正式部署只连接 HTTPS 管理端，不支持跳过证书校验。见 `deploy/windows/客户端安装说明.md` 和 `deploy/windows/README.md`。
 - 初始策略为审计模式。强制模式只能发布给新建策略中指定的终端，且这些终端必须先报告所需防护措施「可启用」。
 

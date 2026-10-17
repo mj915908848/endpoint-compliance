@@ -1,0 +1,7 @@
+# Builds the server image from this repository instead of pulling it:
+#   docker compose -f compose.yml -f compose.build.yml up -d --build
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile

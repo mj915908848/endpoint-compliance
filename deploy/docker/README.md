@@ -2,56 +2,58 @@
 
 ## 部署
 
-一台装有 Docker（含 `docker compose` 插件）的 Linux 服务器即可，PostgreSQL 一起在容器里运行。
+一台装有 Docker（含 `docker compose` 插件）的 Linux 服务器即可，PostgreSQL 一起在容器里运行。管理端镜像是 `ghcr.io/mj915908848/compliance-server`，启动时自动拉取。
 
-1. 在服务器上新建部署目录，下载本目录的部署文件（镜像不用下载，脚本会从 `ghcr.io/mj915908848/compliance-server` 拉取）：
+1. 新建部署目录，下载部署文件：
 
    ```bash
    mkdir compliance && cd compliance
-   for f in compose.yml .env.example install.sh backup.sh README.md; do
+   for f in compose.yml .env.example backup.sh README.md; do
      curl -fsSLO "https://raw.githubusercontent.com/mj915908848/endpoint-compliance/main/deploy/docker/$f"
    done
-   chmod +x install.sh backup.sh
+   chmod +x backup.sh
    ```
 
-   服务器要能访问 `raw.githubusercontent.com` 和 `ghcr.io`；访问不了时给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`）。也可以直接用仓库里的本目录（`git clone` 后 `cd deploy/docker`），加 `--build` 从源码构建，需要几分钟和外网访问 Docker Hub、npm、NuGet。
+   服务器要能访问 `raw.githubusercontent.com` 和 `ghcr.io`；拉不下镜像时给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`）。
 
-2. 运行，`--domain` 填客户端访问管理端用的域名，证书用客户信任的泛域名证书（如 `*.example.com`，证书文件必须包含中间证书）：
-
-   ```bash
-   sudo ./install.sh --domain compliance.example.com --cert /path/to/fullchain.pem --key /path/to/privkey.key
-   ```
-
-   PFX 证书用 `--pfx 证书.pfx --pfx-password 密码`；端口不是 443 时加 `--port 8443`。先试用时可以不给证书，脚本会生成自签证书，之后再用 `--cert`、`--key` 运行一次即换成正式证书。
-
-   脚本会生成 `.env`（随机的数据库密码和管理员密码）、放好证书、拉取镜像、启动并确认能访问，最后显示地址、管理员账号和密码。密码同时保存在 `.env` 里，登录后请在右上角「修改密码」。
-
-3. 给服务器加内网 DNS 记录，例如 `compliance.example.com` 指向这台服务器，浏览器打开显示的地址登录。
-
-4. 立即做一次备份（见下）。
-
-经网关转发到 HTTP（见下文“经网关反向代理”方式二）时不放证书，改为：`sudo ./install.sh --http --trusted-proxy 网关的IP --port 8443`。
-
-`./install.sh --help` 列出全部选项。再次运行 `./install.sh` 是安全的：已有的 `.env`、证书、数据和签名密钥都保留，运行中的管理端会先自动备份。
-
-### 手动部署
-
-不用脚本时，按以下步骤操作（脚本做的就是这些）：
-
-1. 放证书（经网关转发到 HTTP 时不需要）：
+2. 放证书（经网关转发到 HTTP 时不需要，见下文“经网关反向代理”方式二）。用客户信任的泛域名证书（如 `*.example.com`），证书文件必须包含中间证书：
 
    ```bash
    mkdir certs
-   cp /path/to/fullchain.pem certs/cert.pem   # 证书，必须包含中间证书
+   cp /path/to/fullchain.pem certs/cert.pem   # 证书
    cp /path/to/privkey.key   certs/key.pem    # 私钥
-   sudo chown -R 1654:1654 certs && chmod 600 certs/*
+   sudo chown -R 1654:1654 certs && sudo chmod 600 certs/*
    ```
 
-   容器内以 uid 1654（非 root）运行，私钥要让它读得到。PFX 格式的证书见 `.env.example`。
+   容器内以 uid 1654（非 root）运行，私钥要让它读得到。PFX 格式的证书见 `.env.example`。先试用、还没有证书时可以生成自签证书（客户端会校验证书，正式使用前要换掉，或把 `certs/cert.pem` 导入各终端的“受信任的根证书颁发机构”）：
 
-2. 写配置：`cp .env.example .env && vi .env`。必填：`DB_PASSWORD`（只用字母数字）、`ADMIN_PASSWORD`（至少 16 位）。证书文件名不同时修改证书那两行。
+   ```bash
+   sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=compliance.example.com" \
+     -addext "subjectAltName=DNS:compliance.example.com" -keyout certs/key.pem -out certs/cert.pem
+   ```
 
-3. 启动：`docker compose pull && docker compose up -d`（或从源码构建 `docker compose up -d --build`），`docker compose logs -f server` 出现 `Now listening on` 即启动完成。
+3. 写配置：
+
+   ```bash
+   cp .env.example .env && chmod 600 .env && vi .env
+   ```
+
+   必填 `DB_PASSWORD`（只用字母数字，可用 `openssl rand -hex 16` 生成）和 `ADMIN_PASSWORD`（至少 16 位）。端口不是 443 时改 `HTTPS_PORT`，证书文件名不同时改证书那两行。
+
+4. 启动：
+
+   ```bash
+   docker compose up -d
+   docker compose logs -f server
+   ```
+
+   出现 `Now listening on` 即启动完成，按 Ctrl+C 退出日志。
+
+5. 给服务器加内网 DNS 记录，例如 `compliance.example.com` 指向这台服务器，浏览器打开 `https://compliance.example.com` 用 `.env` 里的管理员账号登录，再在右上角「修改密码」。
+
+6. 立即做一次备份（见下）。
+
+在源码仓库里也可以从源码构建：`cd deploy/docker && docker compose -f compose.yml -f compose.build.yml up -d --build`，需要几分钟和外网访问 Docker Hub、npm、NuGet。
 
 ## 客户端
 
@@ -164,7 +166,7 @@ docker compose restart server
 
 在 `backups/<时间>/` 下生成数据库备份 `compliance.dump` 和策略签名密钥 `signing.key`（正在更换密钥时还有新密钥 `signing.key.next`），请拷贝到别的机器保存。**签名密钥丢失后，所有已登记终端都会拒收新策略，只能逐台重新登记。**
 
-恢复到新服务器：先按“手动部署”完成第 1–2 步但不要启动，然后：
+恢复到新服务器：先按“部署”完成第 1–3 步但不要启动，然后：
 
 ```bash
 docker compose up -d db
@@ -186,20 +188,16 @@ docker compose up -d
 **升级管理端**：在服务器的部署目录运行
 
 ```bash
-sudo ./install.sh
-```
-
-脚本先备份，再拉取最新镜像并换成新版本；数据库结构在启动时自动升级。要停在某个版本时加 `--version 0.2.24`（写进 `.env` 的 `COMPLIANCE_VERSION`，之后升级也停在这个版本），`--version latest` 恢复跟随最新版。
-
-0.2.23 及以前的部署用的是 Releases 页的镜像包。升级时先按“部署”第 1 步把新的部署文件下载到原来的部署目录（覆盖 `compose.yml`、`install.sh`、`backup.sh`，`.env` 和证书不动），再运行 `sudo ./install.sh`。改过 `compose.yml` 的，把改动补回新文件。不用脚本时：
-
-```bash
 ./backup.sh
 docker compose pull
 docker compose up -d
 ```
 
-在服务器上从源码构建同样可用：更新源码后 `./install.sh --build`（或 `docker compose up -d --build`）。
+先备份，再拉取最新镜像并换成新版本；数据库结构在启动时自动升级。要停在某个版本时，在 `.env` 里写 `COMPLIANCE_VERSION=0.2.24`，删掉这一行即恢复跟随最新版。
+
+0.2.23 及以前的部署用的是 Releases 页的镜像包：先把新的 `compose.yml`、`backup.sh`（下载方法见“部署”第 1 步）覆盖到原来的部署目录，`.env` 和证书不动，改过 `compose.yml` 的把改动补回新文件，再按上面三条命令升级。
+
+在源码仓库里从源码构建同样可用：更新源码后 `docker compose -f compose.yml -f compose.build.yml up -d --build`。
 
 **数据保留**：管理端每小时自动清理一次：检查结果的上报记录保留 1 天（每台设备最新的检查结果另存，不受影响），告警、违规等其他上报记录保留 90 天，已恢复的告警保留 180 天（未恢复的一直保留），过期的登录会话和检查请求也一并删除。保留天数可在 `compose.yml` 的 `server` 环境变量里调整，例如加 `Compliance__EventRetentionDays: "180"`、`Compliance__AlertRetentionDays: "365"`。管理页面 30 分钟未操作会自动退出（页面自动刷新不算操作），可用 `Compliance__SessionIdleMinutes` 调整，设为 `0` 关闭；无论是否操作，登录 8 小时后都需重新登录。告警中心默认列出未恢复的告警和最近 30 天恢复的，更早的在“已恢复”筛选下点“加载 30 天前恢复的告警”查看。
 
