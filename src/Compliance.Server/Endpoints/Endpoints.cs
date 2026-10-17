@@ -15,6 +15,7 @@ static partial class Endpoints
         MapPolicies(app, s);
         MapAgent(app, s);
         MapSettings(app, s, notifier);
+        MapPackages(app, s);
     }
 
     static UserRecord Require(HttpContext c, string role)

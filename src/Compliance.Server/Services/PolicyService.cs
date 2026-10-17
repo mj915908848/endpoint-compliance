@@ -304,5 +304,7 @@ public sealed class PolicyService(Settings settings, TimeProvider clock) : IDisp
 
     public SignedPolicy Sign(PolicyDocument doc) => PolicyCrypto.Sign(doc, signer, KeyId);
 
+    public SignedClientPackage Sign(ClientPackage package) => PackageCrypto.Sign(package, signer, KeyId);
+
     public void Dispose() => signer.Dispose();
 }

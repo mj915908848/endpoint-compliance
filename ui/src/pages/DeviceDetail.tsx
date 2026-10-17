@@ -69,6 +69,28 @@ export function DeviceDetailPage({
       setBusy(false);
     }
   }
+  function upgrade() {
+    modal.confirm({
+      title: "升级这台终端的客户端？",
+      content:
+        "终端下次联系管理端时下载最新上传的客户端安装包并安装，期间托盘会关闭，员工下次登录时恢复。一天内未联系管理端则取消。",
+      okText: "发送升级",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await request(`/api/devices/${encoded}/commands`, {
+            method: "POST",
+            body: { type: "Upgrade" },
+            csrfToken: session.csrfToken,
+          });
+          message.success("已发送升级请求");
+          refresh();
+        } catch (e) {
+          message.error(errorText(e));
+        }
+      },
+    });
+  }
   async function saveNote(note: string) {
     await request(`/api/devices/${encoded}/note`, {
       method: "PUT",
@@ -139,6 +161,9 @@ export function DeviceDetailPage({
               <Button loading={busy} disabled={!d} onClick={scan}>
                 请求重新检查
               </Button>
+            )}
+            {role(session, "Operator") && d?.agentOutdated && (
+              <Button onClick={upgrade}>升级客户端</Button>
             )}
             <Dropdown
               disabled={!report.data}

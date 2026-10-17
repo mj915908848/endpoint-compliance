@@ -29,3 +29,5 @@ export type PolicyHistoryItem = Schemas["PolicyHistoryItem"];
 export type EnrollmentCode = Schemas["EnrollmentCode"];
 export type TrendDay = Schemas["TrendDay"];
 export type VerdictChange = Schemas["VerdictChange"];
+export type ClientPackage = Schemas["ClientPackageItem"];
+export type UpgradeRollout = Schemas["UpgradeRollout"];

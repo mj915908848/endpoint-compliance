@@ -21,12 +21,14 @@ public sealed class ComplianceService : IDisposable
         Verdicts = new(store, Policies, clock);
         Ingest = new(Verdicts, Policies, clock);
         Housekeeping = new(store, settings, clock);
+        Packages = new(settings, Policies, clock);
     }
 
     public PolicyService Policies { get; }
     public VerdictService Verdicts { get; }
     public IngestService Ingest { get; }
     public Housekeeping Housekeeping { get; }
+    public PackageService Packages { get; }
 
     public DateTimeOffset Now => clock.GetUtcNow();
 

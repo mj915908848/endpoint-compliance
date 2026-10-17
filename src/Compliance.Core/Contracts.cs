@@ -319,7 +319,8 @@ public record EventBatch(AgentEvent[] Events);
 
 public record EventReceipt(string[] AcceptedEventIds);
 
-public record DeviceCommand(string Id, string Type, DateTimeOffset ExpiresAt);
+/// <param name="Version">For <c>Upgrade</c>: the <see cref="ClientPackage.Version"/> to install.</param>
+public record DeviceCommand(string Id, string Type, DateTimeOffset ExpiresAt, string? Version = null);
 
 public record CommandReply(bool Success, string Detail);
 

@@ -157,6 +157,29 @@ static partial class Endpoints
             )
             .Accepts<EventBatch>(JsonBody);
 
+        // What an upgrade command installs: the signed description first, which the client checks, then the file.
+        group.MapGet(
+            "/client-packages/{version}",
+            async Task<SignedClientPackage> (string version) =>
+                await s.Tx(async tx =>
+                    (await tx.GetClientPackage(version) ?? throw new ApiError(404, "Package not found")).Signed
+                )
+        );
+
+        group.MapGet(
+            "/client-packages/{version}/file",
+            async (string version) =>
+            {
+                var package = await s.Tx(async tx =>
+                    await tx.GetClientPackage(version) ?? throw new ApiError(404, "Package not found")
+                );
+                var path = s.Packages.FilePath(package.Package);
+                if (!File.Exists(path))
+                    throw new ApiError(404, "Package file missing");
+                return Results.File(path, "application/x-msi", version + ".msi");
+            }
+        );
+
         group.MapGet(
             "/commands",
             async Task<DeviceCommand[]> (HttpContext c) =>
@@ -184,7 +207,12 @@ static partial class Endpoints
                         if (command.Reply == null)
                         {
                             await tx.SetCommandReply(id, reply with { Detail = EvidenceSanitizer.Clean(reply.Detail) });
-                            await tx.Audit(deviceId, "ScanReply", id, s.Now);
+                            await tx.Audit(
+                                deviceId,
+                                command.Command.Type == PackageService.Upgrade ? "UpgradeReply" : "ScanReply",
+                                id,
+                                s.Now
+                            );
                         }
                         return new Done();
                     });

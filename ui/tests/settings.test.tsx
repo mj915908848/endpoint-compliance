@@ -54,7 +54,9 @@ describe("system settings", () => {
         ? settings
         : c.url === "/api/status"
           ? { mode: "Production", storage: "Postgres", networkCapabilities: [], policyKeyId: "k" }
-          : { ok: true },
+          : c.url === "/api/client-packages"
+            ? []
+            : { ok: true },
     );
     render(
       <Providers>

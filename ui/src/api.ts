@@ -43,6 +43,8 @@ export async function request<T>(
   options: {
     method?: string;
     body?: unknown;
+    /** Sent as is instead of a JSON body, such as an uploaded installer. */
+    file?: Blob;
     csrfToken?: string;
     signal?: AbortSignal;
   } = {},
@@ -50,6 +52,7 @@ export async function request<T>(
   if (!path.startsWith("/api/")) throw new Error("只允许管理端 API 路径");
   const headers = new Headers();
   if (options.body !== undefined) headers.set("Content-Type", "application/json");
+  if (options.file) headers.set("Content-Type", "application/octet-stream");
   if (options.csrfToken) headers.set("X-CSRF-Token", options.csrfToken);
   headers.set("X-Idle-Seconds", String(Math.floor(idleMs() / 1000)));
   let response: Response;
@@ -58,7 +61,7 @@ export async function request<T>(
       method: options.method ?? "GET",
       credentials: "same-origin",
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.file ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
       signal: options.signal,
     });
   } catch (error) {

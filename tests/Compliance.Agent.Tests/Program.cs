@@ -1963,6 +1963,71 @@ await Check(
         await Task.CompletedTask;
     }
 );
+await Check(
+    "an upgrade installs only a package the server's key signed and the download matches",
+    async () =>
+    {
+        using var serverKey = System.Security.Cryptography.ECDsa.Create(
+            System.Security.Cryptography.ECCurve.NamedCurves.nistP256
+        );
+        using var otherKey = System.Security.Cryptography.ECDsa.Create(
+            System.Security.Cryptography.ECCurve.NamedCurves.nistP256
+        );
+        using var deviceKey = System.Security.Cryptography.ECDsa.Create(
+            System.Security.Cryptography.ECCurve.NamedCurves.nistP256
+        );
+        var file = new byte[4096];
+        Random.Shared.NextBytes(file);
+        PackageCrypto.MsiSignature.CopyTo(file);
+        var package = new ClientPackage(
+            "99.0.0",
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)),
+            file.Length,
+            DateTimeOffset.UtcNow
+        );
+        var dir = Path.Combine(Path.GetTempPath(), "compliance-upgrade-" + Guid.NewGuid());
+        try
+        {
+            async Task<(CommandReply Reply, string? Installer)> Prepare(
+                SignedClientPackage signed,
+                byte[] served,
+                string version = "99.0.0"
+            )
+            {
+                using var client = new HttpClient(new PackageHandler(signed, served));
+                var api = new AgentApi(client, new Uri("https://server.test"), "device-1", deviceKey);
+                return await ClientUpgrade.PrepareAsync(
+                    api,
+                    new DeviceCommand("c-1", ClientUpgrade.Command, DateTimeOffset.UtcNow.AddHours(1), version),
+                    serverKey.ExportSubjectPublicKeyInfoPem(),
+                    dir,
+                    CancellationToken.None
+                );
+            }
+            var good = await Prepare(PackageCrypto.Sign(package, serverKey, "k"), file);
+            Assert(good.Reply.Success && good.Installer is not null, "good package: " + good.Reply.Detail);
+            Assert(File.ReadAllBytes(good.Installer!).SequenceEqual(file), "installer content");
+
+            var forged = await Prepare(PackageCrypto.Sign(package, otherKey, "k"), file);
+            Assert(!forged.Reply.Success && forged.Installer is null, "another key: " + forged.Reply.Detail);
+
+            var tampered = (byte[])file.Clone();
+            tampered[^1] ^= 1;
+            var swapped = await Prepare(PackageCrypto.Sign(package, serverKey, "k"), tampered);
+            Assert(!swapped.Reply.Success && swapped.Installer is null, "changed file: " + swapped.Reply.Detail);
+            Assert(Directory.GetFiles(Path.Combine(dir, "updates"), "*.msi").Length == 0, "changed file kept");
+
+            var older = await Prepare(PackageCrypto.Sign(package, serverKey, "k"), file, "0.0.1");
+            Assert(older.Installer is null, "older version installed: " + older.Reply.Detail);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, true);
+        }
+    }
+);
+
 if (OperatingSystem.IsWindows())
 {
     // Only an administrator can use a directory limited to SYSTEM and Administrators; CI runners are elevated.
@@ -2288,6 +2353,23 @@ else
 foreach (var error in failures)
     Console.Error.WriteLine(error);
 return failures.Count == 0 ? 0 : 1;
+
+/// <summary>Serves one client package: its signed description, then its file.</summary>
+sealed class PackageHandler(SignedClientPackage signed, byte[] file) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken
+    ) =>
+        Task.FromResult(
+            new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = request.RequestUri!.AbsolutePath.EndsWith("/file", StringComparison.Ordinal)
+                    ? new ByteArrayContent(file)
+                    : new StringContent(Wire.Serialize(signed)),
+            }
+        );
+}
 
 sealed class DelayedHandler : HttpMessageHandler
 {

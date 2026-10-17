@@ -28,6 +28,7 @@ public static class Migrations
         new(9, "session idle timeout", SessionActivity),
         new(10, "stored verdicts", StoredVerdicts),
         new(11, "verdict history", VerdictHistory),
+        new(12, "client packages", ClientPackages),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -182,6 +183,24 @@ public static class Migrations
     }
 
     /// <summary>One row each time a device's stored verdict changes; existing devices get theirs on the next refresh.</summary>
+    static async Task ClientPackages(Transaction tx)
+    {
+        await tx.Execute(
+            """
+            CREATE TABLE IF NOT EXISTS client_packages(
+                version TEXT PRIMARY KEY,
+                sha256 TEXT NOT NULL,
+                size BIGINT NOT NULL,
+                uploaded_at BIGINT NOT NULL,
+                uploaded_by TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                key_id TEXT NOT NULL)
+            """
+        );
+        await tx.Execute("ALTER TABLE commands ADD COLUMN version TEXT NULL");
+    }
+
     static async Task VerdictHistory(Transaction tx)
     {
         await tx.Execute(
