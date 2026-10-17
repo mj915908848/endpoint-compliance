@@ -596,15 +596,12 @@ public sealed class ComplianceService(Store store, Settings settings, TimeProvid
         var report = ReportEngine.Evaluate(policy, snapshot, Now);
         await SensitiveFileAlerts(tx, device, policy, sequence);
         // Sensitive files get one alert per file from SensitiveFileAlerts, also when their rule makes the device fail.
-        var confirmed =
-            report.Verdict == Verdict.FAIL
-                ? snapshot
-                    .Evidence.Where(e =>
-                        e.Kind != EvidenceKind.SensitiveFile
-                        && ReportEngine.Evaluate(policy, snapshot with { Evidence = [e] }, Now).Verdict == Verdict.FAIL
-                    )
-                    .ToArray()
-                : [];
+        // The report says which evidence fails the device; judging each piece again in a snapshot of its own gave
+        // the same answer at the cost of a whole evaluation per piece.
+        var confirmed = report
+            .ConfirmedEvidence.Select(i => snapshot.Evidence[i])
+            .Where(e => e.Kind != EvidenceKind.SensitiveFile)
+            .ToArray();
 
         string ObjectId(Evidence e) =>
             e.ProductId + "|" + (e.UserSid ?? "machine") + (e.Kind == EvidenceKind.Proxy ? "|" + e.ObjectKey : "");

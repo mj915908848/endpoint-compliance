@@ -278,6 +278,13 @@ public record ComplianceReport(
     /// </summary>
     [JsonIgnore]
     public DateTimeOffset? ValidUntil { get; init; }
+
+    /// <summary>
+    /// Positions in the judged snapshot's evidence of the evidence that makes it fail, so callers need not judge each
+    /// piece again. Not part of the report itself.
+    /// </summary>
+    [JsonIgnore]
+    public int[] ConfirmedEvidence { get; init; } = [];
 }
 
 public record AgentEvent(

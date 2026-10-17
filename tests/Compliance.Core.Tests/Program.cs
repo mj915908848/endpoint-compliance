@@ -813,6 +813,14 @@ Test(
             ];
             var snapshot = clean with { CollectedAt = At(30), Modules = modules, Evidence = evidence };
             var report = ReportEngine.Evaluate(policy, snapshot, now);
+            // The evidence the report names as failing is what judging each piece on its own finds.
+            var alone = Enumerable
+                .Range(0, evidence.Length)
+                .Where(j =>
+                    ReportEngine.Evaluate(policy, snapshot with { Evidence = [evidence[j]] }, now).Verdict
+                    == Verdict.FAIL
+                );
+            Eq(string.Join(",", alone), string.Join(",", report.ConfirmedEvidence));
             if (report.ValidUntil is not { } until)
                 continue;
             timed++;
