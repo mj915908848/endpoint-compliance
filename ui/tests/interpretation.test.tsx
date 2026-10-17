@@ -131,7 +131,7 @@ describe("sensitive file report", () => {
       },
     };
     render(<ReportFindings report={report} />);
-    expect(screen.getByText("敏感文件（1）")).toBeTruthy();
+    expect(screen.getByText("1 条")).toBeTruthy();
     expect(screen.getByText("D:\\资料\\机密名单.xlsx")).toBeTruthy();
     expect(screen.getByText("敏感文件：D 盘 命中过多，仅列出部分")).toBeTruthy();
     expect(screen.getAllByText("D 盘").length).toBeGreaterThan(0);

@@ -186,7 +186,7 @@ describe("device detail", () => {
     const report: Report = {
       verdict: "FAIL",
       summary: "不通过：发现 1 个违规对象",
-      reasons: ["Cursor：已安装（整机）"],
+      reasons: ["Cursor（整机）：安装记录，共 1 条证据"],
       coverageGaps: [],
       violationCount: 1,
       evidenceCount: 1,
@@ -206,10 +206,11 @@ describe("device detail", () => {
       return json([]);
     });
     renderAt("/devices/dev-1");
-    expect(await screen.findByText("Cursor：已安装（整机）")).toBeTruthy();
+    expect(await screen.findByText("Cursor 已安装")).toBeTruthy();
     expect(screen.getAllByText(/发现 1 个违规对象/)).toHaveLength(1);
-    expect(screen.getByText("软件安装与运行（1）")).toBeTruthy();
-    expect(screen.getByText("未发现代理设置。")).toBeTruthy();
+    expect(screen.getByText("违规对象").parentElement?.textContent).toBe("违规对象1");
+    expect(screen.getByText("软件安装与运行")).toBeTruthy();
+    expect(screen.getByText("1 条")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "检查覆盖（1/1）" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: /全部证据/ })).toBeNull();
   });
