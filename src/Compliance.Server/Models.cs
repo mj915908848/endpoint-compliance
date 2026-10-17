@@ -106,6 +106,17 @@ public sealed record VerdictChange(
     long PolicyVersion
 );
 
+public static class DeviceStatus
+{
+    /// <summary>Online until 3 minutes without a heartbeat, then suspected offline, and offline from 5 minutes.</summary>
+    public static string Online(DeviceRecord device, DateTimeOffset now)
+    {
+        if (device.LastHeartbeat is null || now - device.LastHeartbeat >= TimeSpan.FromMinutes(5))
+            return "Offline";
+        return now - device.LastHeartbeat >= TimeSpan.FromMinutes(3) ? "SuspectedOffline" : "Online";
+    }
+}
+
 public sealed record SnapshotIncident(string Id, string DeviceId, string Scope, string[] Modules);
 
 public sealed record StoredEvent(string Fingerprint, AgentEvent Event, DateTimeOffset ReceivedAt);

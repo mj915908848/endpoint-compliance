@@ -45,7 +45,7 @@ static partial class Endpoints
                         // Publishing reassigns only the devices it can see, so a device enrolled while a publish
                         // is uncommitted would keep the old default release. Waiting for the policy lock makes the
                         // version read below the one any concurrent publish commits.
-                        await tx.Lock(ComplianceService.PolicyLock);
+                        await tx.Lock(PolicyService.PolicyLock);
                         var hash = Secrets.Hash(r.Code);
                         var code = await tx.GetCode(hash);
                         if (code == null || code.Revoked || code.Uses >= code.MaxUses || code.ExpiresAt <= s.Now)
@@ -55,7 +55,7 @@ static partial class Endpoints
 
                         var id = Guid.NewGuid().ToString();
                         // A new device has an id no policy lists yet, so it starts on the default policy.
-                        var target = Wire.Read<PolicyDocument>((await s.CurrentRelease(tx)).Payload).Serial;
+                        var target = Wire.Read<PolicyDocument>((await s.Policies.CurrentRelease(tx)).Payload).Serial;
                         await tx.InsertDevice(
                             new DeviceRecord(
                                 id,
@@ -71,7 +71,7 @@ static partial class Endpoints
                             code.Label.Length > 0 ? $"{id}（登记码“{code.Label}”）" : id,
                             s.Now
                         );
-                        return new EnrollmentResponse(id, s.PublicKey, s.KeyId);
+                        return new EnrollmentResponse(id, s.Policies.PublicKey, s.Policies.KeyId);
                     });
                 }
             )
@@ -139,7 +139,7 @@ static partial class Endpoints
         group.MapGet(
             "/policy",
             async Task<SignedPolicy> (HttpContext c) =>
-                await s.Tx(async tx => await s.AssignedPolicy(tx, await s.DeviceHead(tx, Agent(c))))
+                await s.Tx(async tx => await s.Policies.AssignedPolicy(tx, await s.DeviceHead(tx, Agent(c))))
         );
 
         group.MapPost(
@@ -147,7 +147,7 @@ static partial class Endpoints
             async (HttpContext c) =>
             {
                 var batch = await Body<EventBatch>(c);
-                return await s.Tx(tx => s.Events(tx, Agent(c), batch));
+                return await s.Tx(tx => s.Ingest.Events(tx, Agent(c), batch));
             }
         );
 

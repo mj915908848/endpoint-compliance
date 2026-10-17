@@ -27,14 +27,14 @@ static partial class Endpoints
                 Require(c, "Reader");
                 return await s.Tx(async tx =>
                 {
-                    var policies = await s.Policies(tx);
+                    var policies = await s.Policies.All(tx);
                     var devices = await tx.AllDeviceHeads();
                     return policies
                         .Select(p => new PolicyListItem(
                             p.Key,
                             p.IsDefault,
                             p.Release,
-                            devices.Count(d => ComplianceService.PolicyFor(d.Id, policies) == p)
+                            devices.Count(d => PolicyService.PolicyFor(d.Id, policies) == p)
                         ))
                         .ToArray();
                 });
@@ -46,7 +46,7 @@ static partial class Endpoints
             async (HttpContext c) =>
             {
                 Require(c, "Reader");
-                return await s.Tx(tx => s.CurrentRelease(tx));
+                return await s.Tx(tx => s.Policies.CurrentRelease(tx));
             }
         );
 
@@ -58,7 +58,7 @@ static partial class Endpoints
                 Require(c, "Reader");
                 return await s.Tx(async tx =>
                 {
-                    if (!(await s.Policies(tx)).Any(p => p.Key == key))
+                    if (!(await s.Policies.All(tx)).Any(p => p.Key == key))
                         throw new ApiError(404, "策略不存在或已删除");
                     var publications = await tx.PolicyPublications();
                     var items = new List<PolicyHistoryItem>();
@@ -94,7 +94,7 @@ static partial class Endpoints
         // A Publisher edits and publishes in one step. The server owns the version and validity window so the
         // editor only has to send the rule content. Without a key this publishes the default policy and returns
         // the signed release, as before; "new" creates a policy.
-        group.MapPost("", async (HttpContext c) => (await Publish(c, s, ComplianceService.DefaultPolicy)).Release);
+        group.MapPost("", async (HttpContext c) => (await Publish(c, s, PolicyService.DefaultPolicy)).Release);
         group.MapPost("/{key}", (HttpContext c, string key) => Publish(c, s, key == "new" ? null : key));
 
         group.MapDelete(
@@ -104,8 +104,8 @@ static partial class Endpoints
                 var u = Require(c, "Publisher");
                 return await s.Tx(async tx =>
                 {
-                    await tx.Lock(ComplianceService.PolicyLock);
-                    var name = await s.DeletePolicy(tx, key);
+                    await tx.Lock(PolicyService.PolicyLock);
+                    var name = await s.Policies.DeletePolicy(tx, key);
                     await tx.Audit(u.Username, "DeletePolicy", name, s.Now);
                     return new { ok = true };
                 });
@@ -125,8 +125,8 @@ static partial class Endpoints
             : null;
         return await s.Tx(async tx =>
         {
-            await tx.Lock(ComplianceService.PolicyLock);
-            var (published, signed) = await s.Publish(tx, key, doc, baseVersion);
+            await tx.Lock(PolicyService.PolicyLock);
+            var (published, signed) = await s.Policies.Publish(tx, key, doc, baseVersion);
             var document = Wire.Read<PolicyDocument>(signed.Payload);
             await tx.Audit(
                 u.Username,
@@ -134,14 +134,14 @@ static partial class Endpoints
                 $"{document.PolicyId} v{document.Version}",
                 s.Now
             );
-            var policies = await s.Policies(tx);
+            var policies = await s.Policies.All(tx);
             var devices = await tx.AllDeviceHeads();
             var state = policies.First(p => p.Key == published);
             return new PolicyListItem(
                 published,
                 state.IsDefault,
                 signed,
-                devices.Count(d => ComplianceService.PolicyFor(d.Id, policies) == state)
+                devices.Count(d => PolicyService.PolicyFor(d.Id, policies) == state)
             );
         });
     }

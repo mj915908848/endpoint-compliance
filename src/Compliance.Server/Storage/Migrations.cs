@@ -212,7 +212,7 @@ public static class Migrations
         await tx.Execute(
             "CREATE TABLE IF NOT EXISTS policies(key TEXT PRIMARY KEY, created_at BIGINT NOT NULL, deleted_at BIGINT NULL)"
         );
-        await tx.InsertPolicy(ComplianceService.DefaultPolicy, DateTimeOffset.UtcNow);
+        await tx.InsertPolicy(PolicyService.DefaultPolicy, DateTimeOffset.UtcNow);
     }
 
     static async Task CreateSchema(Transaction tx)
