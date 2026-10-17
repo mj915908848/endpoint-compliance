@@ -924,11 +924,13 @@ public sealed class AgentRuntime(
             var changes = await queue.SyncFindingsAsync(findings, report.Verdict == Verdict.PASS, scopes, ct: ct);
             foreach (var change in changes)
             {
+                // One notice per finding and user: reminders and the recovery update it instead of piling up.
                 await notices.AddAsync(
-                    Guid.NewGuid().ToString("D"),
+                    $"finding:{change.ObjectKey}|{change.UserSid}",
                     change.UserSid,
                     $"{change.Type}: {change.Detail}",
-                    ct
+                    ct,
+                    replace: true
                 );
             }
             if (AgentLog.Active)
@@ -1124,6 +1126,8 @@ public sealed class AgentRuntime(
         return new WindowsCollector().CollectAsync(deviceId, policy, ct, previous);
     }
 
+    // Direct on purpose: a proxy on this machine is what the client checks for, and one could intercept or block its
+    // reports. The tray's connection test connects the same way.
     private static HttpClient CreateInternalClient() =>
         new(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(30) };
 }
