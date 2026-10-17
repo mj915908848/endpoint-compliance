@@ -157,6 +157,12 @@ public static class Secrets
         return Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(hash);
     }
 
+    /// <summary>
+    /// Checked against when the account does not exist, so a login takes as long either way and its timing does not
+    /// tell which usernames exist.
+    /// </summary>
+    public static readonly string Unknown = Password(Token());
+
     public static bool Check(string value, string stored)
     {
         var parts = stored.Split(':');

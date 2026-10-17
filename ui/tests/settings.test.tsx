@@ -95,6 +95,29 @@ describe("system settings", () => {
     });
   });
 
+  it("shows operators the saved robot masked and the audit retention without a way to change it", async () => {
+    stub((c) =>
+      c.url === "/api/settings"
+        ? {
+            ...settings,
+            notifications: {
+              ...settings.notifications,
+              webhookUrl: "https://qyapi.weixin.qq.com/****abcd",
+            },
+          }
+        : c.url === "/api/client-packages"
+          ? []
+          : { mode: "Production", storage: "Postgres", networkCapabilities: [], policyKeyId: "k" },
+    );
+    render(
+      <Providers>
+        <SystemPage session={{ ...session, roles: ["Reader", "Operator"] }} />
+      </Providers>,
+    );
+    expect(await screen.findByText("只有发布人可以修改")).toBeTruthy();
+    expect(screen.getByText(/不修改就保留原地址/)).toBeTruthy();
+  });
+
   it("hides the settings from accounts that only read", async () => {
     stub(() => ({
       mode: "Production",

@@ -109,6 +109,19 @@ public class SettingsTests
             "https://compliance.example.com",
             settings.GetProperty("notifications").GetProperty("consoleUrl").GetString()
         );
+        // The robot address carries its token: the UI sees it masked, and sending the mask back keeps it.
+        var shown = settings.GetProperty("notifications").GetProperty("webhookUrl").GetString()!;
+        Assert.Equal("https://qyapi.weixin.qq.com/****test", shown);
+        Assert.DoesNotContain("key=", shown);
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (await f.Client.PutAsJsonAsync("/api/settings/notifications", Notifications(url: shown))).StatusCode
+        );
+        Assert.Equal(
+            WeCom,
+            (await f.Services.GetRequiredService<ComplianceService>().Tx(AlertNotifier.Settings)).WebhookUrl
+        );
+
         await f.Login("reader");
         Assert.Equal(HttpStatusCode.Forbidden, (await f.Client.GetAsync("/api/settings")).StatusCode);
     }
@@ -261,5 +274,12 @@ public class SettingsTests
         Assert.DoesNotContain(kept, a => a.Action == "CreateUser");
         Assert.Contains(kept, a => a.Action == "SetAuditRetention");
         Assert.Contains(kept, a => a.Action == "PruneAudit" && a.Actor == "system");
+
+        // Audit records also hold operators to account: an operator may not change how long they are kept.
+        await f.Login("operator");
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await f.Client.PutAsJsonAsync("/api/settings/audit-retention", new { days = 180 })).StatusCode
+        );
     }
 }

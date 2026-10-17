@@ -158,7 +158,14 @@ function NotificationPanel({
             options={channels.map((c) => ({ value: c.value, label: c.label }))}
           />
         </Form.Item>
-        <Form.Item label="机器人地址（Webhook）">
+        <Form.Item
+          label="机器人地址（Webhook）"
+          extra={
+            saved.webhookUrl
+              ? "地址里带有机器人的访问令牌，已保存的地址只显示开头和末尾；不修改就保留原地址。"
+              : undefined
+          }
+        >
           <Input
             aria-label="机器人地址"
             value={url}
@@ -240,6 +247,8 @@ function NotificationPanel({
 }
 
 function RetentionPanel({ session, days }: { session: Session; days: number }) {
+  // Audit records also hold operators to account, so only publishers may change how long they are kept.
+  const canEdit = role(session, "Publisher");
   const { message } = App.useApp();
   const refresh = useRefresh();
   const [value, setValue] = useState(days),
@@ -273,10 +282,15 @@ function RetentionPanel({ session, days }: { session: Session; days: number }) {
           onChange={setValue}
           options={retentionChoices}
           style={{ width: 160 }}
+          disabled={!canEdit}
         />
-        <Button type="primary" onClick={save} loading={busy} disabled={value === days}>
-          保存
-        </Button>
+        {canEdit ? (
+          <Button type="primary" onClick={save} loading={busy} disabled={value === days}>
+            保存
+          </Button>
+        ) : (
+          <Typography.Text type="secondary">只有发布人可以修改</Typography.Text>
+        )}
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
         超过期限的审计记录每小时清理一次，清理本身也会记入审计记录。按网络安全法，网络日志至少保留 6

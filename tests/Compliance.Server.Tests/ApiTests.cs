@@ -1700,7 +1700,8 @@ public sealed class Fixture : WebApplicationFactory<Program>
                         ["Compliance:BootstrapUsers"] =
                             "[{\"username\":\"admin\",\"password\":\"test-admin-password-long\",\"roles\":[\"Reader\",\"Operator\",\"Publisher\",\"Reviewer\"]},"
                             + "{\"username\":\"reader\",\"password\":\"test-admin-password-long\",\"roles\":[\"Reader\"]},"
-                            + "{\"username\":\"reviewer\",\"password\":\"test-admin-password-long\",\"roles\":[\"Reader\",\"Reviewer\"]}]",
+                            + "{\"username\":\"reviewer\",\"password\":\"test-admin-password-long\",\"roles\":[\"Reader\",\"Reviewer\"]},"
+                            + "{\"username\":\"operator\",\"password\":\"test-admin-password-long\",\"roles\":[\"Reader\",\"Operator\"]}]",
                     }
                 )
         );

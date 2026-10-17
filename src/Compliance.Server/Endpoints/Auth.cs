@@ -52,7 +52,7 @@ static partial class Endpoints
                     var result = await s.Tx(async tx =>
                     {
                         var user = await tx.GetUser(login.Username);
-                        if (user == null || !Secrets.Check(login.Password, user.PasswordHash))
+                        if (!Secrets.Check(login.Password, user?.PasswordHash ?? Secrets.Unknown) || user == null)
                         {
                             throttle.Failed(login.Username, s.Now);
                             throw new ApiError(401, "Invalid credentials");
