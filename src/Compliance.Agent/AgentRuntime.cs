@@ -43,32 +43,89 @@ public sealed class DeviceIdentity
             throw new PlatformNotSupportedException("DPAPI device identity requires Windows");
     }
 
-    public ECDsa LoadOrCreate()
+    /// <summary>
+    /// The key of an enrolled device. A missing or unreadable key is never replaced here: the server knows this device
+    /// by its public key, so a new one could not sign a single request. The device has to enroll again instead.
+    /// </summary>
+    public ECDsa Load() =>
+        TryLoad(out var key, out var problem) ? key! : throw new DeviceIdentityLostException(problem!);
+
+    public bool TryLoad(out ECDsa? key, out string? problem)
     {
-        if (File.Exists(keyPath))
+        key = null;
+        problem = null;
+        if (!File.Exists(keyPath))
         {
-            var bytes = File.ReadAllBytes(keyPath);
+            problem = "设备密钥文件不存在";
+            return false;
+        }
+        byte[] bytes;
+        try
+        {
+            bytes = File.ReadAllBytes(keyPath);
             if (!simulation)
             {
                 if (!OperatingSystem.IsWindows())
                     throw new PlatformNotSupportedException();
                 bytes = UnprotectWindows(bytes);
             }
-            var key = ECDsa.Create();
-            key.ImportPkcs8PrivateKey(bytes, out _);
-            CryptographicOperations.ZeroMemory(bytes);
-            return key;
         }
+        catch (Exception e) when (e is CryptographicException or IOException)
+        {
+            problem = "设备密钥文件无法读取（" + e.GetType().Name + "）";
+            return false;
+        }
+        var loaded = ECDsa.Create();
+        try
+        {
+            loaded.ImportPkcs8PrivateKey(bytes, out _);
+        }
+        catch (CryptographicException)
+        {
+            loaded.Dispose();
+            problem = "设备密钥文件已损坏";
+            return false;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
+        key = loaded;
+        return true;
+    }
+
+    /// <summary>
+    /// The key to enroll with: the existing one if it can be read, otherwise a new one, which replaces a damaged file.
+    /// Only for a device that is not enrolled, or whose key is lost.
+    /// </summary>
+    public ECDsa ForEnrollment()
+    {
+        if (TryLoad(out var existing, out _))
+            return existing!;
         var created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var raw = created.ExportPkcs8PrivateKey();
         if (!simulation && !OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException();
         var stored = simulation ? raw : ProtectWindows(raw);
-        using (var file = new FileStream(keyPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            file.Write(stored);
-        if (simulation && !OperatingSystem.IsWindows())
-            File.SetUnixFileMode(keyPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        CryptographicOperations.ZeroMemory(raw);
+        // Written to a temporary file and flushed to disk before it takes the key's name, so a power cut leaves
+        // either the old file or the whole new one, never a truncated key.
+        var temp = keyPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                file.Write(stored);
+                file.Flush(true);
+            }
+            if (simulation && !OperatingSystem.IsWindows())
+                File.SetUnixFileMode(temp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            File.Move(temp, keyPath, true);
+        }
+        finally
+        {
+            File.Delete(temp);
+            CryptographicOperations.ZeroMemory(raw);
+        }
         return created;
     }
 
@@ -80,6 +137,12 @@ public sealed class DeviceIdentity
     private static byte[] UnprotectWindows(byte[] data) =>
         ProtectedData.Unprotect(data, null, DataProtectionScope.LocalMachine);
 }
+
+/// <summary>An enrolled device whose key is missing or damaged; only enrolling again recovers it.</summary>
+public sealed class DeviceIdentityLostException(string problem)
+    : InvalidOperationException(
+        $"{problem}。本机无法再向管理端证明身份，请在管理端删除这台终端后用新的登记码重新登记。"
+    );
 
 public sealed class AgentApiException(string message, HttpStatusCode status, TimeSpan? retryAfter)
     : HttpRequestException(message, null, status)
@@ -292,7 +355,7 @@ public sealed class AgentRuntime(
 
     public async Task EnrollAsync(string code, CancellationToken ct)
     {
-        using var key = new DeviceIdentity(config.DataDirectory, simulated).LoadOrCreate();
+        using var key = new DeviceIdentity(config.DataDirectory, simulated).ForEnrollment();
         using var client = CreateInternalClient();
         var uri = ValidateServer(config.ServerUrl, simulated, localDemo);
         await VerifyLocalDemoAsync(client, uri, ct);
@@ -317,7 +380,7 @@ public sealed class AgentRuntime(
         if (string.IsNullOrWhiteSpace(config.DeviceId) || string.IsNullOrWhiteSpace(config.PolicyPublicKeyPem))
             throw new InvalidOperationException("Enroll first with --enroll --code");
         var uri = ValidateServer(config.ServerUrl, simulated, localDemo);
-        using var key = new DeviceIdentity(config.DataDirectory, simulated).LoadOrCreate();
+        using var key = new DeviceIdentity(config.DataDirectory, simulated).Load();
         using var client = CreateInternalClient();
         await VerifyLocalDemoAsync(client, uri, ct, tolerateOffline: !once);
         var api = new AgentApi(client, uri, config.DeviceId, key);

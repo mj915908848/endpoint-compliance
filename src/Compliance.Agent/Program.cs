@@ -126,7 +126,8 @@ public static class Program
             if (server is not null)
             {
                 server = server.Trim().TrimEnd('/');
-                if (config is { DeviceId.Length: > 0 })
+                // A device whose key is lost cannot sign anything, so it may enroll again, as a new device.
+                if (config is { DeviceId.Length: > 0 } && IdentityUsable(config, simulated))
                 {
                     if (!SameServer(config.ServerUrl, server))
                         throw new EnrollmentRefusedException(
@@ -166,6 +167,14 @@ public static class Program
         return 0;
     }
 
+    static bool IdentityUsable(AgentConfiguration config, bool simulated)
+    {
+        if (!new DeviceIdentity(config.DataDirectory, simulated).TryLoad(out var key, out _))
+            return false;
+        key!.Dispose();
+        return true;
+    }
+
     static bool SameServer(string a, string b) =>
         Uri.TryCreate(a.TrimEnd('/'), UriKind.Absolute, out var x)
         && Uri.TryCreate(b.TrimEnd('/'), UriKind.Absolute, out var y)
@@ -189,6 +198,7 @@ public static class Program
             AgentLog.Attach(NativeDataDirectory.EnsureLogs(data));
         if (aclRepaired)
             Console.WriteLine(AgentRuntime.DataAclRepairedMessage);
+        var identityReported = false;
         AgentRuntime? Load()
         {
             if (!File.Exists(configPath))
@@ -196,6 +206,16 @@ public static class Program
             var config = AgentConfiguration.Read(configPath);
             if (string.IsNullOrWhiteSpace(config.DeviceId) || string.IsNullOrWhiteSpace(config.PolicyPublicKeyPem))
                 return null;
+            // Without its key the device cannot reach the server; it waits for a new enrollment, which the tray offers,
+            // instead of failing and restarting over and over.
+            if (!new DeviceIdentity(config.DataDirectory, simulated).TryLoad(out var key, out var problem))
+            {
+                if (!identityReported)
+                    Console.Error.WriteLine(new DeviceIdentityLostException(problem!).Message);
+                identityReported = true;
+                return null;
+            }
+            key!.Dispose();
             Console.WriteLine($"客户端服务启动，服务器 {config.ServerUrl}");
             return new AgentRuntime(config, configPath, simulated, fixture, config.HttpTrial && !simulated)
             {
