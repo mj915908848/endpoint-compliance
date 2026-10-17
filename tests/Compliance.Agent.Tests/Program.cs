@@ -27,6 +27,56 @@ void Assert(bool value, string message)
     if (!value)
         throw new Exception(message);
 }
+T Throws<T>(Action action)
+    where T : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (T e)
+    {
+        return e;
+    }
+    throw new Exception("expected " + typeof(T).Name);
+}
+await Check(
+    "an enrolled device never replaces a lost or damaged key, but enrolling again does",
+    () =>
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "identity-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var identity = new DeviceIdentity(dir, simulation: true);
+            var missing = Throws<DeviceIdentityLostException>(() => identity.Load());
+            Assert(missing.Message.Contains("重新登记"), "a lost key says how to recover");
+            string created;
+            using (var key = identity.ForEnrollment())
+                created = key.ExportSubjectPublicKeyInfoPem();
+            using (var key = identity.Load())
+                Assert(key.ExportSubjectPublicKeyInfoPem() == created, "the enrolled key is loaded back");
+            using (var key = identity.ForEnrollment())
+                Assert(key.ExportSubjectPublicKeyInfoPem() == created, "enrolling again keeps a readable key");
+
+            var file = Directory.GetFiles(dir).Single();
+            File.WriteAllBytes(file, File.ReadAllBytes(file)[..10]);
+            Assert(
+                !identity.TryLoad(out _, out var problem) && problem!.Contains("损坏"),
+                "a truncated key is reported"
+            );
+            Throws<DeviceIdentityLostException>(() => identity.Load());
+            using (var key = identity.ForEnrollment())
+                Assert(key.ExportSubjectPublicKeyInfoPem() != created, "enrolling again replaces a damaged key");
+            Assert(Directory.GetFiles(dir).Length == 1, "no temporary file is left behind");
+            using (identity.Load()) { }
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+        return Task.CompletedTask;
+    }
+);
 await Check(
     "an enrollment failure is described in words the person enrolling can act on",
     () =>
