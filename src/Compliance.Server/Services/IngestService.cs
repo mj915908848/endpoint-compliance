@@ -92,7 +92,9 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
                             e.Sequence,
                             alert?.FirstSeen ?? e.SourceTime,
                             e.SourceTime,
-                            false
+                            // Like snapshot alerts: an acknowledgment holds while the alert stays active, and a
+                            // recurrence after recovery has to be acknowledged again.
+                            alert is { State: "Active", Acknowledged: true }
                         )
                     );
                 }

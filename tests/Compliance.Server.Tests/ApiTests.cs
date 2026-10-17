@@ -717,6 +717,32 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task An_event_alert_stays_acknowledged_while_active_and_needs_it_again_after_recovering()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        async Task Send(long sequence, string type) =>
+            await f.Agent(
+                "POST",
+                "/api/agent/events",
+                new EventBatch([new("e" + sequence, sequence, f.Clock.Now, type, "x", Detail: type)])
+            );
+        async Task<AlertSummary> Alert() =>
+            Assert.Single((await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!);
+
+        await Send(1, "BlockedAttempt");
+        await f.Client.PostAsJsonAsync($"/api/alerts/{(await Alert()).Id}/ack", new { });
+        await Send(2, "BlockedAttempt");
+        Assert.True((await Alert()).Acknowledged);
+        await Send(3, "Recovered");
+        await Send(4, "BlockedAttempt");
+        var again = await Alert();
+        Assert.Equal("Active", again.State);
+        Assert.False(again.Acknowledged);
+    }
+
+    [Fact]
     public async Task Acknowledgment_does_not_resolve_violation_and_only_scan_command_is_allowed()
     {
         await using var f = new Fixture();
