@@ -374,6 +374,47 @@ await Check(
     }
 );
 await Check(
+    "a reminder updates its finding's one notice as unread, and the store keeps only the newest notices",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-notice-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            await using var store = new NotificationStore(path);
+            const string sid = "S-1-5-21-1";
+            await store.AddAsync("finding:x", sid, "Violation: x", replace: true);
+            Assert(await store.AckAsync(sid, "finding:x"), "ack failed");
+            await store.AddAsync("finding:x", sid, "Reminder: x", replace: true);
+            var list = await store.ListAsync(sid);
+            Assert(
+                list.Length == 1 && list[0].Message == "Reminder: x" && !list[0].Acknowledged,
+                "reminder did not replace the notice as unread"
+            );
+            await store.AddAsync("once", null, "first");
+            await store.AddAsync("once", null, "second");
+            Assert(
+                (await store.ListAsync(sid)).Single(n => n.EventId == "once").Message == "first",
+                "a plain add replaced a stored notice"
+            );
+            for (var i = 0; i < NotificationStore.Keep + 20; i++)
+                await store.AddAsync("n" + i, null, "notice " + i);
+            Assert(
+                (await store.ListAsync(sid)).Any(n => n.EventId == "n" + (NotificationStore.Keep + 19)),
+                "newest notice missing"
+            );
+            await using var raw = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + path);
+            await raw.OpenAsync();
+            using var count = raw.CreateCommand();
+            count.CommandText = "SELECT COUNT(*) FROM notices";
+            Assert(Convert.ToInt64(await count.ExecuteScalarAsync()) == NotificationStore.Keep, "old notices kept");
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+);
+await Check(
     "HTTP is limited to explicit loopback fixture",
     async () =>
     {

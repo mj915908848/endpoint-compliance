@@ -20,21 +20,49 @@ public sealed class NotificationStore : IAsyncDisposable
         command.CommandText =
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; "
             + "CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY,sid TEXT,message TEXT NOT NULL,at TEXT NOT NULL); "
-            + "CREATE TABLE IF NOT EXISTS acknowledgments(id TEXT NOT NULL,sid TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(id,sid));";
+            + "CREATE TABLE IF NOT EXISTS acknowledgments(id TEXT NOT NULL,sid TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(id,sid)); "
+            + "CREATE INDEX IF NOT EXISTS notices_at ON notices(at);";
         command.ExecuteNonQuery();
     }
 
-    public async Task AddAsync(string eventId, string? userSid, string message, CancellationToken ct = default)
+    /// <summary>Notices kept: the newest this many, and none older than <see cref="KeepFor"/>.</summary>
+    public const int Keep = 500;
+    public static readonly TimeSpan KeepFor = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Adds a notice. An id already stored is left as it is, unless <paramref name="replace"/>: then it is shown again
+    /// as new and unread, so a reminder about the same finding updates its one notice rather than adding another.
+    /// Old notices are dropped as new ones come in.
+    /// </summary>
+    public async Task AddAsync(
+        string eventId,
+        string? userSid,
+        string message,
+        CancellationToken ct = default,
+        bool replace = false
+    )
     {
         await gate.WaitAsync(ct);
         try
         {
             using var command = db.CreateCommand();
-            command.CommandText = "INSERT OR IGNORE INTO notices(id,sid,message,at) VALUES($id,$sid,$message,$at)";
+            command.CommandText =
+                (
+                    replace
+                        ? "INSERT INTO notices(id,sid,message,at) VALUES($id,$sid,$message,$at) "
+                            + "ON CONFLICT(id) DO UPDATE SET sid=excluded.sid,message=excluded.message,at=excluded.at; "
+                            + "DELETE FROM acknowledgments WHERE id=$id; "
+                        : "INSERT OR IGNORE INTO notices(id,sid,message,at) VALUES($id,$sid,$message,$at); "
+                )
+                + "DELETE FROM notices WHERE at < $cutoff OR id IN (SELECT id FROM notices ORDER BY at DESC LIMIT -1 OFFSET $keep); "
+                + "DELETE FROM acknowledgments WHERE id NOT IN (SELECT id FROM notices);";
             command.Parameters.AddWithValue("$id", eventId);
             command.Parameters.AddWithValue("$sid", (object?)userSid ?? DBNull.Value);
             command.Parameters.AddWithValue("$message", EvidenceSanitizer.Clean(message));
-            command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+            var now = DateTimeOffset.UtcNow;
+            command.Parameters.AddWithValue("$at", now.ToString("O"));
+            command.Parameters.AddWithValue("$cutoff", (now - KeepFor).ToString("O"));
+            command.Parameters.AddWithValue("$keep", Keep);
             await command.ExecuteNonQueryAsync(ct);
         }
         finally
@@ -129,6 +157,14 @@ public sealed class NotificationPipe(NotificationStore? store)
                 AccessControlType.Allow
             )
         );
+        // Only local sign-ins may talk to the service; other machines' accounts reach pipes over SMB.
+        security.AddAccessRule(
+            new PipeAccessRule(
+                new SecurityIdentifier(WellKnownSidType.NetworkSid, null),
+                PipeAccessRights.FullControl,
+                AccessControlType.Deny
+            )
+        );
         // The account running the pipe (SYSTEM for the service) needs FullControl to create further instances.
         security.AddAccessRule(
             new PipeAccessRule(
@@ -139,6 +175,9 @@ public sealed class NotificationPipe(NotificationStore? store)
         );
         using var slots = new SemaphoreSlim(5, 5);
         var failed = false;
+        // Instances of ours still open. With none, the name is free and another process could have taken it while
+        // the service was down; FirstPipeInstance then makes creating fail instead of joining that impostor's pipe.
+        var open = 0;
         while (!ct.IsCancellationRequested)
         {
             await slots.WaitAsync(ct);
@@ -150,12 +189,23 @@ public sealed class NotificationPipe(NotificationStore? store)
                     PipeDirection.InOut,
                     5,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous,
+                    Volatile.Read(ref open) == 0
+                        ? PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance
+                        : PipeOptions.Asynchronous,
                     4096,
                     4096,
                     security
                 );
-                await pipe.WaitForConnectionAsync(ct);
+                Interlocked.Increment(ref open);
+                try
+                {
+                    await pipe.WaitForConnectionAsync(ct);
+                }
+                catch
+                {
+                    Interlocked.Decrement(ref open);
+                    throw;
+                }
                 var connected = pipe;
                 _ = Task.Run(
                     async () =>
@@ -167,6 +217,7 @@ public sealed class NotificationPipe(NotificationStore? store)
                         finally
                         {
                             connected.Dispose();
+                            Interlocked.Decrement(ref open);
                             slots.Release();
                         }
                     },
@@ -178,6 +229,14 @@ public sealed class NotificationPipe(NotificationStore? store)
             {
                 // A client that disconnects before the accept completes breaks only this instance; keep listening.
                 Console.Error.WriteLine($"托盘通知管道连接失败：{ex.Message}");
+                failed = true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Another process holds the pipe name: refuse to share it, say so and try again shortly.
+                Console.Error.WriteLine(
+                    "托盘通知管道名已被其他进程占用，稍后重试；如持续出现请检查本机是否有可疑程序。"
+                );
                 failed = true;
             }
             finally
@@ -197,7 +256,7 @@ public sealed class NotificationPipe(NotificationStore? store)
     private async Task HandleAsync(NamedPipeServerStream pipe, CancellationToken stop)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        timeout.CancelAfter(TimeSpan.FromSeconds(2));
         var ct = timeout.Token;
         try
         {
