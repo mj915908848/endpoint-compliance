@@ -62,7 +62,7 @@ jobs:
           [ -n "$ref" ] || ref=$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null)
           echo "比较基准 $ref"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: f
         with:
           base: ${{ steps.base.outputs.ref }}
@@ -210,7 +210,7 @@ jobs:
       - name: End-to-end
         run: python integration/e2e.py --data artifacts/e2e
       - if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-evidence
           path: artifacts/e2e
@@ -234,11 +234,6 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: "**/packages.lock.json"
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -254,12 +249,9 @@ jobs:
           if ($failed) { exit 1 }
       - name: Agent tests (including native socket table)
         run: dotnet run --project tests/Compliance.Agent.Tests
-      - name: Build management UI, server, agent and tray
+      # The smoke test only calls the API, so the management UI is not built here; e2e checks it is served.
+      - name: Build server, agent and tray
         run: |
-          cd ui
-          npm ci
-          npm run build
-          cd ..
           dotnet build src/Compliance.Server -c Release
           dotnet build src/Compliance.Agent -c Release
           dotnet build src/Compliance.Tray -c Release
@@ -274,7 +266,7 @@ jobs:
       - name: Native scan against a loopback server, then install the earlier release and upgrade it as a service
         run: python integration/windows_smoke.py --data artifacts/windows-smoke --package artifacts/pkg --old-package artifacts/old-pkg --msi "$(ls artifacts/compliance-client-*-windows-x64.msi)"
       - if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: windows-scan
           path: artifacts/windows-smoke
