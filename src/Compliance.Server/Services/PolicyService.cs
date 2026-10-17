@@ -5,12 +5,32 @@ using Compliance.Core;
 namespace Compliance.Server;
 
 /// <summary>The policy signing key, policies and their releases, and which release each device follows.</summary>
-public sealed class PolicyService(Settings settings, TimeProvider clock) : IDisposable
+public sealed partial class PolicyService(Settings settings, TimeProvider clock) : IDisposable
 {
     readonly ECDsa signer = ECDsa.Create();
 
-    public string PublicKey => signer.ExportSubjectPublicKeyInfoPem();
-    public string KeyId => Secrets.Hash(PublicKey)[..16];
+    // Completing a key rotation replaces the key in place; this keeps signing and exporting from seeing it half done.
+    readonly Lock signing = new();
+
+    public string PublicKey
+    {
+        get
+        {
+            lock (signing)
+                return signer.ExportSubjectPublicKeyInfoPem();
+        }
+    }
+    public string KeyId
+    {
+        get
+        {
+            lock (signing)
+                return IdOf(signer);
+        }
+    }
+
+    static string IdOf(ECDsa key) => Secrets.Hash(key.ExportSubjectPublicKeyInfoPem())[..16];
+
     DateTimeOffset Now => clock.GetUtcNow();
 
     /// <summary>
@@ -29,19 +49,23 @@ public sealed class PolicyService(Settings settings, TimeProvider clock) : IDisp
         if (string.IsNullOrWhiteSpace(settings.SigningKeyPath))
             throw new InvalidOperationException("Configure a durable Compliance:SigningKeyPath");
 
-        var keyPath = Path.GetFullPath(settings.SigningKeyPath);
-        Directory.CreateDirectory(Path.GetDirectoryName(keyPath)!);
-        if (!File.Exists(keyPath))
-        {
-            using var created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
-            if (!OperatingSystem.IsWindows())
-                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-            using var stream = new FileStream(keyPath, options);
-            using var writer = new StreamWriter(stream);
-            writer.Write(created.ExportECPrivateKeyPem());
-        }
-        signer.ImportFromPem(await File.ReadAllTextAsync(keyPath));
+        Directory.CreateDirectory(Path.GetDirectoryName(KeyPath)!);
+        if (!File.Exists(KeyPath))
+            CreateKeyFile(KeyPath);
+        Replace(await File.ReadAllTextAsync(KeyPath));
+        await LoadNextKey();
+    }
+
+    /// <summary>A new P-256 private key in a file only this account can read.</summary>
+    static void CreateKeyFile(string path)
+    {
+        using var created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        using var stream = new FileStream(path, options);
+        using var writer = new StreamWriter(stream);
+        writer.Write(created.ExportECPrivateKeyPem());
     }
 
     /// <summary>
@@ -50,7 +74,7 @@ public sealed class PolicyService(Settings settings, TimeProvider clock) : IDisp
     public async Task Seed(Transaction tx)
     {
         var current = await tx.CurrentRelease();
-        if (current != null && current.KeyId != KeyId)
+        if (current != null && current.KeyId != KeyId && !await RecoverRotation(current.KeyId))
             throw new InvalidOperationException(
                 "Configured signing key does not match persisted policy; restore original key"
             );
@@ -64,7 +88,7 @@ public sealed class PolicyService(Settings settings, TimeProvider clock) : IDisp
                 IssuedAt = Now,
                 ExpiresAt = Now + PolicyValidity,
             };
-            await tx.InsertRelease(1, PolicyCrypto.Sign(doc, signer, KeyId), Now);
+            await tx.InsertRelease(1, Sign(doc), Now);
             await tx.Audit("bootstrap", "SeedAuditPolicy", "1", Now);
         }
         else
@@ -302,9 +326,27 @@ public sealed class PolicyService(Settings settings, TimeProvider clock) : IDisp
         }
     }
 
-    public SignedPolicy Sign(PolicyDocument doc) => PolicyCrypto.Sign(doc, signer, KeyId);
+    public SignedPolicy Sign(PolicyDocument doc)
+    {
+        lock (signing)
+            return PolicyCrypto.Sign(doc, signer, IdOf(signer));
+    }
 
-    public SignedClientPackage Sign(ClientPackage package) => PackageCrypto.Sign(package, signer, KeyId);
+    public SignedClientPackage Sign(ClientPackage package)
+    {
+        lock (signing)
+            return PackageCrypto.Sign(package, signer, IdOf(signer));
+    }
 
-    public void Dispose() => signer.Dispose();
+    void Replace(string pem)
+    {
+        lock (signing)
+            signer.ImportFromPem(pem);
+    }
+
+    public void Dispose()
+    {
+        signer.Dispose();
+        next?.Dispose();
+    }
 }

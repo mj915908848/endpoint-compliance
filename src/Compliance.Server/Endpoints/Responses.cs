@@ -53,10 +53,12 @@ public record NotificationTested(bool Ok, string? Error);
 /// <param name="LastSequence">The highest event sequence the server holds for the device.</param>
 /// <param name="ServerVersion">The server's release.</param>
 /// <param name="MinimumAgentVersion">Clients older than this should be upgraded (<see cref="ReleaseVersion.MinimumAgent"/>).</param>
+/// <param name="KeyRotation">While the signing key is being replaced: the next key, signed with the current one.</param>
 public record HeartbeatReply(
     bool Ok,
     bool GzipUploads,
     long LastSequence,
     string ServerVersion,
-    string MinimumAgentVersion
+    string MinimumAgentVersion,
+    SignedKeyRotation? KeyRotation = null
 );

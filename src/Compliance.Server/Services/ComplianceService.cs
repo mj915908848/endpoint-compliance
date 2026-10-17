@@ -21,7 +21,7 @@ public sealed class ComplianceService : IDisposable
         Verdicts = new(store, Policies, clock);
         Ingest = new(Verdicts, Policies, clock);
         Housekeeping = new(store, settings, clock);
-        Packages = new(settings, Policies, clock);
+        Packages = new(settings, clock);
     }
 
     public PolicyService Policies { get; }

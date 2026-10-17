@@ -39,6 +39,15 @@ public sealed partial class Transaction
             ("key", p.Signed.KeyId)
         );
 
+    public Task SetClientPackageSignature(string version, SignedClientPackage signed) =>
+        Execute(
+            "UPDATE client_packages SET payload = @payload, signature = @signature, key_id = @key WHERE version = @version",
+            ("payload", signed.Payload),
+            ("signature", signed.Signature),
+            ("key", signed.KeyId),
+            ("version", version)
+        );
+
     public async Task<bool> DeleteClientPackage(string version) =>
         await Execute("DELETE FROM client_packages WHERE version = @version", ("version", version)) > 0;
 

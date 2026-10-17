@@ -8,3 +8,4 @@ export * from "./alertGroups";
 export * from "./account";
 export * from "./trend";
 export * from "./packages";
+export * from "./signingKey";

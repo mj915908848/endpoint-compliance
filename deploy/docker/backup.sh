@@ -7,4 +7,9 @@ mkdir -p "$dir"
 docker compose exec -T db pg_dump -U compliance -d compliance -Fc > "$dir/compliance.dump"
 docker compose exec -T server cat /var/lib/compliance/signing.key > "$dir/signing.key"
 chmod 600 "$dir/signing.key"
+# 更换密钥进行中时还有新密钥，一并保存，恢复后可以继续更换。
+if docker compose exec -T server test -f /var/lib/compliance/signing.key.next; then
+  docker compose exec -T server cat /var/lib/compliance/signing.key.next > "$dir/signing.key.next"
+  chmod 600 "$dir/signing.key.next"
+fi
 echo "已备份到 $dir"

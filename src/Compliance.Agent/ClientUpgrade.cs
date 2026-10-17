@@ -20,7 +20,7 @@ public static class ClientUpgrade
     public static async Task<(CommandReply Reply, string? Installer)> PrepareAsync(
         AgentApi api,
         DeviceCommand command,
-        string policyPublicKeyPem,
+        Func<string, string> publicKeyFor,
         string dataDirectory,
         CancellationToken ct
     )
@@ -36,10 +36,8 @@ public static class ClientUpgrade
         ClientPackage package;
         try
         {
-            package = PackageCrypto.Verify(
-                await api.SendAsync<SignedClientPackage>(HttpMethod.Get, path, null, ct),
-                policyPublicKeyPem
-            );
+            var signed = await api.SendAsync<SignedClientPackage>(HttpMethod.Get, path, null, ct);
+            package = PackageCrypto.Verify(signed, publicKeyFor(signed.KeyId));
         }
         catch (Exception e) when (e is CryptographicException or ArgumentException)
         {

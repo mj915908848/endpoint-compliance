@@ -7,7 +7,7 @@ namespace Compliance.Server;
 /// Client installers uploaded for remote upgrades. Files are kept on disk under their hash; the database holds what
 /// each version is and its signed description, which clients check before installing.
 /// </summary>
-public sealed class PackageService(Settings settings, PolicyService policies, TimeProvider clock)
+public sealed class PackageService(Settings settings, TimeProvider clock)
 {
     public const string Upgrade = "Upgrade";
 
@@ -25,10 +25,10 @@ public sealed class PackageService(Settings settings, PolicyService policies, Ti
     public string FilePath(ClientPackage package) => Path.Combine(Directory, package.Sha256 + ".msi");
 
     /// <summary>
-    /// Writes an uploaded installer to disk and returns its signed description, to be stored by the caller. Only
+    /// Writes an uploaded installer to disk and returns its description, for the caller to sign and store. Only
     /// files that look like an MSI and fit <see cref="PackageCrypto.MaxSize"/> are kept.
     /// </summary>
-    public async Task<ClientPackageRecord> Receive(Stream body, string version, string uploadedBy, CancellationToken ct)
+    public async Task<ClientPackage> Receive(Stream body, string version, CancellationToken ct)
     {
         System.IO.Directory.CreateDirectory(Directory);
         var temporary = Path.Combine(Directory, "upload-" + Guid.NewGuid().ToString("N") + ".tmp");
@@ -65,7 +65,7 @@ public sealed class PackageService(Settings settings, PolicyService policies, Ti
                 File.Delete(temporary);
             else
                 File.Move(temporary, target);
-            return new(package, uploadedBy, policies.Sign(package));
+            return package;
         }
         finally
         {

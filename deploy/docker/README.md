@@ -160,14 +160,14 @@ docker compose restart server
 ./backup.sh
 ```
 
-在 `backups/<时间>/` 下生成数据库备份 `compliance.dump` 和策略签名密钥 `signing.key`，请拷贝到别的机器保存。**签名密钥丢失后，所有已登记终端都会拒收新策略，只能逐台重新登记。**
+在 `backups/<时间>/` 下生成数据库备份 `compliance.dump` 和策略签名密钥 `signing.key`（正在更换密钥时还有新密钥 `signing.key.next`），请拷贝到别的机器保存。**签名密钥丢失后，所有已登记终端都会拒收新策略，只能逐台重新登记。**
 
 恢复到新服务器：先按“手动部署”完成第 1–2 步但不要启动，然后：
 
 ```bash
 docker compose up -d db
 docker compose run --rm --no-deps -v "$PWD/backups/<时间>:/restore:ro" --entrypoint sh server \
-  -c 'cp /restore/signing.key /var/lib/compliance/signing.key && chmod 600 /var/lib/compliance/signing.key'
+  -c 'cp /restore/signing.key* /var/lib/compliance/ && chmod 600 /var/lib/compliance/signing.key*'
 docker compose exec -T db pg_restore -U compliance -d compliance --clean --if-exists < backups/<时间>/compliance.dump
 docker compose up -d
 ```

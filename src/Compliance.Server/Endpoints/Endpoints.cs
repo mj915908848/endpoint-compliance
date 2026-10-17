@@ -16,6 +16,7 @@ static partial class Endpoints
         MapAgent(app, s);
         MapSettings(app, s, notifier);
         MapPackages(app, s);
+        MapSigningKey(app, s);
     }
 
     static UserRecord Require(HttpContext c, string role)

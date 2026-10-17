@@ -26,6 +26,7 @@ import {
   Fresh,
   PageHeading,
   Panel,
+  SigningKeyPanel,
   time,
 } from "../components";
 import type { AppSettings, Session, Status } from "../types";
@@ -323,13 +324,14 @@ export function SystemPage({ session }: { session: Session }) {
     <>
       <PageHeading
         title="系统设置"
-        description="告警推送、审计记录保留期限、客户端远程升级，以及管理端的运行模式和网络防护能力。终端上的实际防护效果以终端上报的证据为准。"
+        description="告警推送、审计记录保留期限、客户端远程升级、策略签名密钥，以及管理端的运行模式和网络防护能力。终端上的实际防护效果以终端上报的证据为准。"
       />
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         {role(session, "Operator") && <SettingsPanels session={session} />}
         {(role(session, "Operator") || role(session, "Publisher")) && (
           <ClientPackagesPanel session={session} />
         )}
+        {role(session, "Publisher") && <SigningKeyPanel session={session} />}
         <Panel title="运行环境">
           <Fresh error={status.error} loading={status.loading}>
             {status.data && (

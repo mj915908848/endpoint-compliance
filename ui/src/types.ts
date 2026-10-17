@@ -31,3 +31,4 @@ export type TrendDay = Schemas["TrendDay"];
 export type VerdictChange = Schemas["VerdictChange"];
 export type ClientPackage = Schemas["ClientPackageItem"];
 export type UpgradeRollout = Schemas["UpgradeRollout"];
+export type SigningKeyState = Schemas["SigningKeyState"];

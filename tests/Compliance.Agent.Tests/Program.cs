@@ -1999,7 +1999,7 @@ await Check(
                 return await ClientUpgrade.PrepareAsync(
                     api,
                     new DeviceCommand("c-1", ClientUpgrade.Command, DateTimeOffset.UtcNow.AddHours(1), version),
-                    serverKey.ExportSubjectPublicKeyInfoPem(),
+                    _ => serverKey.ExportSubjectPublicKeyInfoPem(),
                     dir,
                     CancellationToken.None
                 );
@@ -2025,6 +2025,85 @@ await Check(
             if (Directory.Exists(dir))
                 Directory.Delete(dir, true);
         }
+    }
+);
+
+await Check(
+    "a key rotation is trusted only when announced under the current key, and completes with the first policy",
+    async () =>
+    {
+        using var current = System.Security.Cryptography.ECDsa.Create(
+            System.Security.Cryptography.ECCurve.NamedCurves.nistP256
+        );
+        using var next = System.Security.Cryptography.ECDsa.Create(
+            System.Security.Cryptography.ECCurve.NamedCurves.nistP256
+        );
+        using var other = System.Security.Cryptography.ECDsa.Create(
+            System.Security.Cryptography.ECCurve.NamedCurves.nistP256
+        );
+        var config = new AgentConfiguration(
+            "https://server.test",
+            "data",
+            "device-1",
+            current.ExportSubjectPublicKeyInfoPem(),
+            "current"
+        );
+        var rotation = new KeyRotation(next.ExportSubjectPublicKeyInfoPem(), "next", DateTimeOffset.UtcNow);
+        Assert(
+            PolicyKeys.Ids(config).SequenceEqual(["current"]) && PolicyKeys.Verified(config, "current") == config,
+            "before a rotation only the current key"
+        );
+
+        var forged = false;
+        try
+        {
+            PolicyKeys.Accept(config, KeyRotationCrypto.Sign(rotation, other, "current"));
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            forged = true;
+        }
+        Assert(forged, "an announcement signed by another key is refused");
+
+        var announced = KeyRotationCrypto.Sign(rotation, current, "current");
+        var rotating = PolicyKeys.Accept(config, announced);
+        Assert(PolicyKeys.Ids(rotating).SequenceEqual(["current", "next"]), "both keys reported");
+        Assert(PolicyKeys.Accept(rotating, announced) == rotating, "the same announcement changes nothing");
+        Assert(
+            PolicyKeys.PublicKeyFor(rotating, "current") == config.PolicyPublicKeyPem
+                && PolicyKeys.PublicKeyFor(rotating, "next") == rotation.NewPublicKeyPem,
+            "either key verifies during the rotation"
+        );
+        var unknown = false;
+        try
+        {
+            PolicyKeys.PublicKeyFor(rotating, "other");
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            unknown = true;
+        }
+        Assert(unknown, "an unknown key id is refused");
+
+        var done = PolicyKeys.Verified(rotating, "next");
+        Assert(
+            done.PolicyKeyId == "next"
+                && done.PolicyPublicKeyPem == rotation.NewPublicKeyPem
+                && done.NextPolicyKeyId is null
+                && PolicyKeys.Ids(done).SequenceEqual(["next"]),
+            "the next key becomes the current one"
+        );
+        var stale = false;
+        try
+        {
+            PolicyKeys.PublicKeyFor(done, "current");
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            stale = true;
+        }
+        Assert(stale, "the retired key is no longer trusted");
+        await Task.CompletedTask;
     }
 );
 

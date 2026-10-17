@@ -112,6 +112,29 @@ public sealed partial class Transaction
             ("id", id)
         );
 
+    /// <summary>The ids of the policy keys the device's client trusts, as its heartbeat reports them.</summary>
+    public Task SetDevicePolicyKeys(string id, string[] keyIds) =>
+        Execute(
+            "UPDATE devices SET policy_keys = @keys WHERE id = @id",
+            ("keys", string.Join(",", keyIds)),
+            ("id", id)
+        );
+
+    /// <summary>Enrolled devices and whether their client trusts <paramref name="keyId"/>.</summary>
+    public Task<List<(string Id, string HostName, DateTimeOffset? LastHeartbeat, bool Trusts)>> DevicesTrustingKey(
+        string keyId
+    ) =>
+        Query<(string, string, DateTimeOffset?, bool)>(
+            "SELECT id, host_name, last_heartbeat, policy_keys FROM devices ORDER BY host_name, id",
+            r =>
+                (
+                    r.GetString(0),
+                    r.GetString(1),
+                    r.IsDBNull(2) ? null : Time(r, 2),
+                    r.GetString(3).Split(',').Contains(keyId, StringComparer.Ordinal)
+                )
+        );
+
     public Task SetDeviceNote(string id, string note) =>
         Execute("UPDATE devices SET note = @note WHERE id = @id", ("note", note), ("id", id));
 
