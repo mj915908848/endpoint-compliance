@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import { AgentVersion, DeviceState, AlertCard, Login } from "../src/components";
+import { AgentVersion, DeviceState, DeviceTable, AlertCard, Login } from "../src/components";
 import type { DeviceSummary } from "../src/types";
 // Explicit fixtures only: these are synthetic records, never runtime demonstration data.
 const deviceFixture: DeviceSummary = {
@@ -58,10 +58,10 @@ describe("safety boundaries", () => {
   });
 
   it("offline historical PASS is explicitly historical and current remains unknown", () => {
-    render(<DeviceState device={deviceFixture} />);
+    render(<DeviceTable devices={[deviceFixture]} onSelect={() => {}} />);
     expect(screen.getByText("无法判断")).toBeTruthy();
     expect(screen.getByText(/上次结论：通过/)).toBeTruthy();
-    expect(screen.getByText("失联")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "失联" })).toBeTruthy();
     expect(screen.queryByText("通过")).toBeNull();
   });
   it("never presents an offline PASS as a current pass even if the payload is inconsistent", () => {

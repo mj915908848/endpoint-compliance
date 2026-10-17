@@ -1,5 +1,6 @@
 import { Button, Space, Table, Typography, type TableColumnsType } from "antd";
-import { AgentVersion, DeviceState, Empty, NetworkLine, time } from "./common";
+import { ago, AgentVersion, DeviceState, Empty, NetworkLine, OnlineDot, time } from "./common";
+import { onlineLabel } from "./labels";
 import type { DeviceSummary } from "../types";
 
 export function DeviceTable({
@@ -19,10 +20,16 @@ export function DeviceTable({
       title: "终端",
       key: "host",
       render: (_, d) => (
-        <Space orientation="vertical" size={0}>
-          <Typography.Text strong style={{ whiteSpace: "nowrap" }}>
-            {d.hostName}
-          </Typography.Text>
+        <Space orientation="vertical" size={0} className="device-host">
+          <Space size={8} style={{ whiteSpace: "nowrap" }}>
+            <OnlineDot device={d} />
+            <Typography.Text strong>{d.hostName}</Typography.Text>
+            {d.onlineState !== "Online" && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {[onlineLabel(d.onlineState), ago(d.lastHeartbeat)].filter(Boolean).join(" ")}
+              </Typography.Text>
+            )}
+          </Space>
           {d.note && <Typography.Text>{d.note}</Typography.Text>}
           {d.network?.length ? (
             <NetworkLine device={d} />
@@ -36,7 +43,7 @@ export function DeviceTable({
         </Space>
       ),
     },
-    { title: "在线状态 / 检查结论", key: "state", render: (_, d) => <DeviceState device={d} /> },
+    { title: "检查结论", key: "state", render: (_, d) => <DeviceState device={d} /> },
     {
       title: "策略与防护",
       key: "policy",

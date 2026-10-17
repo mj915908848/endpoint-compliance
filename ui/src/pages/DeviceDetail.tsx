@@ -19,7 +19,7 @@ import {
   errorText,
   Fresh,
   NetworkList,
-  OnlineTag,
+  OnlineState,
   PageHeading,
   ReportFindings,
   time,
@@ -192,7 +192,7 @@ export function DeviceDetailPage({
             <DeviceGuide device={d}>
               <div className="device-facts">
                 <Fact label="在线状态">
-                  <OnlineTag state={d.onlineState} />
+                  <OnlineState device={d} />
                 </Fact>
                 <Fact label="IP / MAC">
                   {d.network?.length ? (

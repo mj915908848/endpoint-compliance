@@ -337,3 +337,26 @@ body {
   border-radius: 2px;
   margin-right: 6px;
 }
+
+.online-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  vertical-align: 1px;
+}
+.online-dot-online {
+  background: var(--good);
+  box-shadow: 0 0 0 3px rgba(47, 143, 91, 0.16);
+}
+.online-dot-suspect {
+  background: var(--warning);
+}
+.online-dot-offline {
+  background: #b7c2c8;
+}
+/* Lines under the host name line up with the name, not with the dot before it. */
+.device-host > .ant-space-item:not(:first-child) {
+  padding-left: 16px;
+}
