@@ -43,17 +43,6 @@ python3 scripts/demo.py
 
 打开 http://127.0.0.1:5080 ，账号 `demo-admin`，密码在 `data/demo/login.txt`。演示会登记两台模拟终端：DEMO-PC-01 有确认违规（Cursor），DEMO-PC-02 没有发现，但因为是模拟数据，结论显示"无法判断"。按 Ctrl+C 停止；数据保留在 `data/demo/`，加 `--reset` 从头开始。
 
-### 在 Windows 上试用
-
-用 Windows 试用包（自包含，不需要安装 .NET）：
-
-1. 双击 `启动演示.bat` 启动管理端，输入本机内网 IPv4 地址（直接回车则仅本机访问）。首次启动会生成管理员密码。
-2. 在管理页面"终端登记"生成登记码。
-3. 在要检查的电脑上以管理员身份运行 `安装常驻客户端（试用）.bat`，填入管理端地址和登记码。已安装过的电脑选"1 仅更新程序"即可升级。
-4. 回到管理页面查看终端和报告。卸载用 `卸载常驻客户端.bat`。
-
-试用包用 `python3 scripts/package.py --trial` 生成。详细步骤见包内的 `使用说明.md`（源文件 `deploy/server/试用说明.md`）。试用模式走内网 HTTP，传输不加密，只能在可信网络使用。
-
 ## 管理页面
 
 - **总览 / 终端设备**：每台终端的在线状态、检查结论和违规数。终端详情里有检查报告、全部证据、检查覆盖和防护状态，可以请求重新检查、下载报告或删除终端。删除后该电脑的客户端无法再上报，需要重新登记。
@@ -125,7 +114,7 @@ python3 integration/e2e.py
 - `compliance-server-<版本>-deploy.tar.gz`：管理端一键部署包（脚本 + 镜像，解压后运行 `install.sh`）。
 - `compliance-server-<版本>.tar.gz`：管理端 Docker 镜像，升级时放进部署目录再运行 `install.sh`（或 `docker load -i` 加载）。
 
-发布说明自动列出上个版本以来的提交。要升大版本时修改 `VERSION`，序号从 0 重新开始。本地打包用 `python3 scripts/package.py --msi`（Windows）或 `--trial`，生成的版本号带 `-dev` 后缀。
+发布说明自动列出上个版本以来的提交。要升大版本时修改 `VERSION`，序号从 0 重新开始。本地打包 MSI 用 `python3 scripts/package.py --msi`（仅 Windows），生成的版本号带 `-dev` 后缀。
 
 ## 生产部署
 
