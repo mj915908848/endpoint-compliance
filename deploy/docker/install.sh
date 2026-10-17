@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 一键部署或升级管理端（PostgreSQL + 管理端）。用法见同目录 README.md，或运行 ./install.sh --help。
+# 部署或升级管理端（PostgreSQL + 管理端）。用法见同目录 README.md，或运行 ./install.sh --help。
 #
 # 首次运行：生成 .env（随机数据库密码和管理员密码）、放好证书（没给证书时生成自签证书）、
-# 加载或构建镜像、启动并确认可以访问。再次运行即升级：保留 .env 和证书，先备份再换成新镜像。
+# 拉取或构建镜像、启动并确认可以访问。再次运行即升级：保留 .env 和证书，先备份再换成新镜像。
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -18,14 +18,15 @@ usage() {
   --http --trusted-proxy IP
                            经网关转发到 HTTP：容器里不放证书，只接受该网关的请求
   --admin-user 名称        首个管理员账号名（默认 admin），只在首次部署时生效
-  --build                  从源码构建镜像，即使本目录有镜像包或本机已有镜像
+  --version 版本           使用指定版本（如 0.2.24），之后升级也停在这个版本；--version latest 恢复跟随最新版
+  --build                  从源码构建镜像，不从 ghcr.io 拉取
   -h, --help               显示本说明
 
-首次部署后再运行一次即升级：把新的 compliance-server-<版本>.tar.gz 放进本目录，运行 ./install.sh。
+首次部署后再运行一次即升级：拉取最新镜像（或 --version 指定的版本），先备份再换成新版本。
 EOF
 }
 
-domain="" cert="" key="" pfx="" pfx_password="" port="" http=0 proxy="" admin_user="" build=0
+domain="" cert="" key="" pfx="" pfx_password="" port="" http=0 proxy="" admin_user="" version="" build=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --domain) domain="$2"; shift 2 ;;
@@ -37,6 +38,7 @@ while [ $# -gt 0 ]; do
     --http) http=1; shift ;;
     --trusted-proxy) proxy="$2"; shift 2 ;;
     --admin-user) admin_user="$2"; shift 2 ;;
+    --version) version="$2"; shift 2 ;;
     --build) build=1; shift ;;
     -h | --help) usage; exit 0 ;;
     *) echo "未知选项: $1（--help 查看用法）" >&2; exit 2 ;;
@@ -105,6 +107,11 @@ else
   [ -n "$domain" ] || domain="$(hostname -f 2> /dev/null || hostname)"
 fi
 chmod 600 .env
+case "$version" in
+  "") ;;
+  latest) env_del COMPLIANCE_VERSION ;;
+  *) env_set COMPLIANCE_VERSION "${version#v}" ;;
+esac
 
 if [ "$http" = 1 ]; then
   env_del Kestrel__Certificates__Default__Path
@@ -159,20 +166,13 @@ fi
 
 # --- 镜像 -------------------------------------------------------------------
 up_args=(up -d --wait --wait-timeout 180)
-bundle="$(ls -1 compliance-server-*.tar.gz 2> /dev/null | grep -v -- '-deploy\.tar\.gz$' | sort -V | tail -n 1 || true)"
 if [ "$build" = 1 ]; then
   step "从源码构建镜像（需要几分钟和外网访问 Docker Hub、npm、NuGet）"
-  [ -f Dockerfile ] && [ -d ../../src ] || fail "本目录不在源码仓库中，无法构建；请使用发布的镜像包。"
+  [ -f Dockerfile ] && [ -d ../../src ] || fail "本目录不在源码仓库中，无法构建；去掉 --build 从 ghcr.io 拉取镜像。"
   up_args+=(--build)
-elif [ -n "$bundle" ]; then
-  step "加载镜像 $bundle"
-  docker load -i "$bundle"
-elif docker image inspect compliance-server:latest > /dev/null 2>&1; then
-  step "使用本机已有镜像 compliance-server:latest"
 else
-  [ -f Dockerfile ] && [ -d ../../src ] || fail "没有找到镜像：把发布的 compliance-server-<版本>.tar.gz 放进本目录后重试。"
-  step "本目录没有镜像包，从源码构建（需要几分钟和外网访问 Docker Hub、npm、NuGet）"
-  up_args+=(--build)
+  step "拉取镜像 $(docker compose config --images | grep compliance-server)"
+  docker compose pull server || fail "拉取镜像失败：确认服务器能访问 ghcr.io（需要时给 Docker 配代理），--version 指定的版本存在。"
 fi
 
 # --- 升级前备份 -------------------------------------------------------------
@@ -211,7 +211,7 @@ url="https://$domain"
 [ "$host_port" = 443 ] || [ "$mode" = http ] || url="$url:$host_port"
 echo
 echo "================================================================"
-echo " 管理端已启动，版本 $(docker image inspect compliance-server:latest -f '{{index .Config.Labels "org.opencontainers.image.version"}}' 2> /dev/null || echo 未知)"
+echo " 管理端已启动，版本 $(docker inspect "$(docker compose ps -q server)" -f '{{index .Config.Labels "org.opencontainers.image.version"}}' 2> /dev/null || echo 未知)"
 if [ "$mode" = https ]; then
   echo " 地址：  $url"
 else

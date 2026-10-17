@@ -18,6 +18,8 @@ RUN dotnet publish src/Compliance.Server -c Release -p:Version=$VERSION -o /app
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 ARG VERSION=0.0.0-dev
 LABEL org.opencontainers.image.version=$VERSION
+# Links the published image (ghcr.io) to this repository, so it shares the repository's visibility and access.
+LABEL org.opencontainers.image.source=https://github.com/mj915908848/endpoint-compliance
 WORKDIR /app
 COPY --from=server /app ./
 # The signing key lives here; a named volume mounted on it inherits this ownership.

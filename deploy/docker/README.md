@@ -1,17 +1,20 @@
 # Docker 部署管理端
 
-## 一键部署
+## 部署
 
 一台装有 Docker（含 `docker compose` 插件）的 Linux 服务器即可，PostgreSQL 一起在容器里运行。
 
-1. 在 Releases 页面下载 `compliance-server-<版本>-deploy.tar.gz`（脚本和镜像都在里面），拷到服务器上解压并进入目录：
+1. 在服务器上新建部署目录，下载本目录的部署文件（镜像不用下载，脚本会从 `ghcr.io/mj915908848/compliance-server` 拉取）：
 
    ```bash
-   tar xzf compliance-server-<版本>-deploy.tar.gz
-   cd compliance-server-<版本>
+   mkdir compliance && cd compliance
+   for f in compose.yml .env.example install.sh backup.sh README.md; do
+     curl -fsSLO "https://raw.githubusercontent.com/mj915908848/endpoint-compliance/main/deploy/docker/$f"
+   done
+   chmod +x install.sh backup.sh
    ```
 
-   也可以直接用仓库里的本目录（`git clone` 后 `cd deploy/docker`），没有镜像包时脚本会从源码构建，需要几分钟和外网访问 Docker Hub、npm、NuGet。
+   服务器要能访问 `raw.githubusercontent.com` 和 `ghcr.io`；访问不了时给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`）。也可以直接用仓库里的本目录（`git clone` 后 `cd deploy/docker`），加 `--build` 从源码构建，需要几分钟和外网访问 Docker Hub、npm、NuGet。
 
 2. 运行，`--domain` 填客户端访问管理端用的域名，证书用客户信任的泛域名证书（如 `*.example.com`，证书文件必须包含中间证书）：
 
@@ -21,7 +24,7 @@
 
    PFX 证书用 `--pfx 证书.pfx --pfx-password 密码`；端口不是 443 时加 `--port 8443`。先试用时可以不给证书，脚本会生成自签证书，之后再用 `--cert`、`--key` 运行一次即换成正式证书。
 
-   脚本会生成 `.env`（随机的数据库密码和管理员密码）、放好证书、加载镜像、启动并确认能访问，最后显示地址、管理员账号和密码。密码同时保存在 `.env` 里，登录后请在右上角「修改密码」。
+   脚本会生成 `.env`（随机的数据库密码和管理员密码）、放好证书、拉取镜像、启动并确认能访问，最后显示地址、管理员账号和密码。密码同时保存在 `.env` 里，登录后请在右上角「修改密码」。
 
 3. 给服务器加内网 DNS 记录，例如 `compliance.example.com` 指向这台服务器，浏览器打开显示的地址登录。
 
@@ -48,7 +51,7 @@
 
 2. 写配置：`cp .env.example .env && vi .env`。必填：`DB_PASSWORD`（只用字母数字）、`ADMIN_PASSWORD`（至少 16 位）。证书文件名不同时修改证书那两行。
 
-3. 启动：`docker load -i compliance-server-<版本>.tar.gz && docker compose up -d`（或从源码构建 `docker compose up -d --build`），`docker compose logs -f server` 出现 `Now listening on` 即启动完成。
+3. 启动：`docker compose pull && docker compose up -d`（或从源码构建 `docker compose up -d --build`），`docker compose logs -f server` 出现 `Now listening on` 即启动完成。
 
 ## 客户端
 
@@ -173,29 +176,28 @@ docker compose up -d
 
 ## 版本与升级
 
-积累一批改动后手动发布一个版本（Releases 页，版本号从 `0.2.0` 起每次加一），附带：
+积累一批改动后手动发布一个版本（Releases 页，版本号从 `0.2.0` 起每次加一）：
 
-- `compliance-server-<版本>-deploy.tar.gz`：管理端一键部署包（脚本 + 镜像）；
-- `compliance-server-<版本>.tar.gz`：管理端 Docker 镜像，服务器上直接加载，不用在服务器上构建；
-- `compliance-client-<版本>-windows-x64.msi`：Windows 客户端安装包。
+- 管理端镜像推到 `ghcr.io/mj915908848/compliance-server`，标签为版本号和 `latest`；
+- Releases 页附带 `compliance-client-<版本>-windows-x64.msi`：Windows 客户端安装包。
 
 管理端当前版本显示在“系统”页。
 
-**升级管理端**：在能访问 GitHub 的电脑上下载镜像 `compliance-server-<版本>.tar.gz`（或用 `gh release download v<版本> -p 'compliance-server-*'`），拷到服务器上的部署目录，然后：
+**升级管理端**：在服务器的部署目录运行
 
 ```bash
 sudo ./install.sh
 ```
 
-脚本先备份，再加载目录里版本最新的镜像包并换成新版本；数据库结构在启动时自动升级。旧的镜像包可以删掉。还没有 `install.sh` 的部署（0.2.21 及以前），从新版本的 `-deploy.tar.gz` 里把 `install.sh` 拷到部署目录即可，已有的 `.env` 和证书照常使用；也可以照旧手动升级：
+脚本先备份，再拉取最新镜像并换成新版本；数据库结构在启动时自动升级。要停在某个版本时加 `--version 0.2.24`（写进 `.env` 的 `COMPLIANCE_VERSION`，之后升级也停在这个版本），`--version latest` 恢复跟随最新版。
+
+0.2.23 及以前的部署用的是 Releases 页的镜像包。升级时先按“部署”第 1 步把新的部署文件下载到原来的部署目录（覆盖 `compose.yml`、`install.sh`、`backup.sh`，`.env` 和证书不动），再运行 `sudo ./install.sh`。改过 `compose.yml` 的，把改动补回新文件。不用脚本时：
 
 ```bash
 ./backup.sh
-docker load -i compliance-server-<版本>.tar.gz
+docker compose pull
 docker compose up -d
 ```
-
-`docker load` 会把镜像标记为 `compliance-server:latest`，`up -d` 即换成新版本。不要加 `--build`，否则会用服务器上的源码重新构建。
 
 在服务器上从源码构建同样可用：更新源码后 `./install.sh --build`（或 `docker compose up -d --build`）。
 
