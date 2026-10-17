@@ -1,12 +1,10 @@
 using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
-using System.Text.Json;
+using Compliance.Core;
 using Microsoft.Data.Sqlite;
 
 namespace Compliance.Agent;
-
-public record LocalNotice(string EventId, string? UserSid, string Message, DateTimeOffset At, bool Acknowledged);
 
 public sealed class NotificationStore : IAsyncDisposable
 {
@@ -35,7 +33,7 @@ public sealed class NotificationStore : IAsyncDisposable
             command.CommandText = "INSERT OR IGNORE INTO notices(id,sid,message,at) VALUES($id,$sid,$message,$at)";
             command.Parameters.AddWithValue("$id", eventId);
             command.Parameters.AddWithValue("$sid", (object?)userSid ?? DBNull.Value);
-            command.Parameters.AddWithValue("$message", Compliance.Core.EvidenceSanitizer.Clean(message));
+            command.Parameters.AddWithValue("$message", EvidenceSanitizer.Clean(message));
             command.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
             await command.ExecuteNonQueryAsync(ct);
         }
@@ -45,7 +43,7 @@ public sealed class NotificationStore : IAsyncDisposable
         }
     }
 
-    public async Task<LocalNotice[]> ListAsync(string userSid, CancellationToken ct = default)
+    public async Task<TrayNotice[]> ListAsync(string userSid, CancellationToken ct = default)
     {
         await gate.WaitAsync(ct);
         try
@@ -56,7 +54,7 @@ public sealed class NotificationStore : IAsyncDisposable
                 + "notices n WHERE n.sid IS NULL OR n.sid=$sid ORDER BY n.at DESC LIMIT 50";
             command.Parameters.AddWithValue("$sid", userSid);
             using var reader = await command.ExecuteReaderAsync(ct);
-            var records = new List<LocalNotice>();
+            var records = new List<TrayNotice>();
             while (await reader.ReadAsync(ct))
                 records.Add(
                     new(
@@ -108,15 +106,12 @@ public sealed class NotificationStore : IAsyncDisposable
 }
 
 /// <summary>
-/// The tray's pipe to the service. Without a store the service is waiting to be enrolled, and every request is
-/// answered with <c>{"error":"not-enrolled"}</c>.
+/// The service's end of <see cref="TrayPipe"/>. Without a store the service is waiting to be enrolled, and every
+/// request is answered with <see cref="TrayPipe.NotEnrolled"/>.
 /// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class NotificationPipe(NotificationStore? store)
 {
-    public const string PipeName = "ComplianceAgent.Notifications.v1";
-    public const string NotEnrolled = "not-enrolled";
-
     public async Task RunAsync(CancellationToken ct)
     {
         var security = new PipeSecurity();
@@ -151,7 +146,7 @@ public sealed class NotificationPipe(NotificationStore? store)
             try
             {
                 pipe = NamedPipeServerStreamAcl.Create(
-                    PipeName,
+                    TrayPipe.Name,
                     PipeDirection.InOut,
                     5,
                     PipeTransmissionMode.Byte,
@@ -215,22 +210,18 @@ public sealed class NotificationPipe(NotificationStore? store)
             pipe.RunAsClient(() => sid = ClientSid());
             if (sid is null)
                 return;
-            using var doc = JsonDocument.Parse(line);
-            var action = doc.RootElement.TryGetProperty("action", out var a) ? a.GetString() : null;
+            var request = Wire.Read<TrayRequest>(line);
             object reply = store is null
-                ? new { error = NotEnrolled }
-                : action switch
+                ? new TrayError(TrayPipe.NotEnrolled)
+                : request switch
                 {
-                    "list" => await store.ListAsync(sid, ct),
-                    "ack"
-                        when doc.RootElement.TryGetProperty("eventId", out var id)
-                            && id.GetString() is { Length: > 0 } eventId => new
-                    {
-                        ok = await store.AckAsync(sid, eventId, ct),
-                    },
-                    _ => new { error = "Unsupported notification request" },
+                    { Action: TrayPipe.List } => await store.ListAsync(sid, ct),
+                    { Action: TrayPipe.Ack, EventId: { Length: > 0 } eventId } => new TrayAck(
+                        await store.AckAsync(sid, eventId, ct)
+                    ),
+                    _ => new TrayError("Unsupported notification request"),
                 };
-            await writer.WriteLineAsync(Compliance.Core.Wire.Serialize(reply));
+            await writer.WriteLineAsync(Wire.Serialize(reply));
         }
         catch (Exception ex) when (ex is OperationCanceledException && stop.IsCancellationRequested) { }
         catch (Exception ex)

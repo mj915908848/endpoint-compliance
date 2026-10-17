@@ -1,7 +1,5 @@
 using System.IO;
-using System.IO.Pipes;
-using System.Security.Principal;
-using System.Text.Json;
+using Compliance.Core;
 using Timer = System.Windows.Forms.Timer;
 
 namespace Compliance.Tray;
@@ -52,7 +50,6 @@ public static class Program
 /// <summary>The notification-area icon: polls the service for notices, shows new ones as balloons and opens the notification center.</summary>
 public sealed class TrayApp : ApplicationContext
 {
-    private const string PipeName = "ComplianceAgent.Notifications.v1";
     public const string MutexName = @"Local\ComplianceAgent.Tray";
     public const string ShowEventName = @"Local\ComplianceAgent.Tray.Show";
 
@@ -183,7 +180,9 @@ public sealed class TrayApp : ApplicationContext
         Notice[]? notices;
         try
         {
-            notices = Parse(await PipeRequestAsync("{\"action\":\"list\"}"));
+            notices = (await TrayPipe.ListAsync())
+                ?.Select(n => new Notice(n.EventId, n.Message, n.At, n.Acknowledged))
+                .ToArray();
         }
         // Anything else, such as a reply from a service of another version, must not end the tray either: this
         // runs from the timer's async void handler, where an escaping exception closes the process.
@@ -243,46 +242,11 @@ public sealed class TrayApp : ApplicationContext
         return true;
     }
 
-    /// <summary>The notices, or null when the service waits for an enrollment.</summary>
-    private static Notice[]? Parse(string reply)
-    {
-        using var json = JsonDocument.Parse(reply);
-        if (
-            json.RootElement.ValueKind == JsonValueKind.Object
-            && json.RootElement.TryGetProperty("error", out var error)
-            && error.ValueKind == JsonValueKind.String
-            && error.GetString() == "not-enrolled"
-        )
-            return null;
-        if (json.RootElement.ValueKind != JsonValueKind.Array)
-            throw new JsonException("Service refused the request: " + reply);
-        // Entries without an id are skipped rather than failing the whole list; other fields fall back.
-        return json
-            .RootElement.EnumerateArray()
-            .Where(n =>
-                n.ValueKind == JsonValueKind.Object
-                && n.TryGetProperty("eventId", out var id)
-                && id.ValueKind == JsonValueKind.String
-                && id.GetString() is { Length: > 0 }
-            )
-            .Select(n => new Notice(
-                n.GetProperty("eventId").GetString()!,
-                n.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString()! : "",
-                n.TryGetProperty("at", out var at)
-                && at.ValueKind == JsonValueKind.String
-                && at.TryGetDateTimeOffset(out var time)
-                    ? time
-                    : DateTimeOffset.Now,
-                n.TryGetProperty("acknowledged", out var ack) && ack.ValueKind == JsonValueKind.True
-            ))
-            .ToArray();
-    }
-
     private async Task AcknowledgeAsync(string id)
     {
         try
         {
-            await PipeRequestAsync(JsonSerializer.Serialize(new { action = "ack", eventId = id }));
+            await TrayPipe.AcknowledgeAsync(id);
         }
         // A failed acknowledgement leaves the notice unread; the refresh that follows shows it again.
         catch (Exception) { }
@@ -298,22 +262,6 @@ public sealed class TrayApp : ApplicationContext
         icon.Icon = Icons.Tray(name);
         previous?.Dispose();
         state = name;
-    }
-
-    private static async Task<string> PipeRequestAsync(string request)
-    {
-        using var pipe = new NamedPipeClientStream(
-            ".",
-            PipeName,
-            PipeDirection.InOut,
-            PipeOptions.Asynchronous,
-            TokenImpersonationLevel.Identification
-        );
-        await pipe.ConnectAsync(2000);
-        using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
-        using var reader = new StreamReader(pipe, leaveOpen: true);
-        await writer.WriteLineAsync(request);
-        return await reader.ReadLineAsync() ?? throw new IOException("Empty service response");
     }
 
     protected override void ExitThreadCore()
