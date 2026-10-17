@@ -97,6 +97,21 @@ export function downloadReport(deviceId: string): Promise<void> {
     "报告",
   );
 }
+/**
+ * Hands a blob to the browser as a download. The link is released a minute later rather than right after the
+ * click: some browsers start reading it only after the click returns and would otherwise save nothing.
+ */
+function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export async function downloadFile(path: string, name: string, what = "文件"): Promise<void> {
   const response = await fetch(path, {
     credentials: "same-origin",
@@ -106,25 +121,11 @@ export async function downloadFile(path: string, name: string, what = "文件"):
   if (!response.ok)
     throw new HttpError(`${what}下载失败（HTTP ${response.status}）`, response.status);
   const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  saveBlob(blob, name);
 }
 export function downloadJson(value: unknown, name: string) {
   const blob = new Blob([JSON.stringify(value, null, 2)], {
     type: "application/json;charset=utf-8",
   });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  saveBlob(blob, name);
 }

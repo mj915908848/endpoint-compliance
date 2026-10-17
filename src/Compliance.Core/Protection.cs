@@ -8,6 +8,9 @@ namespace Compliance.Core;
 
 public static class PolicyCrypto
 {
+    /// <summary>The most product rules a policy may hold, checked here for the server and the client alike.</summary>
+    public const int MaxProducts = 1000;
+
     public static SignedPolicy Sign(PolicyDocument document, ECDsa key, string keyId)
     {
         Validate(document);
@@ -93,9 +96,10 @@ public static class PolicyCrypto
             throw new ArgumentException("检查频率超出范围：快速检查每 1–60 分钟，完整检查每 10–1440 分钟");
         if (doc.FullCheckMinutes < doc.QuickCheckMinutes)
             throw new ArgumentException("完整检查的间隔不能短于快速检查");
+        if (doc.Products.Length > MaxProducts)
+            throw new ArgumentException($"产品规则最多 {MaxProducts} 条");
         if (
-            doc.Products.Length > 1000
-            || doc.Products.Any(r =>
+            doc.Products.Any(r =>
                 string.IsNullOrWhiteSpace(r.Id)
                 || r.PackageIds is null
                 || r.ExecutableNames is null
