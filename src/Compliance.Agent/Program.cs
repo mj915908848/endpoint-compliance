@@ -294,14 +294,21 @@ public sealed class AgentWorker(Func<AgentRuntime?> load) : BackgroundService
         }
     }
 
-    /// <summary>Brings back the trays an upgrade closed, once the installer has had time to finish.</summary>
+    /// <summary>
+    /// Brings back the trays an upgrade closed, once the installer is done: Windows Installer holds
+    /// <c>Global\_MSIExecute</c> while it runs. Started before that, a tray could be running from files an uninstall
+    /// is about to remove; an uninstall stops this service while it still holds the name, so none is started then.
+    /// </summary>
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     static async Task StartTraysAsync(CancellationToken ct)
     {
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(15), ct);
-            TrayLauncher.StartInSignedInSessions();
+            var deadline = DateTime.UtcNow.AddMinutes(30);
+            do await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            while (TrayLauncher.InstallerRunning() && DateTime.UtcNow < deadline);
+            if (!TrayLauncher.InstallerRunning())
+                TrayLauncher.StartInSignedInSessions();
         }
         catch (OperationCanceledException) { }
         catch (Exception e)

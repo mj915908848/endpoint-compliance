@@ -9,13 +9,29 @@ namespace Compliance.Agent;
 /// Starts the tray in every signed-in session that has none. The installer closes the tray in all sessions before it
 /// replaces the files, and a silent install (a remote upgrade) has no user to start it again, so without this the tray
 /// stayed away until the next sign-in. The tray keeps one copy per session, so starting it where one runs is harmless.
-/// Only for installs that start the tray at sign-in (the Run value the MSI writes); its command line is used as is.
+/// Only for installs that start the tray at sign-in (the Run value the MSI writes), from the path it names.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class TrayLauncher
 {
     const string RunKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
     const string RunValue = "ComplianceTray";
+
+    /// <summary>Whether Windows Installer is installing or removing a product right now.</summary>
+    public static bool InstallerRunning()
+    {
+        try
+        {
+            if (!Mutex.TryOpenExisting(@"Global\_MSIExecute", out var held))
+                return false;
+            held.Dispose();
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true; // there, but not ours to open
+        }
+    }
 
     public static void StartInSignedInSessions()
     {
@@ -90,7 +106,9 @@ public static class TrayLauncher
                     false,
                     CreateUnicodeEnvironment,
                     environment,
-                    Path.GetDirectoryName(exe),
+                    // The service's own (System32), as at sign-in: one inside the program folder would keep an
+                    // uninstall from removing it.
+                    null,
                     ref startup,
                     out var process
                 )
