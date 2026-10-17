@@ -29,9 +29,10 @@ const verdictColor: Record<Verdict, string> = {
   UNKNOWN: "warning",
 };
 
-export function VerdictTag({ verdict }: { verdict: Verdict }) {
+/** `muted` greys the tag out, for a device whose current verdict is unknown only because it is offline. */
+export function VerdictTag({ verdict, muted = false }: { verdict: Verdict; muted?: boolean }) {
   return (
-    <Tag color={verdictColor[verdict] ?? "warning"} variant="solid">
+    <Tag color={muted ? "default" : (verdictColor[verdict] ?? "warning")} variant="filled">
       {verdictLabels[verdict] ?? "无法判断"}
     </Tag>
   );
@@ -161,7 +162,7 @@ export function DeviceState({ device }: { device: DeviceSummary }) {
   return (
     <Space orientation="vertical" size={2}>
       <Space size={4} wrap>
-        <VerdictTag verdict={offline ? "UNKNOWN" : device.currentVerdict} />
+        <VerdictTag verdict={offline ? "UNKNOWN" : device.currentVerdict} muted={offline} />
         {device.simulated && <Tag color="purple">模拟终端</Tag>}
       </Space>
       {offline && device.lastVerdict && (
