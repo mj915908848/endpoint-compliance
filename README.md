@@ -136,7 +136,7 @@ python3 integration/e2e.py
 ## 当前边界
 
 - 强制模式提供两项防护措施：「发现即结束进程」（每 2 秒检查一次，按程序名和产品名（Store 应用按包名）确认后结束，员工托盘提示，管理端产生拦截告警）和「浏览器网址拦截」（写入 Edge、Chrome 的 URLBlocklist 组策略并读回核对）。Firefox、便携浏览器和其他程序的网络访问不在覆盖范围内，建议在出口网关按策略域名拦截。
-- 尚无代码签名，个别杀毒软件可能误报；客户端不会自动升级，管理端会标出版本落后的终端，需重新安装新版 MSI；登录只支持本地账号，未接入 LDAP / AD。
+- 尚无代码签名，个别杀毒软件可能误报；客户端不会自动升级，管理端会标出版本落后和低于最低支持版本的终端，需重新安装新版 MSI（兼容约定见 `docs/compatibility.md`）；登录只支持本地账号，未接入 LDAP / AD。
 - 未知软件、改名的便携程序、任意目录中的文件不保证能发现。
 
 完整的能力与验收矩阵见 `docs/capabilities.md`。
@@ -145,6 +145,7 @@ python3 integration/e2e.py
 
 - `docs/design-v1.md`：总体设计
 - `docs/server-api.md`：管理端与终端 API
+- `docs/compatibility.md`：管理端与客户端的版本兼容约定
 - `docs/capabilities.md`：已实现能力与待验收项
 - `deploy/docker/README.md`：管理端 Docker 部署、反向代理、备份与升级
 - `deploy/windows/客户端安装说明.md`：客户端安装、升级、卸载（随客户端包发布）

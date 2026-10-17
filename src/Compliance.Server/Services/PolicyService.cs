@@ -189,7 +189,7 @@ public sealed class PolicyService(Settings settings, TimeProvider clock) : IDisp
         var isDefault = existing?.IsDefault ?? false;
         var doc = submitted with
         {
-            SchemaVersion = 1,
+            SchemaVersion = Wire.SchemaVersion,
             PolicyId = submitted.PolicyId?.Trim() ?? "",
             // Each policy counts its own releases; the serial orders releases of every policy.
             Version = (existing?.Document.Version ?? 0) + 1,

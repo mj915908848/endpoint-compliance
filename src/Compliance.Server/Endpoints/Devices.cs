@@ -200,6 +200,7 @@ static partial class Endpoints
             "终端已应用",
             "客户端版本",
             "客户端需升级",
+            "客户端低于最低版本",
             "最近心跳",
             "最近检查",
             "数据来源",
@@ -222,6 +223,7 @@ static partial class Endpoints
                 Labels.YesNo(d.PolicyApplied),
                 d.AgentVersion,
                 Labels.YesNo(d.AgentOutdated),
+                Labels.YesNo(d.AgentUnsupported),
                 Time(d.LastHeartbeat),
                 Time(d.LastScan),
                 d.LastScan == null ? ""

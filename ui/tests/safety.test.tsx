@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import { DeviceState, AlertCard, Login } from "../src/components";
+import { AgentVersion, DeviceState, AlertCard, Login } from "../src/components";
 import type { DeviceSummary } from "../src/types";
 // Explicit fixtures only: these are synthetic records, never runtime demonstration data.
 const deviceFixture: DeviceSummary = {
@@ -23,6 +23,7 @@ const deviceFixture: DeviceSummary = {
   agentOutdated: false,
   network: null,
   sourceAddress: "",
+  agentUnsupported: false,
 };
 const alertFixture = {
   id: "fixture-alert",
@@ -38,6 +39,24 @@ const alertFixture = {
   acknowledged: false,
 };
 describe("safety boundaries", () => {
+  it("marks a client below the supported minimum more strongly than an outdated one", () => {
+    const { rerender } = render(
+      <AgentVersion device={{ ...deviceFixture, agentVersion: "0.2.8", agentOutdated: true }} />,
+    );
+    expect(screen.getByText("客户端 0.2.8 · 待升级")).toBeTruthy();
+    rerender(
+      <AgentVersion
+        device={{
+          ...deviceFixture,
+          agentVersion: "0.1.9",
+          agentOutdated: true,
+          agentUnsupported: true,
+        }}
+      />,
+    );
+    expect(screen.getByText("客户端 0.1.9 · 不受支持")).toBeTruthy();
+  });
+
   it("offline historical PASS is explicitly historical and current remains unknown", () => {
     render(<DeviceState device={deviceFixture} />);
     expect(screen.getByText("无法判断")).toBeTruthy();

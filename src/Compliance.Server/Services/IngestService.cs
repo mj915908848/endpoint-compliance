@@ -125,7 +125,7 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
         if (
             e.Snapshot is { } s
             && (
-                s.SchemaVersion != 1
+                s.SchemaVersion != Wire.SchemaVersion
                 || s.DeviceId != deviceId
                 || s.CollectedAt > Now.AddMinutes(5)
                 || s.Evidence == null

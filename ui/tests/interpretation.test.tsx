@@ -22,6 +22,7 @@ const device: DeviceSummary = {
   agentOutdated: false,
   network: null,
   sourceAddress: "",
+  agentUnsupported: false,
 };
 
 describe("plain-language result explanation", () => {

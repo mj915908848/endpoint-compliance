@@ -220,7 +220,27 @@ public class ApiTests
         }
         Assert.Equal("0.2.8", (await Beat("0.2.8")).AgentVersion);
         // The fixed value clients before 0.2.8 sent is not a release.
-        Assert.Equal("", (await Beat("0.1.0")).AgentVersion);
+        var legacy = await Beat("0.1.0");
+        Assert.Equal("", legacy.AgentVersion);
+        Assert.False(legacy.AgentUnsupported);
+        Assert.True((await Beat("0.1.9")).AgentUnsupported);
+        Assert.False((await Beat(ReleaseVersion.MinimumAgent)).AgentUnsupported);
+    }
+
+    [Fact]
+    public async Task Heartbeat_reply_names_the_oldest_client_the_server_serves()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        var r = await f.Agent(
+            "POST",
+            "/api/agent/heartbeat",
+            new HeartbeatRequest("host", "0.2.8", f.Clock.Now, 1, [])
+        );
+        var reply = (await r.Content.ReadFromJsonAsync<HeartbeatReply>(Wire.Json))!;
+        Assert.Equal(ReleaseVersion.MinimumAgent, reply.MinimumAgentVersion);
+        Assert.Equal(ComplianceService.Version, reply.ServerVersion);
     }
 
     [Fact]
@@ -288,6 +308,16 @@ public class ApiTests
     [InlineData("0.0.0-dev", "0.2.8", false)]
     public void Client_is_outdated_only_against_a_release_server(string agent, string server, bool older) =>
         Assert.Equal(older, ReleaseVersion.Older(agent, server));
+
+    [Theory]
+    [InlineData("0.1.9", "0.2.0", true)]
+    [InlineData("0.2.0", "0.2.0", false)]
+    [InlineData("0.3.1", "0.2.0", false)]
+    [InlineData("", "0.2.0", false)]
+    [InlineData("0.0.0-dev", "0.2.0", false)]
+    [InlineData("0.1.9", "", false)]
+    public void Client_is_unsupported_only_below_the_minimum(string agent, string minimum, bool unsupported) =>
+        Assert.Equal(unsupported, ReleaseVersion.Unsupported(agent, minimum));
 
     [Fact]
     public async Task Snapshot_events_keep_no_copy_and_old_events_are_pruned()

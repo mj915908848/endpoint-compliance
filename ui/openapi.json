@@ -1494,7 +1494,8 @@
           "agentVersion",
           "agentOutdated",
           "network",
-          "sourceAddress"
+          "sourceAddress",
+          "agentUnsupported"
         ],
         "type": "object",
         "properties": {
@@ -1579,6 +1580,10 @@
           "sourceAddress": {
             "type": "string",
             "default": ""
+          },
+          "agentUnsupported": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -1769,7 +1774,9 @@
         "required": [
           "ok",
           "gzipUploads",
-          "lastSequence"
+          "lastSequence",
+          "serverVersion",
+          "minimumAgentVersion"
         ],
         "type": "object",
         "properties": {
@@ -1782,6 +1789,12 @@
           "lastSequence": {
             "type": "integer",
             "format": "int64"
+          },
+          "serverVersion": {
+            "type": "string"
+          },
+          "minimumAgentVersion": {
+            "type": "string"
           }
         }
       },

@@ -1530,6 +1530,8 @@ export interface components {
       network: null | components["schemas"]["NetworkAdapter"][];
       /** @default  */
       sourceAddress: string;
+      /** @default false */
+      agentUnsupported: boolean;
     };
     Done: {
       /** @default true */
@@ -1592,6 +1594,8 @@ export interface components {
       gzipUploads: boolean;
       /** Format: int64 */
       lastSequence: number;
+      serverVersion: string;
+      minimumAgentVersion: string;
     };
     HeartbeatRequest: {
       hostName: string;

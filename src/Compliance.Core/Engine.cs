@@ -31,7 +31,7 @@ public static class ReportEngine
         }
         var names = Labels.AccountNames(snapshot);
         var gaps = new List<string>();
-        if (policy.SchemaVersion != 1 || snapshot.SchemaVersion != 1)
+        if (policy.SchemaVersion != Wire.SchemaVersion || snapshot.SchemaVersion != Wire.SchemaVersion)
             gaps.Add("策略或检查数据的格式版本不受支持");
         if (!policy.DenyInstalled || !policy.DenyProxy || policy.RequiredModules.Length == 0)
             gaps.Add("策略未完整定义禁用规则或必需检查项");

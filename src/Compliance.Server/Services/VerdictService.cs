@@ -103,7 +103,8 @@ public sealed class VerdictService(Store store, PolicyService policies, TimeProv
             d.AgentVersion,
             ReleaseVersion.Older(d.AgentVersion, ComplianceService.Version),
             d.Network,
-            d.SourceAddress
+            d.SourceAddress,
+            ReleaseVersion.Unsupported(d.AgentVersion)
         );
     }
 

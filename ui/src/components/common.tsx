@@ -397,9 +397,17 @@ export function Login({
   );
 }
 
-/** Client release of a device, flagged when older than the server's. */
+/** Client release of a device, flagged when older than the server's or than the oldest it supports. */
 export function AgentVersion({ device }: { device: DeviceSummary }) {
   const text = device.agentVersion ? `客户端 ${device.agentVersion}` : "客户端 0.2.7 或更早";
+  if (device.agentUnsupported)
+    return (
+      <Tooltip title="低于管理端支持的最低客户端版本，检查结果可能不完整，请尽快升级">
+        <Tag color="error" style={{ marginInlineEnd: 0 }}>
+          {text} · 不受支持
+        </Tag>
+      </Tooltip>
+    );
   return device.agentOutdated ? (
     <Tooltip title="比管理端版本旧，建议升级客户端">
       <Tag color="warning" style={{ marginInlineEnd: 0 }}>

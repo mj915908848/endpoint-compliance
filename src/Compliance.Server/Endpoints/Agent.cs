@@ -128,7 +128,13 @@ static partial class Endpoints
                         // Clients from 0.2.9 compress larger uploads once a server says it accepts them. The highest
                         // sequence held lets a client whose local queue file was lost carry on after it: a snapshot
                         // numbered below the current one is ignored.
-                        return new HeartbeatReply(Ok: true, GzipUploads: true, await tx.LastSequence(deviceId));
+                        return new HeartbeatReply(
+                            Ok: true,
+                            GzipUploads: true,
+                            await tx.LastSequence(deviceId),
+                            ComplianceService.Version,
+                            ReleaseVersion.MinimumAgent
+                        );
                     });
                 }
             )

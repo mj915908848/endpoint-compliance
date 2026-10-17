@@ -25,6 +25,7 @@ const device: DeviceSummary = {
   agentOutdated: false,
   network: null,
   sourceAddress: "",
+  agentUnsupported: false,
 };
 
 function stubApi(roles: string[]) {

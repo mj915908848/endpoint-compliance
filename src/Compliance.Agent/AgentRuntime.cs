@@ -653,6 +653,23 @@ public sealed class AgentRuntime(
                 && await queue.AdvanceSequenceAsync(sequence, ct)
             )
                 Console.Error.WriteLine($"本地上报序号落后于管理端，已改为从 {sequence + 1} 继续");
+            // Newer servers say the oldest client they serve fully; the tray tells the user once per minimum.
+            var own = ReleaseVersion.Of(typeof(AgentRuntime).Assembly);
+            if (
+                reply.ValueKind == JsonValueKind.Object
+                && reply.TryGetProperty("minimumAgentVersion", out var minimum)
+                && minimum.GetString() is { Length: > 0 } oldest
+                && ReleaseVersion.Unsupported(own, oldest)
+            )
+            {
+                Console.Error.WriteLine($"客户端 {own} 低于管理端要求的最低版本 {oldest}，请升级");
+                await notices.AddAsync(
+                    "client-unsupported:" + oldest,
+                    null,
+                    $"本机的终端合规客户端（{own}）低于管理端要求的最低版本 {oldest}，检查结果可能不完整，请联系管理员升级客户端。",
+                    ct
+                );
+            }
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
         {
