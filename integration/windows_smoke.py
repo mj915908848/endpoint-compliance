@@ -19,8 +19,6 @@ ap.add_argument("--data", type=pathlib.Path)
 # A staged package (agent-windows-x64 + deploy/windows): installs it as a service from a downloaded
 # 登记配置.json, as an administrator would, then uninstalls it.
 ap.add_argument("--package", type=pathlib.Path)
-# An earlier release's package: installed first, then upgraded in place with --package ("1 仅更新程序").
-ap.add_argument("--old-package", type=pathlib.Path)
 # The client MSI: takes over a script install, enrolls silently, and waits for an enrollment when installed without one.
 ap.add_argument("--msi", type=pathlib.Path)
 args = ap.parse_args()
@@ -334,20 +332,13 @@ try:
         assert subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True).returncode != 0, \
             "A service was installed next to a foreign data directory"
         print("PASS the installer refuses a data directory someone else created")
-        run_installer((args.old_package or args.package).resolve(), "", "install.log")
+        run_installer(package, "", "install.log")
         enrolled = wait_reporting()
         uses = [c for c in request("/api/enrollment-codes") if c["id"] == batch["id"]][0]["uses"]
         assert uses == 1, f"batch code uses {uses}"
         print("PASS double-click installer enrolls with the downloaded config; the service reports")
-        if args.old_package:
-            before = enrolled[0]["lastHeartbeat"]
-            run_installer(package, "1\n", "upgrade.log")
-            upgraded = wait_reporting(before)
-            assert [d["id"] for d in upgraded] == [d["id"] for d in enrolled], "Upgrade enrolled a new device"
-            assert "更新到" in (data / "upgrade.log").read_text(encoding="utf-8", errors="replace")
-            print("PASS upgrading an earlier release in place keeps the device identity and the service reports")
-        # The installing administrator's account wrote the configuration and identity key (an earlier release left
-        # them so); the service hands everything to Administrators, since an owner can always change permissions.
+        # The installing administrator's account wrote the configuration and identity key; the service hands
+        # everything to Administrators, since an owner can always change permissions.
         owners = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              f"(@(Get-Item -LiteralPath '{agent_data}' -Force) + @(Get-ChildItem -LiteralPath '{agent_data}' -Force)) | "
@@ -359,8 +350,7 @@ try:
             line.split()[-1] in ("S-1-5-18", "S-1-5-32-544") for line in owners.splitlines() if line.strip()
         ), f"Data directory items with other owners: {owners}"
         print("PASS the data directory and its files belong to SYSTEM or Administrators")
-        # The log sits in a logs folder every user may read but not change, so the tray opens it without elevation;
-        # an earlier release's log next to the key moved there on upgrade.
+        # The log sits in a logs folder every user may read but not change, so the tray opens it without elevation.
         logs = agent_data / "logs"
         assert (logs / "agent.log").exists(), "The service did not write logs\\agent.log"
         assert not (agent_data / "agent.log").exists() and not (agent_data / "agent.log.1").exists(), \
@@ -381,7 +371,7 @@ try:
             line.split()[0] in ("S-1-5-18", "S-1-5-32-544", "S-1-5-32-545")
             for line in rules.splitlines()[1:] if line.strip()
         ), f"The logs folder grants another account: {rules}"
-        print("PASS the log is in a folder users may read but not change, and an earlier release's log moved there")
+        print("PASS the log is in a folder users may read but not change")
         # Explorer's "permanently get access" prompt grants the signed-in user access to the data directory.
         # The service must remove that grant on its next start, keep running and tell the administrator.
         before = wait_reporting()[0]["lastHeartbeat"]

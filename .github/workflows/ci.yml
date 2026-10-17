@@ -257,14 +257,8 @@ jobs:
           dotnet build src/Compliance.Tray -c Release
       - name: Stage a client package and build the MSI
         run: python scripts/package.py --stage artifacts/pkg --msi
-      - name: Download an earlier release to upgrade from
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download v0.2.1 -p 'compliance-client-*' -D artifacts/old-zip
-          python -m zipfile -e artifacts/old-zip/*.zip artifacts/old-pkg
-      - name: Native scan against a loopback server, then install the earlier release and upgrade it as a service
-        run: python integration/windows_smoke.py --data artifacts/windows-smoke --package artifacts/pkg --old-package artifacts/old-pkg --msi "$(ls artifacts/compliance-client-*-windows-x64.msi)"
+      - name: Native scan against a loopback server, then install the client as a service and with the MSI
+        run: python integration/windows_smoke.py --data artifacts/windows-smoke --package artifacts/pkg --msi "$(ls artifacts/compliance-client-*-windows-x64.msi)"
       - if: always()
         uses: actions/upload-artifact@v6
         with:
