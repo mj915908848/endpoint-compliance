@@ -17,6 +17,18 @@ static partial class Endpoints
 
     sealed record AuditRetentionRequest(int Days);
 
+    /// <summary>
+    /// The robot address as shown in the UI: its token is the address itself, so only the host and the last few
+    /// characters are shown. Sending this form back keeps the saved address.
+    /// </summary>
+    internal static string MaskWebhook(string url)
+    {
+        if (url.Length == 0)
+            return "";
+        var host = Uri.TryCreate(url, UriKind.Absolute, out var u) ? $"{u.Scheme}://{u.Host}/" : "";
+        return $"{host}****{url[^Math.Min(4, url.Length)..]}";
+    }
+
     static void MapSettings(IEndpointRouteBuilder routes, ComplianceService s, AlertNotifier notifier)
     {
         var group = routes.MapGroup("/api/settings");
@@ -33,7 +45,7 @@ static partial class Endpoints
                         new NotificationView(
                             n.Enabled,
                             n.Channel,
-                            n.WebhookUrl,
+                            MaskWebhook(n.WebhookUrl),
                             n.Secret.Length > 0,
                             n.Types,
                             n.ConsoleUrl
@@ -54,6 +66,11 @@ static partial class Endpoints
                     var r = await Body<NotificationRequest>(c);
                     var channel = r.Channel ?? "";
                     var url = (r.WebhookUrl ?? "").Trim();
+                    // The masked address the UI was given means "unchanged".
+                    var saved = await s.Tx(AlertNotifier.Settings);
+                    var kept = saved.WebhookUrl.Length > 0 && url == MaskWebhook(saved.WebhookUrl);
+                    if (kept)
+                        url = saved.WebhookUrl;
                     var console = (r.ConsoleUrl ?? "").Trim().TrimEnd('/');
                     if (!NotificationSettings.Channels.Contains(channel))
                         throw new ApiError(400, "请选择推送渠道");
@@ -90,13 +107,16 @@ static partial class Endpoints
                     return await s.Tx(async tx =>
                     {
                         await tx.Lock(NotificationSettings.Key);
-                        var saved = await AlertNotifier.Settings(tx);
+                        var current = await AlertNotifier.Settings(tx);
+                        // Changed meanwhile: the masked form now names an address nobody here has seen.
+                        if (kept && current.WebhookUrl != saved.WebhookUrl)
+                            throw new ApiError(409, "机器人地址刚被其他人修改，请刷新后重试");
                         var next = new NotificationSettings
                         {
                             Enabled = r.Enabled,
                             Channel = channel,
                             WebhookUrl = url,
-                            Secret = (r.Secret ?? saved.Secret).Trim(),
+                            Secret = (r.Secret ?? current.Secret).Trim(),
                             Types = types,
                             ConsoleUrl = console,
                         };
@@ -135,7 +155,8 @@ static partial class Endpoints
                 "/audit-retention",
                 async (HttpContext c) =>
                 {
-                    var u = Require(c, "Operator");
+                    // Audit records also hold operators to account, so only publishers may shorten them.
+                    var u = Require(c, "Publisher");
                     var r = await Body<AuditRetentionRequest>(c);
                     if (!Housekeeping.AuditRetentionChoices.Contains(r.Days))
                         throw new ApiError(400, "保留期限无效");
