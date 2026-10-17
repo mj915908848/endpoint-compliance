@@ -129,8 +129,7 @@ describe("policy editor", () => {
     expect(posts[0]).toMatchObject({ policyId: "研发部", targetDeviceIds: ["a"], mode: "Audit" });
     expect(posts[0].products).toEqual(base.products);
     expect(await screen.findByText("研发部 · 1 台")).toBeTruthy();
-    // Takes about 15 seconds in jsdom (device picker, editor and confirm dialog), too close to the default 20.
-  }, 60_000);
+  });
 
   it("publishes an edit directly after showing what changes", async () => {
     const posts = stub(base, base);
@@ -209,8 +208,7 @@ describe("policy editor", () => {
       fireEvent.click(screen.getByRole("button", { name: "取消" }));
     }
     expect((screen.getByLabelText("策略名称") as HTMLInputElement).value).toBe("Default-mine");
-    // Role queries over the whole editor are slow in jsdom, and this opens the JSON dialog twice.
-  }, 60_000);
+  });
 
   it("keeps the editor and unsaved changes when a refresh fails", async () => {
     const release = (doc: Policy) => ({ payload: JSON.stringify(doc), signature: "s", keyId: "k" });

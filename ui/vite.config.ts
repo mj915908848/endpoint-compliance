@@ -19,6 +19,7 @@ export default defineConfig({
   server: {
     proxy: { "/api": { target: "http://127.0.0.1:5080", changeOrigin: false } },
   },
-  // Ant Design interactions are slow under jsdom; the default 5s is too tight for multi-step tests.
-  test: { environment: "jsdom", setupFiles: ["./tests/setup.ts"], testTimeout: 20000 },
+  // Ant Design interactions are slow under jsdom: policy editor tests take 15-35 s, and up to a third more on a
+  // busy CI runner. The timeout only has to catch a test that hangs.
+  test: { environment: "jsdom", setupFiles: ["./tests/setup.ts"], testTimeout: 90_000 },
 });
