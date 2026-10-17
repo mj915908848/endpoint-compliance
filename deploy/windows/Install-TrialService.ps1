@@ -1,5 +1,5 @@
 ﻿#requires -Version 5.1
-# 把客户端安装为常驻 Windows 服务，连接内网 HTTP 试用管理端。正式环境用 MSI 安装。
+# 把客户端安装为常驻 Windows 服务，连接内网 HTTP 试用管理端（Windows 冒烟测试用）。正式环境用 MSI 安装。
 # 管理端地址和登记码依次取自 -ServerUrl/-Code 参数、安装包根目录的“登记配置.json”（管理端“终端登记”页下载），
 # 都没有时询问。
 [CmdletBinding()]
@@ -94,4 +94,4 @@ Write-Host '安装完成。客户端已作为 Windows 服务在后台运行，�
 Write-Host '- 约 1 分钟内管理端显示该终端在线，并完成首次完整检查。'
 Write-Host '- 之后每分钟上报心跳，按策略中的检查频率检查（默认每 5 分钟快速检查、每小时完整检查）。'
 Write-Host '- 管理端点“请求重新检查”后，客户端会在下一次心跳时执行。'
-Write-Host '- 卸载：双击“卸载常驻客户端.bat”。'
+Write-Host '- 卸载：运行 deploy\windows\Uninstall-TrialService.ps1。'

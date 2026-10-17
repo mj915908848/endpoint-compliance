@@ -1,5 +1,5 @@
 ﻿#requires -Version 5.1
-# 试用：卸载常驻客户端，并删除登记身份、策略缓存和未上报记录。
+# 卸载脚本安装的常驻客户端（Windows 冒烟测试用），并删除登记身份、策略缓存和未上报记录。
 [CmdletBinding()]
 param([switch]$Quiet)
 $ErrorActionPreference = 'Stop'

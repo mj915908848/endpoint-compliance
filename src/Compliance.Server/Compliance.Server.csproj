@@ -2,15 +2,6 @@
   <PropertyGroup>
     <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
-  <!-- Self-contained packages trim the framework (scripts/package.py). Our own assemblies stay whole, and JSON keeps
-       reflection-based serialization, since nothing here uses source-generated contracts yet. Endpoints bind at run
-       time as in tests rather than through the compile-time generator trimming would turn on. -->
-  <PropertyGroup Condition="'$(PublishTrimmed)' == 'true'">
-    <TrimMode>partial</TrimMode>
-    <EnableRequestDelegateGenerator>false</EnableRequestDelegateGenerator>
-    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
-  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.*" />
     <ProjectReference Include="../Compliance.Core/Compliance.Core.csproj" />

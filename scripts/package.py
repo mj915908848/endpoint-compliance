@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build the Windows packages: the client MSI for production installs, the full trial package, or a staged client.
+"""Build the Windows client: the MSI for installs, or a staged folder with the install scripts for tests.
 
 Releases pass --version; without it the build is the next release number with a -dev suffix.
---msi (Windows only) writes artifacts/compliance-client-<version>-windows-x64.msi; --trial writes
-artifacts/compliance-trial-<version>-windows.zip; --stage copies the client and its install scripts into a folder.
+--msi (Windows only) writes artifacts/compliance-client-<version>-windows-x64.msi; --stage copies the client and its
+install scripts into a folder.
 """
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts"
@@ -29,17 +28,11 @@ def next_version() -> str:
     return f"{base}.{max(patches, default=-1) + 1}"
 
 
-def publish(project: str, output: Path, ver: str, single_file: bool, trimmed: bool = False) -> None:
+def publish(project: str, output: Path, ver: str) -> None:
     args = [DOTNET, "publish", f"src/{project}", "-c", "Release", "-r", "win-x64", "--self-contained"]
     args += [f"-p:Version={ver}", "-p:EnableWindowsTargeting=true", "-o", str(output), "--nologo", "-v", "q"]
     # Only Chinese resources for the runtime's own messages; other languages fall back to English.
     args += ["-p:SatelliteResourceLanguages=zh-Hans"]
-    if single_file:
-        # Native libraries stay beside the executable rather than being extracted to %TEMP% at startup.
-        args += ["-p:PublishSingleFile=true", "-p:EnableCompressionInSingleFile=true", "-p:DebugType=none"]
-    if trimmed:
-        # Leaves out the parts of the framework the app never loads; the project file sets how (TrimMode etc.).
-        args.append("-p:PublishTrimmed=true")
     subprocess.run(args, cwd=ROOT, check=True)
 
 
@@ -80,28 +73,15 @@ def merge(source: Path, target: Path) -> None:
 def publish_client(output: Path, ver: str) -> None:
     """The service and the tray in one folder with one copy of the runtime."""
     shutil.rmtree(output, ignore_errors=True)
-    publish("Compliance.Tray", output, ver, False)
-    publish("Compliance.Agent", output.with_name(output.name + "-agent"), ver, False)
+    publish("Compliance.Tray", output, ver)
+    publish("Compliance.Agent", output.with_name(output.name + "-agent"), ver)
     merge(output.with_name(output.name + "-agent"), output)
     shutil.rmtree(output.with_name(output.name + "-agent"))
 
 
 def copy(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    if source.suffix == ".bat":
-        # cmd.exe needs CRLF line endings.
-        target.write_bytes(source.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
-    else:
-        shutil.copy2(source, target)
-
-
-def make_zip(folder: Path, destination: Path) -> None:
-    destination.unlink(missing_ok=True)
-    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-        for path in sorted(folder.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(folder).as_posix())
-    print(f"{destination.relative_to(ROOT)}  {destination.stat().st_size / 1048576:.0f} MB")
+    shutil.copy2(source, target)
 
 
 def stage_client(stage: Path, published: Path) -> None:
@@ -130,12 +110,11 @@ def build_msi(client: Path, ver: str) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", help="release version; defaults to the next one with a -dev suffix")
-    parser.add_argument("--trial", action="store_true", help="build the full trial package with the Windows server")
-    parser.add_argument("--stage", type=Path, help="stage the client package (no zip) into this folder")
+    parser.add_argument("--stage", type=Path, help="stage the client and its install scripts into this folder")
     parser.add_argument("--msi", action="store_true", help="build the client MSI (Windows only)")
     args = parser.parse_args()
-    if not (args.trial or args.stage or args.msi):
-        parser.error("choose --msi, --trial or --stage")
+    if not (args.stage or args.msi):
+        parser.error("choose --msi or --stage")
     ver = args.version or next_version() + "-dev"
     published = ARTIFACTS / "publish"
     shutil.rmtree(published, ignore_errors=True)
@@ -145,24 +124,6 @@ def main() -> None:
         stage_client(args.stage, published)
     if args.msi:
         build_msi(published / "client", ver)
-    if not args.trial:
-        return
-
-    stage = ARTIFACTS / "stage"
-    shutil.rmtree(stage, ignore_errors=True)
-    subprocess.run(["npm", "run", "build"], cwd=ROOT / "ui", check=True, stdout=subprocess.DEVNULL)
-    publish("Compliance.Server", published / "server", ver, single_file=True, trimmed=True)
-    stage_client(stage, published)
-    shutil.copytree(published / "server", stage / "server-windows-x64")
-    for name in ("README.md", "Start-Demo.ps1"):
-        copy(ROOT / "deploy" / "server" / name, stage / "deploy" / "server" / name)
-    for bat in (ROOT / "deploy").rglob("*.bat"):
-        copy(bat, stage / bat.name)
-    for name in ("README.md", "docs/capabilities.md", "docs/server-api.md"):
-        copy(ROOT / name, stage / name)
-    copy(ROOT / "deploy" / "server" / "试用说明.md", stage / "使用说明.md")
-    make_zip(stage, ARTIFACTS / f"compliance-trial-{ver}-windows.zip")
-    shutil.rmtree(stage)
 
 
 if __name__ == "__main__":
