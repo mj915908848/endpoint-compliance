@@ -259,20 +259,36 @@ public sealed partial class WindowsCollector
         return profiles.ToArray();
     }
 
+    // Translating a domain account asks a domain controller, which can take many seconds when none answers. Names
+    // are remembered per SID, and a lookup that takes longer than this falls back to the profile folder's name while
+    // it finishes in the background, so an unreachable domain controller does not hold up the check.
+    private static readonly TimeSpan AccountLookupWait = TimeSpan.FromSeconds(2);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task<string?>> AccountNames =
+        new();
+
     private static string? AccountName(string sid, string profilePath)
     {
-        string? translated = null;
+        var lookup = AccountNames.GetOrAdd(sid, s => Task.Run(() => Translate(s)));
+        // A failed lookup is tried again on a later check, for example once the domain controller is back.
+        if (lookup.IsCompleted && lookup.Result is null)
+            AccountNames.TryRemove(new KeyValuePair<string, Task<string?>>(sid, lookup));
+        var translated = lookup.Wait(AccountLookupWait) ? lookup.Result : null;
+        return DisplayAccountName(translated, profilePath);
+    }
+
+    private static string? Translate(string sid)
+    {
         try
         {
-            translated = new System.Security.Principal.SecurityIdentifier(sid)
+            return new System.Security.Principal.SecurityIdentifier(sid)
                 .Translate(typeof(System.Security.Principal.NTAccount))
                 .Value;
         }
         catch (Exception ex) when (ex is System.Security.Principal.IdentityNotMappedException or SystemException)
         {
             // Offline Entra ID or deleted accounts cannot be translated; the profile folder name is used instead.
+            return null;
         }
-        return DisplayAccountName(translated, profilePath);
     }
 
     /// <summary>"LAPTOP\\kaiyu" -> "kaiyu"; without a translated account, the profile folder name.</summary>
