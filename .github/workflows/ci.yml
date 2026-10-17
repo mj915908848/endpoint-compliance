@@ -8,6 +8,8 @@ on:
       - "**.md"
       - "docs/**"
   pull_request:
+    # ready_for_review: a draft skips the Windows job, so marking it ready runs it.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -27,10 +29,12 @@ jobs:
     name: 判断改动范围
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # On a pull request the filter lists the changed files through the API, which needs read access to pull requests.
+    # On a pull request the filter lists the changed files through the API, which needs read access to pull requests;
+    # on main, finding the last passing run needs read access to actions.
     permissions:
       contents: read
       pull-requests: read
+      actions: read
     outputs:
       ui: ${{ steps.f.outputs.ui == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
       dotnet: ${{ steps.f.outputs.dotnet == 'true' || steps.f.outputs.all == 'true' || github.event_name == 'workflow_dispatch' }}
@@ -41,12 +45,23 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      # On main every push may be released, and a newer push cancels this run: compare with the last
-      # release, not the previous push, so a release is never cut from changes whose jobs were skipped.
-      - name: 上次发布
+      # On main every push may be released, and a newer push cancels this run: compare with the last push
+      # whose run passed, not the previous push, so a release is never cut from changes whose jobs were
+      # skipped or cancelled. Before any run has passed, compare with the last release.
+      - name: 上次通过的提交
         id: base
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: echo "ref=$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ref=
+          for sha in $(gh run list --workflow CI --branch main --event push --status success --limit 20 --json headSha -q '.[].headSha'); do
+            if [ "$sha" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then ref=$sha; break; fi
+          done
+          [ -n "$ref" ] || ref=$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null)
+          echo "比较基准 $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: dorny/paths-filter@v3
         id: f
         with:
@@ -68,9 +83,9 @@ jobs:
               - src/Compliance.Server/**
               - src/Compliance.Agent/**
               - integration/e2e.py
+            # The server runs on Linux in Docker; the agent talking to it is covered by e2e.
             windows:
               - src/Compliance.Core/**
-              - src/Compliance.Server/**
               - src/Compliance.Agent/**
               - src/Compliance.Tray/**
               - tests/Compliance.Agent.Tests/**
@@ -198,10 +213,11 @@ jobs:
           path: artifacts/e2e
           if-no-files-found: ignore
 
+  # Windows minutes bill double: a draft pull request skips this job until it is marked ready; main always runs it.
   windows:
     name: Windows 实机采集
     needs: changes
-    if: needs.changes.outputs.windows == 'true'
+    if: needs.changes.outputs.windows == 'true' && !github.event.pull_request.draft
     runs-on: windows-latest
     timeout-minutes: 30
     defaults:
