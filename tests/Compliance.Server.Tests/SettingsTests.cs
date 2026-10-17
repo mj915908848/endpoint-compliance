@@ -245,7 +245,7 @@ public class SettingsTests
 
         f.Clock.Now = f.Clock.Now.AddDays(400);
         await f.Login();
-        await service.Maintain();
+        await service.Housekeeping.Maintain();
         Assert.Contains(await Audit(), a => a.Action == "CreateUser");
 
         Assert.Equal(
@@ -256,7 +256,7 @@ public class SettingsTests
             HttpStatusCode.OK,
             (await f.Client.PutAsJsonAsync("/api/settings/audit-retention", new { days = 365 })).StatusCode
         );
-        await service.Maintain();
+        await service.Housekeeping.Maintain();
         var kept = await Audit();
         Assert.DoesNotContain(kept, a => a.Action == "CreateUser");
         Assert.Contains(kept, a => a.Action == "SetAuditRetention");

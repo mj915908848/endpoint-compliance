@@ -1,0 +1,170 @@
+using Compliance.Core;
+
+namespace Compliance.Server;
+
+/// <summary>Offline alerts and the removal of data nothing reads any more.</summary>
+public sealed class Housekeeping(Store store, Settings settings, TimeProvider clock)
+{
+    DateTimeOffset Now => clock.GetUtcNow();
+
+    Task<T> Tx<T>(Func<Transaction, Task<T>> action) => store.Transaction(action);
+
+    public static readonly TimeSpan SnapshotEventRetention = TimeSpan.FromDays(1);
+    public static readonly TimeSpan ExpiredCommandRetention = TimeSpan.FromDays(30);
+
+    /// <summary>Resolved alerts the alert list returns without paging back.</summary>
+    public static readonly TimeSpan RecentlyResolved = TimeSpan.FromDays(30);
+    const int PruneBatch = 2000;
+
+    /// <summary>
+    /// Removes what nothing reads any more, in short batches: snapshot events after a day (their rows only answer
+    /// retries, which come within minutes), other events after <see cref="Settings.EventRetentionDays"/>, alerts
+    /// resolved for <see cref="Settings.AlertRetentionDays"/>, expired sessions, commands expired for 30 days, and audit records older than the period chosen in the settings
+    /// page (kept forever by default; the removal itself is audited). Returns how many rows went.
+    /// </summary>
+    public async Task<int> Maintain(CancellationToken ct = default)
+    {
+        var total = 0;
+        async Task Repeat(Func<Transaction, Task<int>> batch)
+        {
+            int removed;
+            do
+            {
+                ct.ThrowIfCancellationRequested();
+                removed = await Tx(batch);
+                total += removed;
+            } while (removed >= PruneBatch);
+        }
+        await Repeat(tx => tx.PruneEvents(Now - SnapshotEventRetention, true, PruneBatch));
+        await Repeat(tx =>
+            tx.PruneEvents(Now - TimeSpan.FromDays(Math.Max(1, settings.EventRetentionDays)), false, PruneBatch)
+        );
+        var resolvedCutoff = Now - TimeSpan.FromDays(Math.Max(1, settings.AlertRetentionDays));
+        await Repeat(tx => tx.PruneResolvedAlerts(resolvedCutoff, PruneBatch));
+        total += await Tx(tx => tx.PruneSessions(Now));
+        total += await Tx(tx => tx.PruneCommands(Now - ExpiredCommandRetention));
+        await Repeat(tx => tx.PruneVerdictHistory(Now - VerdictService.VerdictHistoryRetention, PruneBatch));
+        var days = await Tx(AuditRetentionDays);
+        if (days > 0)
+        {
+            var before = total;
+            var cutoff = Now - TimeSpan.FromDays(days);
+            await Repeat(tx => tx.PruneAudit(cutoff, PruneBatch));
+            if (total > before)
+                await Tx(async tx =>
+                {
+                    await tx.Audit(
+                        "system",
+                        "PruneAudit",
+                        $"{total - before} 条，{cutoff.ToLocalTime():yyyy-MM-dd HH:mm} 之前",
+                        Now
+                    );
+                    return true;
+                });
+        }
+        return total;
+    }
+
+    public const string AuditRetentionKey = "audit-retention-days";
+
+    /// <summary>Kept forever (0) unless an administrator chose a period; at least 180 days, as logs must be kept.</summary>
+    public static readonly int[] AuditRetentionChoices = [0, 180, 365, 730, 1095];
+
+    public static async Task<int> AuditRetentionDays(Transaction tx) =>
+        int.TryParse(await tx.GetSetting(AuditRetentionKey), out var days) ? days : 0;
+
+    /// <summary>
+    /// Opens an offline alert for devices silent for 5 minutes and resolves it once they are Online again.
+    /// Only devices whose state actually changes are loaded.
+    /// </summary>
+    public async Task UpdateOffline(Transaction tx)
+    {
+        await tx.Lock("offline");
+        foreach (var (id, hostName) in await tx.DevicesGoingOffline(Now - TimeSpan.FromMinutes(5)))
+        {
+            await tx.UpsertAlert(
+                new AlertSummary(
+                    "offline:" + id,
+                    id,
+                    hostName,
+                    "Offline",
+                    "heartbeat",
+                    "终端长时间未上报心跳，原因待确认",
+                    "Active",
+                    0,
+                    Now,
+                    Now,
+                    false
+                )
+            );
+            await tx.Audit("system", "Offline", id, Now);
+        }
+        foreach (var id in await tx.DevicesBackOnline(Now - TimeSpan.FromMinutes(3)))
+        {
+            await tx.ResolveAlert("offline:" + id, Now);
+            await tx.Audit("system", "OnlineRecovered", id, Now);
+        }
+    }
+}
+
+public sealed class MaintenanceService(ComplianceService service, ILogger<MaintenanceService> logger)
+    : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+            do
+            {
+                try
+                {
+                    var removed = await service.Housekeeping.Maintain(stoppingToken);
+                    if (removed > 0)
+                        logger.LogInformation("Removed {Count} expired events, sessions and commands", removed);
+                }
+                catch (Exception e) when (!stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogError(e, "Maintenance failed");
+                }
+            } while (await timer.WaitForNextTickAsync(stoppingToken));
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+    }
+}
+
+/// <summary>
+/// Every 15 seconds opens and resolves offline alerts and stores verdicts that no longer hold. Only this writes them;
+/// the pages that show them only read.
+/// </summary>
+public sealed class StatusMonitor(ComplianceService service, ILogger<StatusMonitor> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
+            try
+            {
+                await service.Tx(async tx =>
+                {
+                    await service.Housekeeping.UpdateOffline(tx);
+                    return true;
+                });
+            }
+            catch (Exception e) when (!stoppingToken.IsCancellationRequested)
+            {
+                logger.LogError(e, "Offline status refresh failed");
+            }
+            try
+            {
+                await service.Verdicts.RefreshVerdicts(stoppingToken);
+            }
+            catch (Exception e) when (!stoppingToken.IsCancellationRequested)
+            {
+                logger.LogError(e, "Verdict refresh failed");
+            }
+        }
+    }
+}

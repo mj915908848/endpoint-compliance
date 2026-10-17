@@ -16,7 +16,7 @@ static partial class Endpoints
             async (HttpContext c) =>
             {
                 Require(c, "Reader");
-                return await s.Tx(async tx => (await s.Summaries(tx)).OrderBy(d => d.HostName).ToArray());
+                return await s.Tx(async tx => (await s.Verdicts.Summaries(tx)).OrderBy(d => d.HostName).ToArray());
             }
         );
 
@@ -27,7 +27,7 @@ static partial class Endpoints
                 var u = Require(c, "Reader");
                 var rows = await s.Tx(async tx =>
                 {
-                    var list = await s.Export(tx);
+                    var list = await s.Verdicts.Export(tx);
                     await tx.Audit(u.Username, "ExportDevices", $"{list.Count} 台", s.Now);
                     return list;
                 });
@@ -45,7 +45,7 @@ static partial class Endpoints
                     var d = await s.Device(tx, id);
                     return new
                     {
-                        device = await s.Summary(tx, d),
+                        device = await s.Verdicts.Summary(tx, d),
                         snapshot = d.Snapshot,
                         controls = d.Controls ?? [],
                         pendingCommands = (await tx.PendingCommands(id, s.Now)).Count,
@@ -94,7 +94,7 @@ static partial class Endpoints
             async (HttpContext c, string id) =>
             {
                 Require(c, "Reader");
-                return await s.Tx(async tx => await s.Report(tx, await s.Device(tx, id)));
+                return await s.Tx(async tx => await s.Verdicts.Report(tx, await s.Device(tx, id)));
             }
         );
 
@@ -104,7 +104,7 @@ static partial class Endpoints
             {
                 Require(c, "Reader");
                 var markdown = await s.Tx(async tx =>
-                    ReportRenderer.Markdown(await s.Report(tx, await s.Device(tx, id)))
+                    ReportRenderer.Markdown(await s.Verdicts.Report(tx, await s.Device(tx, id)))
                 );
                 return Results.Text(markdown, "text/markdown; charset=utf-8");
             }
@@ -141,7 +141,7 @@ static partial class Endpoints
                     var d = await s.Device(tx, id);
                     await tx.SetDeviceNote(id, note);
                     await tx.Audit(u.Username, "SetDeviceNote", $"{d.HostName}（{id}）：{note}", s.Now);
-                    return await s.Summary(tx, d with { Note = note });
+                    return await s.Verdicts.Summary(tx, d with { Note = note });
                 });
             }
         );

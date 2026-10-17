@@ -29,8 +29,8 @@ static partial class Endpoints
                             detail = "尚未实现。目前只能通过浏览器策略拦截浏览器访问；其他程序的网络访问需依靠单位的出口网关或代理拦截。",
                         },
                     },
-                    policyPublicKeyPem = s.PublicKey,
-                    policyKeyId = s.KeyId,
+                    policyPublicKeyPem = s.Policies.PublicKey,
+                    policyKeyId = s.Policies.KeyId,
                 }
         );
 

@@ -12,7 +12,7 @@ static partial class Endpoints
             {
                 Require(c, "Reader");
                 return await s.Tx(async tx =>
-                    (await tx.AlertsNewestFirst(s.Now - ComplianceService.RecentlyResolved)).ToArray()
+                    (await tx.AlertsNewestFirst(s.Now - Housekeeping.RecentlyResolved)).ToArray()
                 );
             }
         );
@@ -25,7 +25,7 @@ static partial class Endpoints
             {
                 Require(c, "Reader");
                 var size = Math.Clamp(limit ?? 100, 1, 500);
-                var start = before ?? s.Now - ComplianceService.RecentlyResolved;
+                var start = before ?? s.Now - Housekeeping.RecentlyResolved;
                 return await s.Tx(async tx =>
                     (await tx.ResolvedAlertsBefore(start, before is null ? "" : beforeId ?? "", size)).ToArray()
                 );

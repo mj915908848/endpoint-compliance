@@ -41,7 +41,7 @@ static partial class Endpoints
                             n.ConsoleUrl,
                         },
                         lastNotification = notifier.Last,
-                        auditRetentionDays = await ComplianceService.AuditRetentionDays(tx),
+                        auditRetentionDays = await Housekeeping.AuditRetentionDays(tx),
                     };
                 });
             }
@@ -131,11 +131,11 @@ static partial class Endpoints
             {
                 var u = Require(c, "Operator");
                 var r = await Body<AuditRetentionRequest>(c);
-                if (!ComplianceService.AuditRetentionChoices.Contains(r.Days))
+                if (!Housekeeping.AuditRetentionChoices.Contains(r.Days))
                     throw new ApiError(400, "保留期限无效");
                 return await s.Tx(async tx =>
                 {
-                    await tx.PutSetting(ComplianceService.AuditRetentionKey, r.Days.ToString());
+                    await tx.PutSetting(Housekeeping.AuditRetentionKey, r.Days.ToString());
                     await tx.Audit(u.Username, "SetAuditRetention", r.Days == 0 ? "永久保留" : $"{r.Days} 天", s.Now);
                     return new { ok = true };
                 });

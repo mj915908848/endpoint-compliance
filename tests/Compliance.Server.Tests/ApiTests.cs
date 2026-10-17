@@ -103,8 +103,8 @@ public class ApiTests
         // A publish that has reassigned the devices it sees but not committed yet.
         var publish = service.Tx(async tx =>
         {
-            await tx.Lock(ComplianceService.PolicyLock);
-            var (_, signed) = await service.Publish(tx, ComplianceService.DefaultPolicy, new PolicyDocument());
+            await tx.Lock(PolicyService.PolicyLock);
+            var (_, signed) = await service.Policies.Publish(tx, PolicyService.DefaultPolicy, new PolicyDocument());
             published.SetResult(Wire.Read<PolicyDocument>(signed.Payload).Version);
             await commit.Task;
             return true;
@@ -316,7 +316,7 @@ public class ApiTests
 
         f.Clock.Now = f.Clock.Now.AddDays(2);
         // The snapshot event, and the administrator's session that has expired by now.
-        Assert.Equal(2, await service.Maintain());
+        Assert.Equal(2, await service.Housekeeping.Maintain());
         Assert.Null(Body("scan"));
         // A retry of a kept event is still recognized.
         Assert.Equal(
@@ -326,9 +326,9 @@ public class ApiTests
         Assert.NotNull(Body("violation"));
 
         f.Clock.Now = f.Clock.Now.AddDays(90);
-        Assert.True(await service.Maintain() >= 1);
+        Assert.True(await service.Housekeeping.Maintain() >= 1);
         Assert.Null(Body("violation"));
-        Assert.Equal(0, await service.Maintain());
+        Assert.Equal(0, await service.Housekeeping.Maintain());
     }
 
     [Fact]
@@ -375,7 +375,7 @@ public class ApiTests
         );
 
         // Alerts resolved more than 180 days ago go, with their recovery records; open alerts stay however old.
-        await service.Maintain();
+        await service.Housekeeping.Maintain();
         var left = await service.Tx(async tx => (await tx.ResolvedAlertsBefore(now, "", 100)).Select(a => a.Id));
         Assert.Equal(["resolved-recent", "resolved-40b", "resolved-40a", "resolved-100"], left);
         Assert.NotNull(await service.Tx(tx => tx.GetAlert("active-old")));
@@ -429,9 +429,9 @@ public class ApiTests
         var detail = await f.Client.GetFromJsonAsync<JsonElement>($"/api/devices/{f.Device}", Wire.Json);
         Assert.Equal("UNKNOWN", detail.GetProperty("device").GetProperty("currentVerdict").GetString());
         Assert.Equal(stored, await Stored());
-        Assert.Equal(1, await service.RefreshVerdicts());
+        Assert.Equal(1, await service.Verdicts.RefreshVerdicts());
         Assert.Equal(Verdict.UNKNOWN, (await Stored())!.Current);
-        Assert.Equal(0, await service.RefreshVerdicts());
+        Assert.Equal(0, await service.Verdicts.RefreshVerdicts());
         Assert.Equal(Verdict.UNKNOWN, (await Listed()).CurrentVerdict);
     }
 
@@ -471,7 +471,7 @@ public class ApiTests
             );
 
         // Enrolled without a scan: unknown, recorded by the first refresh.
-        Assert.Equal(1, await service.RefreshVerdicts());
+        Assert.Equal(1, await service.Verdicts.RefreshVerdicts());
         Assert.Equal([Verdict.UNKNOWN], (await History()).Select(h => h.Verdict));
         await Snapshot("s1", 1);
         f.Clock.Now += TimeSpan.FromMinutes(1);
@@ -484,7 +484,7 @@ public class ApiTests
         f.Clock.Now += TimeSpan.FromHours(1);
         // An hour idle signs the administrator out.
         await f.Login();
-        Assert.Equal(1, await service.RefreshVerdicts());
+        Assert.Equal(1, await service.Verdicts.RefreshVerdicts());
         Assert.Equal([Verdict.UNKNOWN, Verdict.FAIL, Verdict.UNKNOWN], (await History()).Select(h => h.Verdict));
 
         var trend = (await f.Client.GetFromJsonAsync<TrendDay[]>("/api/devices/trend?days=3&offset=480", Wire.Json))!;
@@ -492,8 +492,8 @@ public class ApiTests
         Assert.Equal(new TrendDay(trend[2].Date, 0, 0, 1), trend[2]);
 
         // Pruning old history keeps each device's latest change, so its state stays known.
-        f.Clock.Now += ComplianceService.VerdictHistoryRetention + TimeSpan.FromDays(1);
-        await service.Maintain();
+        f.Clock.Now += VerdictService.VerdictHistoryRetention + TimeSpan.FromDays(1);
+        await service.Housekeeping.Maintain();
         await f.Login();
         Assert.Equal(
             [Verdict.UNKNOWN],
@@ -545,11 +545,11 @@ public class ApiTests
         // An enrolled device has no stored verdict until the refresh stores one; the list judges it meanwhile.
         Assert.Null((await service.Tx(tx => tx.GetDevice(f.Device)))!.Verdict);
         Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
-        Assert.Equal(1, await service.RefreshVerdicts());
+        Assert.Equal(1, await service.Verdicts.RefreshVerdicts());
         var before = (await service.Tx(tx => tx.GetDevice(f.Device)))!;
         await service.Tx(async tx =>
         {
-            await service.Publish(tx, ComplianceService.DefaultPolicy, new PolicyDocument());
+            await service.Policies.Publish(tx, PolicyService.DefaultPolicy, new PolicyDocument());
             return true;
         });
         var after = (await service.Tx(tx => tx.GetDevice(f.Device)))!;
@@ -557,7 +557,7 @@ public class ApiTests
         Assert.False(after.Verdict!.HoldsFor(after, f.Clock.Now));
         var listed = Assert.Single((await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!);
         Assert.Equal(after.Verdict, (await service.Tx(tx => tx.GetDevice(f.Device)))!.Verdict);
-        Assert.Equal(1, await service.RefreshVerdicts());
+        Assert.Equal(1, await service.Verdicts.RefreshVerdicts());
         var refreshed = (await service.Tx(tx => tx.GetDevice(f.Device)))!;
         Assert.True(refreshed.Verdict!.HoldsFor(refreshed, f.Clock.Now));
         Assert.Equal(listed.TargetPolicyVersion, refreshed.Verdict.PolicyVersion);
@@ -594,7 +594,7 @@ public class ApiTests
 
         // Once the events are pruned, the device's snapshot and alerts still hold their sequences.
         f.Clock.Now = f.Clock.Now.AddDays(200);
-        await f.Services.GetRequiredService<ComplianceService>().Maintain();
+        await f.Services.GetRequiredService<ComplianceService>().Housekeeping.Maintain();
         Assert.Equal(9, await LastSequence());
     }
 
@@ -677,7 +677,7 @@ public class ApiTests
         var service = f.Services.GetRequiredService<ComplianceService>();
         await service.Tx(async tx =>
         {
-            await service.UpdateOffline(tx);
+            await service.Housekeeping.UpdateOffline(tx);
             return true;
         });
         Assert.Contains(
@@ -817,7 +817,7 @@ public class ApiTests
         var doc = Wire.Read<PolicyDocument>(current!.Payload);
         Assert.Equal(("office-pcs", 2L), (doc.PolicyId, doc.Version));
         Assert.Equal(f.Clock.Now, doc.IssuedAt);
-        Assert.Equal(f.Clock.Now + ComplianceService.PolicyValidity, doc.ExpiresAt);
+        Assert.Equal(f.Clock.Now + PolicyService.PolicyValidity, doc.ExpiresAt);
         Assert.Contains("PublishPolicy", await f.Client.GetStringAsync("/api/audit"));
 
         r = await f.Publish(new PolicyDocument { PolicyId = " ", RequiredControls = [] });
