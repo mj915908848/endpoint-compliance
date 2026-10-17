@@ -75,66 +75,64 @@ static partial class Endpoints
                     });
                 }
             )
+            .Accepts<EnrollmentRequest>(JsonBody)
             .RequireRateLimiting("enroll");
 
-        group.MapPost(
-            "/heartbeat",
-            async (HttpContext c) =>
-            {
-                var r = await Body<HeartbeatRequest>(c);
-                if (
-                    string.IsNullOrWhiteSpace(r.HostName)
-                    || r.HostName.Length > 256
-                    || r.Controls == null
-                    || r.Controls.Length > 100
-                    || r.Controls.Any(x => x is null)
-                    || r.AgentVersion is null
-                    || r.AgentVersion.Length > 64
-                    || r.SourceTime > s.Now.AddMinutes(5)
-                    || r.SourceTime < s.Now.AddMinutes(-5)
-                    || r.Network?.Length > 64
-                    || r.Network?.Any(a => a?.Addresses?.Length > 64) == true
-                )
-                    throw new ApiError(400, "Invalid heartbeat");
-                return await s.Tx(async tx =>
+        group
+            .MapPost(
+                "/heartbeat",
+                async (HttpContext c) =>
                 {
-                    var deviceId = Agent(c);
-                    await tx.Lock(ComplianceService.DeviceLock(deviceId));
-                    await s.DeviceHead(tx, deviceId);
-                    var controls = r
-                        .Controls.Select(x => x with { Detail = EvidenceSanitizer.Clean(x.Detail) })
-                        .ToArray();
-                    await tx.UpdateHeartbeat(
-                        deviceId,
-                        EvidenceSanitizer.Clean(r.HostName),
-                        s.Now,
-                        r.PolicyVersion,
-                        controls,
-                        // Clients before 0.2.8 sent a fixed "0.1.0" that was never a release.
-                        r.AgentVersion == "0.1.0"
-                            ? ""
-                            : EvidenceSanitizer.Clean(r.AgentVersion),
-                        // Clients before 0.2.22 do not report their adapters.
-                        r.Network
-                            is null
-                            ? null
-                            : NetworkAdapters.Normalize(r.Network),
-                        c.Connection.RemoteIpAddress is { } remote ? NetworkAdapters.Address(remote) : ""
-                    );
-                    // StatusMonitor resolves the offline alert within 15 seconds; doing it here would make every
-                    // heartbeat wait for the one global offline lock.
-                    // Clients from 0.2.9 compress larger uploads once a server says it accepts them. The highest
-                    // sequence held lets a client whose local queue file was lost carry on after it: a snapshot
-                    // numbered below the current one is ignored.
-                    return new
+                    var r = await Body<HeartbeatRequest>(c);
+                    if (
+                        string.IsNullOrWhiteSpace(r.HostName)
+                        || r.HostName.Length > 256
+                        || r.Controls == null
+                        || r.Controls.Length > 100
+                        || r.Controls.Any(x => x is null)
+                        || r.AgentVersion is null
+                        || r.AgentVersion.Length > 64
+                        || r.SourceTime > s.Now.AddMinutes(5)
+                        || r.SourceTime < s.Now.AddMinutes(-5)
+                        || r.Network?.Length > 64
+                        || r.Network?.Any(a => a?.Addresses?.Length > 64) == true
+                    )
+                        throw new ApiError(400, "Invalid heartbeat");
+                    return await s.Tx(async tx =>
                     {
-                        ok = true,
-                        gzipUploads = true,
-                        lastSequence = await tx.LastSequence(deviceId),
-                    };
-                });
-            }
-        );
+                        var deviceId = Agent(c);
+                        await tx.Lock(ComplianceService.DeviceLock(deviceId));
+                        await s.DeviceHead(tx, deviceId);
+                        var controls = r
+                            .Controls.Select(x => x with { Detail = EvidenceSanitizer.Clean(x.Detail) })
+                            .ToArray();
+                        await tx.UpdateHeartbeat(
+                            deviceId,
+                            EvidenceSanitizer.Clean(r.HostName),
+                            s.Now,
+                            r.PolicyVersion,
+                            controls,
+                            // Clients before 0.2.8 sent a fixed "0.1.0" that was never a release.
+                            r.AgentVersion == "0.1.0"
+                                ? ""
+                                : EvidenceSanitizer.Clean(r.AgentVersion),
+                            // Clients before 0.2.22 do not report their adapters.
+                            r.Network
+                                is null
+                                ? null
+                                : NetworkAdapters.Normalize(r.Network),
+                            c.Connection.RemoteIpAddress is { } remote ? NetworkAdapters.Address(remote) : ""
+                        );
+                        // StatusMonitor resolves the offline alert within 15 seconds; doing it here would make every
+                        // heartbeat wait for the one global offline lock.
+                        // Clients from 0.2.9 compress larger uploads once a server says it accepts them. The highest
+                        // sequence held lets a client whose local queue file was lost carry on after it: a snapshot
+                        // numbered below the current one is ignored.
+                        return new HeartbeatReply(Ok: true, GzipUploads: true, await tx.LastSequence(deviceId));
+                    });
+                }
+            )
+            .Accepts<HeartbeatRequest>(JsonBody);
 
         group.MapGet(
             "/policy",
@@ -142,14 +140,16 @@ static partial class Endpoints
                 await s.Tx(async tx => await s.Policies.AssignedPolicy(tx, await s.DeviceHead(tx, Agent(c))))
         );
 
-        group.MapPost(
-            "/events",
-            async (HttpContext c) =>
-            {
-                var batch = await Body<EventBatch>(c);
-                return await s.Tx(tx => s.Ingest.Events(tx, Agent(c), batch));
-            }
-        );
+        group
+            .MapPost(
+                "/events",
+                async (HttpContext c) =>
+                {
+                    var batch = await Body<EventBatch>(c);
+                    return await s.Tx(tx => s.Ingest.Events(tx, Agent(c), batch));
+                }
+            )
+            .Accepts<EventBatch>(JsonBody);
 
         group.MapGet(
             "/commands",
@@ -157,31 +157,33 @@ static partial class Endpoints
                 await s.Tx(async tx => (await tx.PendingCommands(Agent(c), s.Now)).Select(x => x.Command).ToArray())
         );
 
-        group.MapPost(
-            "/commands/{id}/ack",
-            async (HttpContext c, string id) =>
-            {
-                var reply = await Body<CommandReply>(c);
-                if (reply.Detail == null || reply.Detail.Length > 2048)
-                    throw new ApiError(400, "Invalid reply");
-                reply = reply with { Detail = EvidenceSanitizer.Clean(reply.Detail) };
-                return await s.Tx(async tx =>
+        group
+            .MapPost(
+                "/commands/{id}/ack",
+                async (HttpContext c, string id) =>
                 {
-                    var deviceId = Agent(c);
-                    await tx.Lock(ComplianceService.DeviceLock(deviceId));
-                    var command = await tx.GetCommand(id);
-                    if (command == null || command.DeviceId != deviceId)
-                        throw new ApiError(404, "Command not found");
-                    if (command.Reply != null && command.Reply != reply)
-                        throw new ApiError(409, "Reply already recorded");
-                    if (command.Reply == null)
+                    var reply = await Body<CommandReply>(c);
+                    if (reply.Detail == null || reply.Detail.Length > 2048)
+                        throw new ApiError(400, "Invalid reply");
+                    reply = reply with { Detail = EvidenceSanitizer.Clean(reply.Detail) };
+                    return await s.Tx(async tx =>
                     {
-                        await tx.SetCommandReply(id, reply with { Detail = EvidenceSanitizer.Clean(reply.Detail) });
-                        await tx.Audit(deviceId, "ScanReply", id, s.Now);
-                    }
-                    return new { ok = true };
-                });
-            }
-        );
+                        var deviceId = Agent(c);
+                        await tx.Lock(ComplianceService.DeviceLock(deviceId));
+                        var command = await tx.GetCommand(id);
+                        if (command == null || command.DeviceId != deviceId)
+                            throw new ApiError(404, "Command not found");
+                        if (command.Reply != null && command.Reply != reply)
+                            throw new ApiError(409, "Reply already recorded");
+                        if (command.Reply == null)
+                        {
+                            await tx.SetCommandReply(id, reply with { Detail = EvidenceSanitizer.Clean(reply.Detail) });
+                            await tx.Audit(deviceId, "ScanReply", id, s.Now);
+                        }
+                        return new Done();
+                    });
+                }
+            )
+            .Accepts<CommandReply>(JsonBody);
     }
 }

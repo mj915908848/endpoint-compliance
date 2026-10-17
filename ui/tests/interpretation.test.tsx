@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { CoverageGuide, DeviceGuide, OverviewGuide } from "../src/components";
-import type { DeviceSummary, ModuleResult } from "../src/types";
+import type { DeviceSummary, ModuleResult, Report } from "../src/types";
 
 const device: DeviceSummary = {
   id: "fixture-device",
@@ -16,6 +16,12 @@ const device: DeviceSummary = {
   protectionStatus: "审计模式",
   violationCount: 3,
   simulated: false,
+  note: "",
+  policyName: "",
+  agentVersion: "",
+  agentOutdated: false,
+  network: null,
+  sourceAddress: "",
 };
 
 describe("plain-language result explanation", () => {
@@ -78,12 +84,14 @@ describe("sensitive file report", () => {
   it("lists names that matched and says an incomplete scan proves nothing", async () => {
     const { ReportFindings } = await import("../src/components");
     const at = "2026-10-14T05:52:04Z";
-    const report = {
-      verdict: "PASS" as const,
+    const report: Report = {
+      verdict: "PASS",
       summary: "检查通过",
       reasons: [],
       coverageGaps: [],
       sensitiveFileNotes: ["敏感文件：D 盘 命中过多，仅列出部分"],
+      policyName: "默认策略",
+      policyVersion: 1,
       violationCount: 0,
       evidenceCount: 0,
       protectionStatus: "审计模式",
@@ -116,6 +124,7 @@ describe("sensitive file report", () => {
             summary: "文件名包含“机密”（规则：机密文件）",
             userSid: "S-1-5-21-1-2-3-1001",
             confirmed: true,
+            collectedAt: null,
           },
         ],
       },

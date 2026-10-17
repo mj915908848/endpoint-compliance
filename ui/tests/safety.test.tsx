@@ -17,6 +17,12 @@ const deviceFixture: DeviceSummary = {
   protectionStatus: "Audit only",
   violationCount: 0,
   simulated: false,
+  note: "",
+  policyName: "",
+  agentVersion: "",
+  agentOutdated: false,
+  network: null,
+  sourceAddress: "",
 };
 const alertFixture = {
   id: "fixture-alert",

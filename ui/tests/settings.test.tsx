@@ -6,7 +6,12 @@ import { SystemPage } from "../src/pages/System";
 import { Providers } from "../src/providers";
 import type { AppSettings } from "../src/types";
 
-const session = { username: "admin", roles: ["Reader", "Operator", "Publisher"], csrfToken: "t" };
+const session = {
+  username: "admin",
+  roles: ["Reader", "Operator", "Publisher"],
+  csrfToken: "t",
+  idleMinutes: 0,
+};
 const settings: AppSettings = {
   notifications: {
     enabled: false,

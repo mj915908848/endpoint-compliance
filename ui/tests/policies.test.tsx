@@ -6,13 +6,19 @@ import { Policies } from "../src/pages/Policies";
 import { Providers } from "../src/providers";
 import type { Policy } from "../src/types";
 
-const publisher = { username: "admin", roles: ["Reader", "Publisher"], csrfToken: "t" };
-const reader = { username: "viewer", roles: ["Reader"], csrfToken: "t" };
+const publisher = {
+  username: "admin",
+  roles: ["Reader", "Publisher"],
+  csrfToken: "t",
+  idleMinutes: 0,
+};
+const reader = { username: "viewer", roles: ["Reader"], csrfToken: "t", idleMinutes: 0 };
 
 const base: Policy = {
   schemaVersion: 1,
   policyId: "Default",
   version: 1,
+  sequence: 1,
   mode: "Audit",
   targetDeviceIds: [],
   issuedAt: "2026-10-14T00:00:00Z",
@@ -21,8 +27,11 @@ const base: Policy = {
   denyProxy: true,
   requiredModules: ["installed"],
   requiredControls: [],
+  quickCheckMinutes: 5,
+  fullCheckMinutes: 60,
   inventoryFreshMinutes: 120,
   lightweightFreshMinutes: 10,
+  sensitiveFiles: defaultSensitiveFiles,
   products: [
     {
       id: "cursor",
@@ -34,6 +43,8 @@ const base: Policy = {
       domains: ["cursor.com"],
       displayNames: ["Cursor"],
       adapterNames: [],
+      npmPackages: [],
+      pipPackages: [],
     },
   ],
   blockDomains: [],

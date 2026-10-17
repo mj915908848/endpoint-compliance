@@ -1,0 +1,2694 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Endpoint compliance management API",
+    "version": "v1"
+  },
+  "paths": {
+    "/api/status": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/password": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordChanged"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditRecord"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/export.csv": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/devices/{id}": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceDeleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/trend": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TrendDay"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{id}/history": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VerdictChange"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{id}/report": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{id}/report.md": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/devices/{id}/note": {
+      "put": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{id}/commands": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCommand"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlertSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts/resolved": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AlertSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/alerts/{id}/ack": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/enrollment-codes": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewEnrollmentCode"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnrollmentCode"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/enrollment-codes/{id}": {
+      "delete": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeRevoked"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/policies": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PolicyListItem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedPolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/policies/current": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedPolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/policies/{key}/history": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PolicyHistoryItem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/policies/template": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyDocument"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/policies/{key}": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyListItem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/enroll": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/heartbeat": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatReply"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/policy": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedPolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/events": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventReceipt"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/commands": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceCommand"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/commands/{id}/ack": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandReply"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/notifications": {
+      "put": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/notifications/test": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTested"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/audit-retention": {
+      "put": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditRetentionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentEvent": {
+        "required": [
+          "eventId",
+          "sequence",
+          "sourceTime",
+          "type",
+          "objectKey"
+        ],
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sourceTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string"
+          },
+          "objectKey": {
+            "type": "string"
+          },
+          "snapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScanSnapshot"
+              }
+            ]
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "AlertSummary": {
+        "required": [
+          "id",
+          "deviceId",
+          "hostName",
+          "type",
+          "objectKey",
+          "summary",
+          "state",
+          "lastSequence",
+          "firstSeen",
+          "lastSeen",
+          "acknowledged"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "objectKey": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "lastSequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "firstSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeen": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acknowledged": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApplicationDenyRule": {
+        "required": [
+          "productId",
+          "name",
+          "sha256",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "default": "Exe"
+          }
+        }
+      },
+      "AppSettings": {
+        "required": [
+          "notifications",
+          "lastNotification",
+          "auditRetentionDays"
+        ],
+        "type": "object",
+        "properties": {
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationView"
+          },
+          "lastNotification": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NotificationResult"
+              }
+            ]
+          },
+          "auditRetentionDays": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AuditRecord": {
+        "required": [
+          "id",
+          "actor",
+          "action",
+          "target",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AuditRetentionRequest": {
+        "required": [
+          "days"
+        ],
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "CodeRequest": {
+        "type": "object",
+        "properties": {
+          "expiresMinutes": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "maxUses": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "CodeRevoked": {
+        "required": [
+          "revoked"
+        ],
+        "type": "object",
+        "properties": {
+          "revoked": {
+            "type": "string"
+          }
+        }
+      },
+      "CommandReply": {
+        "required": [
+          "success",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "CommandRequest": {
+        "required": [
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "ComplianceReport": {
+        "required": [
+          "verdict",
+          "summary",
+          "reasons",
+          "coverageGaps",
+          "violationCount",
+          "evidenceCount",
+          "protectionStatus",
+          "snapshot",
+          "sensitiveFileNotes",
+          "policyName",
+          "policyVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "coverageGaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "violationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "evidenceCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "protectionStatus": {
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/ScanSnapshot"
+          },
+          "sensitiveFileNotes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "policyName": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ControlState": {
+        "required": [
+          "id",
+          "version",
+          "state",
+          "detail",
+          "verified",
+          "rebootRequired"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean",
+            "default": false
+          },
+          "rebootRequired": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "DeviceCommand": {
+        "required": [
+          "id",
+          "type",
+          "expiresAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DeviceDeleted": {
+        "required": [
+          "deleted"
+        ],
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "string"
+          }
+        }
+      },
+      "DeviceDetail": {
+        "required": [
+          "device",
+          "snapshot",
+          "controls",
+          "pendingCommands"
+        ],
+        "type": "object",
+        "properties": {
+          "device": {
+            "$ref": "#/components/schemas/DeviceSummary"
+          },
+          "snapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScanSnapshot"
+              }
+            ]
+          },
+          "controls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ControlState"
+            }
+          },
+          "pendingCommands": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "DeviceSummary": {
+        "required": [
+          "id",
+          "hostName",
+          "lastHeartbeat",
+          "onlineState",
+          "currentVerdict",
+          "lastVerdict",
+          "lastScan",
+          "targetPolicyVersion",
+          "policyApplied",
+          "protectionStatus",
+          "violationCount",
+          "simulated",
+          "note",
+          "policyName",
+          "agentVersion",
+          "agentOutdated",
+          "network",
+          "sourceAddress"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "lastHeartbeat": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "onlineState": {
+            "type": "string"
+          },
+          "currentVerdict": {
+            "$ref": "#/components/schemas/Verdict"
+          },
+          "lastVerdict": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Verdict"
+              }
+            ]
+          },
+          "lastScan": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "targetPolicyVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "policyApplied": {
+            "type": "boolean"
+          },
+          "protectionStatus": {
+            "type": "string"
+          },
+          "violationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "simulated": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string",
+            "default": ""
+          },
+          "policyName": {
+            "type": "string",
+            "default": ""
+          },
+          "agentVersion": {
+            "type": "string",
+            "default": ""
+          },
+          "agentOutdated": {
+            "type": "boolean",
+            "default": false
+          },
+          "network": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/NetworkAdapter"
+            }
+          },
+          "sourceAddress": {
+            "type": "string",
+            "default": ""
+          }
+        }
+      },
+      "Done": {
+        "required": [
+          "ok"
+        ],
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "EnrollmentCode": {
+        "required": [
+          "id",
+          "label",
+          "expiresAt",
+          "maxUses",
+          "uses",
+          "createdAt",
+          "createdBy",
+          "revoked"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxUses": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "uses": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "revoked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EnrollmentRequest": {
+        "required": [
+          "code",
+          "hostName",
+          "publicKeyPem"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "publicKeyPem": {
+            "type": "string"
+          }
+        }
+      },
+      "EnrollmentResponse": {
+        "required": [
+          "deviceId",
+          "policyPublicKeyPem",
+          "policyKeyId"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "policyPublicKeyPem": {
+            "type": "string"
+          },
+          "policyKeyId": {
+            "type": "string"
+          }
+        }
+      },
+      "EventBatch": {
+        "required": [
+          "events"
+        ],
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentEvent"
+            }
+          }
+        }
+      },
+      "EventReceipt": {
+        "required": [
+          "acceptedEventIds"
+        ],
+        "type": "object",
+        "properties": {
+          "acceptedEventIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Evidence": {
+        "required": [
+          "productId",
+          "productName",
+          "kind",
+          "objectKey",
+          "source",
+          "summary",
+          "userSid",
+          "confirmed",
+          "collectedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EvidenceKind"
+          },
+          "objectKey": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "userSid": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "confirmed": {
+            "type": "boolean",
+            "default": true
+          },
+          "collectedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "EvidenceKind": {
+        "enum": [
+          "Installation",
+          "Process",
+          "Extension",
+          "Proxy",
+          "Clue",
+          "BlockedAttempt",
+          "SensitiveFile"
+        ]
+      },
+      "HeartbeatReply": {
+        "required": [
+          "ok",
+          "gzipUploads",
+          "lastSequence"
+        ],
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "gzipUploads": {
+            "type": "boolean"
+          },
+          "lastSequence": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "HeartbeatRequest": {
+        "required": [
+          "hostName",
+          "agentVersion",
+          "sourceTime",
+          "policyVersion",
+          "controls"
+        ],
+        "type": "object",
+        "properties": {
+          "hostName": {
+            "type": "string"
+          },
+          "agentVersion": {
+            "type": "string"
+          },
+          "sourceTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policyVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "controls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ControlState"
+            }
+          },
+          "network": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/NetworkAdapter"
+            }
+          }
+        }
+      },
+      "LoginRequest": {
+        "required": [
+          "username",
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "ModuleResult": {
+        "required": [
+          "module",
+          "scope",
+          "status",
+          "collectedAt",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "collectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "NetworkAdapter": {
+        "required": [
+          "name",
+          "mac",
+          "addresses",
+          "primary"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "mac": {
+            "type": "string"
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "primary": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "NetworkCapability": {
+        "required": [
+          "id",
+          "implemented",
+          "verified",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "implemented": {
+            "type": "boolean"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "NewEnrollmentCode": {
+        "required": [
+          "code",
+          "id",
+          "label",
+          "expiresAt",
+          "maxUses"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxUses": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NoteRequest": {
+        "required": [
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "NotificationRequest": {
+        "required": [
+          "enabled",
+          "channel",
+          "webhookUrl",
+          "secret",
+          "types",
+          "consoleUrl"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "channel": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "webhookUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "secret": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "types": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "consoleUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "NotificationResult": {
+        "required": [
+          "at",
+          "ok",
+          "error",
+          "sent"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "sent": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "NotificationTested": {
+        "required": [
+          "ok",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "NotificationView": {
+        "required": [
+          "enabled",
+          "channel",
+          "webhookUrl",
+          "hasSecret",
+          "types",
+          "consoleUrl"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "webhookUrl": {
+            "type": "string"
+          },
+          "hasSecret": {
+            "type": "boolean"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "consoleUrl": {
+            "type": "string"
+          }
+        }
+      },
+      "PasswordChanged": {
+        "required": [
+          "signedOut",
+          "ok"
+        ],
+        "type": "object",
+        "properties": {
+          "signedOut": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ok": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "PasswordRequest": {
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "newPassword": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PolicyDocument": {
+        "required": [
+          "schemaVersion",
+          "policyId",
+          "version",
+          "sequence",
+          "mode",
+          "targetDeviceIds",
+          "issuedAt",
+          "expiresAt",
+          "denyInstalled",
+          "denyProxy",
+          "requiredModules",
+          "requiredControls",
+          "quickCheckMinutes",
+          "fullCheckMinutes",
+          "inventoryFreshMinutes",
+          "lightweightFreshMinutes",
+          "products",
+          "blockDomains",
+          "applicationRules",
+          "approvedNetworkAdapters",
+          "sensitiveFiles"
+        ],
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "policyId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "targetDeviceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "denyInstalled": {
+            "type": "boolean"
+          },
+          "denyProxy": {
+            "type": "boolean"
+          },
+          "requiredModules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredControls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "quickCheckMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fullCheckMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "inventoryFreshMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lightweightFreshMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductRule"
+            }
+          },
+          "blockDomains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "applicationRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApplicationDenyRule"
+            }
+          },
+          "approvedNetworkAdapters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sensitiveFiles": {
+            "$ref": "#/components/schemas/SensitiveFilePolicy"
+          }
+        }
+      },
+      "PolicyHistoryItem": {
+        "required": [
+          "version",
+          "serial",
+          "publishedAt",
+          "publishedBy",
+          "release"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serial": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "publishedBy": {
+            "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/SignedPolicy"
+          }
+        }
+      },
+      "PolicyListItem": {
+        "required": [
+          "key",
+          "isDefault",
+          "release",
+          "devices"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "release": {
+            "$ref": "#/components/schemas/SignedPolicy"
+          },
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ProductRule": {
+        "required": [
+          "id",
+          "name",
+          "category",
+          "packageIds",
+          "executableNames",
+          "extensionIds",
+          "domains",
+          "displayNames",
+          "adapterNames",
+          "npmPackages",
+          "pipPackages"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "packageIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "executableNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extensionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "displayNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "adapterNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "npmPackages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pipPackages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ScanSnapshot": {
+        "required": [
+          "schemaVersion",
+          "deviceId",
+          "hostName",
+          "platform",
+          "simulated",
+          "collectedAt",
+          "policyVersion",
+          "evidence",
+          "modules",
+          "controls",
+          "users"
+        ],
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "simulated": {
+            "type": "boolean"
+          },
+          "collectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "policyVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            }
+          },
+          "modules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModuleResult"
+            }
+          },
+          "controls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ControlState"
+            }
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserAccount"
+            }
+          }
+        }
+      },
+      "SensitiveFilePolicy": {
+        "required": [
+          "enabled",
+          "rules",
+          "scanUserProfiles",
+          "scanOtherFixedDrives",
+          "excludePaths",
+          "rescanHours",
+          "maxHitsPerScope"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SensitiveFileRule"
+            }
+          },
+          "scanUserProfiles": {
+            "type": "boolean"
+          },
+          "scanOtherFixedDrives": {
+            "type": "boolean"
+          },
+          "excludePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rescanHours": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxHitsPerScope": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SensitiveFileRule": {
+        "required": [
+          "id",
+          "name",
+          "keywords",
+          "extensions",
+          "matchFolders",
+          "action"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "matchFolders": {
+            "type": "boolean"
+          },
+          "action": {
+            "type": "string"
+          }
+        }
+      },
+      "ServerStatus": {
+        "required": [
+          "version",
+          "mode",
+          "storage",
+          "networkCapabilities",
+          "policyPublicKeyPem",
+          "policyKeyId"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "storage": {
+            "type": "string"
+          },
+          "networkCapabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetworkCapability"
+            }
+          },
+          "policyPublicKeyPem": {
+            "type": "string"
+          },
+          "policyKeyId": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionInfo": {
+        "required": [
+          "username",
+          "roles",
+          "csrfToken",
+          "idleMinutes"
+        ],
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "csrfToken": {
+            "type": "string"
+          },
+          "idleMinutes": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SignedPolicy": {
+        "required": [
+          "payload",
+          "signature",
+          "keyId"
+        ],
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          }
+        }
+      },
+      "TrendDay": {
+        "required": [
+          "date",
+          "pass",
+          "fail",
+          "unknown"
+        ],
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "pass": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fail": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unknown": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "UserAccount": {
+        "required": [
+          "sid",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "sid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "Verdict": {
+        "enum": [
+          "PASS",
+          "FAIL",
+          "UNKNOWN"
+        ]
+      },
+      "VerdictChange": {
+        "required": [
+          "deviceId",
+          "at",
+          "verdict",
+          "violationCount",
+          "policyVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          },
+          "violationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "policyVersion": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Compliance.Server"
+    }
+  ]
+}

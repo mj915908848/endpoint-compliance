@@ -94,8 +94,12 @@ static partial class Endpoints
         // A Publisher edits and publishes in one step. The server owns the version and validity window so the
         // editor only has to send the rule content. Without a key this publishes the default policy and returns
         // the signed release, as before; "new" creates a policy.
-        group.MapPost("", async (HttpContext c) => (await Publish(c, s, PolicyService.DefaultPolicy)).Release);
-        group.MapPost("/{key}", (HttpContext c, string key) => Publish(c, s, key == "new" ? null : key));
+        group
+            .MapPost("", async (HttpContext c) => (await Publish(c, s, PolicyService.DefaultPolicy)).Release)
+            .Accepts<PolicyDocument>(JsonBody);
+        group
+            .MapPost("/{key}", (HttpContext c, string key) => Publish(c, s, key == "new" ? null : key))
+            .Accepts<PolicyDocument>(JsonBody);
 
         group.MapDelete(
             "/{key}",
@@ -107,7 +111,7 @@ static partial class Endpoints
                     await tx.Lock(PolicyService.PolicyLock);
                     var name = await s.Policies.DeletePolicy(tx, key);
                     await tx.Audit(u.Username, "DeletePolicy", name, s.Now);
-                    return new { ok = true };
+                    return new Done();
                 });
             }
         );

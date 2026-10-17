@@ -27,6 +27,9 @@ static partial class Endpoints
 
     static string Agent(HttpContext c) => (string)c.Items["device"]!;
 
+    // Bodies are read with Body rather than bound, so endpoints that read one declare it for the OpenAPI document.
+    const string JsonBody = "application/json";
+
     static async Task<T> Body<T>(HttpContext c) =>
         await c.Request.ReadFromJsonAsync<T>(Wire.Json) ?? throw new ApiError(400, "Body required");
 }
