@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PasswordDialog } from "../src/components";
 import { SystemPage } from "../src/pages/System";
@@ -63,7 +64,9 @@ describe("system settings", () => {
     );
     render(
       <Providers>
-        <SystemPage session={session} />
+        <MemoryRouter>
+          <SystemPage session={session} />
+        </MemoryRouter>
       </Providers>,
     );
     await userEvent.click(await screen.findByLabelText("推送新告警"));
@@ -86,9 +89,10 @@ describe("system settings", () => {
       }),
     );
 
-    await userEvent.click(screen.getByLabelText("审计记录保留期限"));
+    await userEvent.click(screen.getByRole("tab", { name: "安全" }));
+    await userEvent.click(await screen.findByLabelText("审计记录保留期限"));
     await userEvent.click(await screen.findByTitle("1 年"));
-    await userEvent.click(screen.getAllByRole("button", { name: "保存" })[1]);
+    await userEvent.click(screen.getAllByRole("button", { name: "保存" }).at(-1)!);
     await waitFor(() =>
       expect(calls.some((c) => c.url === "/api/settings/audit-retention")).toBe(true),
     );
@@ -123,13 +127,19 @@ describe("system settings", () => {
     );
     render(
       <Providers>
-        <SystemPage session={session} />
+        <MemoryRouter>
+          <SystemPage session={session} />
+        </MemoryRouter>
       </Providers>,
     );
     // Saving the retention re-reads the settings, which someone else has changed by now.
+    await screen.findByLabelText("机器人地址");
+    await userEvent.click(screen.getByRole("tab", { name: "安全" }));
     await userEvent.click(await screen.findByLabelText("审计记录保留期限"));
     await userEvent.click(await screen.findByTitle("1 年"));
-    await userEvent.click(screen.getAllByRole("button", { name: "保存" })[1]);
+    await userEvent.click(screen.getAllByRole("button", { name: "保存" }).at(-1)!);
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+    await userEvent.click(screen.getByRole("tab", { name: "告警推送" }));
     expect(await screen.findByText(/已被其他人修改/)).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>("机器人地址").value).toBe("");
 
@@ -164,11 +174,17 @@ describe("system settings", () => {
     );
     render(
       <Providers>
-        <SystemPage session={{ ...session, roles: ["Reader", "Operator"] }} />
+        <MemoryRouter>
+          <SystemPage session={{ ...session, roles: ["Reader", "Operator"] }} />
+        </MemoryRouter>
       </Providers>,
     );
+    expect(await screen.findByText(/不修改就保留原地址/)).toBeTruthy();
+    expect(screen.getByText("获取企业微信群机器人地址")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "安全" }));
     expect(await screen.findByText("只有发布人可以修改")).toBeTruthy();
-    expect(screen.getByText(/不修改就保留原地址/)).toBeTruthy();
+    // The key itself is only for publishers, so its id stays under 关于.
+    expect(screen.queryByText("策略签名密钥")).toBeNull();
   });
 
   it("hides the settings from accounts that only read", async () => {
@@ -180,10 +196,13 @@ describe("system settings", () => {
     }));
     render(
       <Providers>
-        <SystemPage session={{ ...session, roles: ["Reader"] }} />
+        <MemoryRouter>
+          <SystemPage session={{ ...session, roles: ["Reader"] }} />
+        </MemoryRouter>
       </Providers>,
     );
     expect(await screen.findByText("运行环境")).toBeTruthy();
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["关于"]);
     expect(screen.queryByText("告警推送")).toBeNull();
   });
 });

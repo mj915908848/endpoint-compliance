@@ -647,3 +647,17 @@ body {
     padding-left: 12px;
   }
 }
+
+/* ---- settings tabs ---- */
+.settings-aside {
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--page);
+}
+.metric-link {
+  cursor: pointer;
+}
+.metric-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

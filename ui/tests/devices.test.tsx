@@ -100,6 +100,15 @@ describe("deleting a device", () => {
 });
 
 describe("device list", () => {
+  it("opens from an overview count already filtered to what it counts", async () => {
+    stubApi(["Reader"]);
+    renderAt("/");
+    await userEvent.click(await screen.findByRole("link", { name: "失联 / 疑似失联 1，查看终端" }));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/devices"));
+    expect(await screen.findByText("OLD-PC")).toBeTruthy();
+    expect(screen.getByTitle("失联 / 疑似失联")).toBeTruthy();
+  });
+
   it("shows each device's IP and MAC, finds it by either, and counts the online ones", async () => {
     const online: DeviceSummary = {
       ...device,

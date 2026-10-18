@@ -9,21 +9,36 @@ const series = [
 ] as const;
 
 /** The browser's time zone as minutes east of UTC, which the trend API counts days in. */
+/** Fewer recorded days than this are summed up in a line; a handful of bars says nothing about a trend. */
+const MinTrendDays = 7;
+
 export const trendOffset = () => -new Date().getTimezoneOffset();
 
 /**
  * One stacked bar per day: devices that failed at the bottom, then unknown, then passed. Counts are each device's
  * stored verdict at the end of the day, whether or not it was online.
  */
-export function VerdictTrendChart({ days }: { days: TrendDay[] }) {
+export function VerdictTrendChart({ days: all }: { days: TrendDay[] }) {
+  // Days before the first recorded verdict are left out rather than drawn as empty bars.
+  const first = all.findIndex((d) => d.pass + d.fail + d.unknown > 0);
+  if (first < 0)
+    return (
+      <Typography.Text type="secondary">暂无历史结论，终端完成检查后开始记录。</Typography.Text>
+    );
+  const days = all.slice(first);
+  const today = days[days.length - 1];
+  if (days.length < MinTrendDays)
+    return (
+      <Typography.Text type="secondary">
+        已记录 {days.length} 天。今天通过 {today.pass} 台，不通过 {today.fail} 台，无法判断{" "}
+        {today.unknown} 台。满 {MinTrendDays} 天后显示趋势图。
+      </Typography.Text>
+    );
   const max = Math.max(1, ...days.map((d) => d.pass + d.fail + d.unknown));
-  if (days.every((d) => d.pass + d.fail + d.unknown === 0))
-    return <Empty title="暂无历史结论">终端完成检查后开始记录。</Empty>;
   const width = 640,
-    height = 140,
+    height = 96,
     gap = 2,
     bar = width / days.length - gap;
-  const today = days[days.length - 1];
   return (
     <Space orientation="vertical" size={6} style={{ width: "100%" }}>
       <svg

@@ -45,11 +45,14 @@ export function Metric({
   value,
   tone,
   caption,
+  onClick,
 }: {
   label: string;
   value: string | number;
   tone?: "good" | "danger" | "warning" | "neutral";
   caption?: ReactNode;
+  /** Makes the card a link to the list it counts. */
+  onClick?: () => void;
 }) {
   const color =
     tone === "good"
@@ -60,7 +63,16 @@ export function Metric({
           ? "var(--warning)"
           : undefined;
   return (
-    <Card size="small" className="metric">
+    <Card
+      size="small"
+      className={onClick ? "metric metric-link" : "metric"}
+      hoverable={!!onClick}
+      onClick={onClick}
+      role={onClick ? "link" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? `${label} ${value}，查看终端` : undefined}
+      onKeyDown={onClick ? (e) => (e.key === "Enter" || e.key === " ") && onClick() : undefined}
+    >
       <div className="metric-label">
         <span className="metric-dot" style={color ? { background: color } : undefined} />
         {label}
