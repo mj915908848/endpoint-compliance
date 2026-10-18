@@ -60,6 +60,12 @@ const roleLabels: Record<string, string> = {
   Reviewer: "审核人",
 };
 
+/** One administrator normally holds every role, so it is named as such rather than as a list. */
+const accountRole = (roles: string[]) =>
+  roles.includes("Operator") && roles.includes("Publisher")
+    ? "管理员"
+    : roles.map((r) => roleLabels[r] ?? r).join(" · ");
+
 // "/devices/abc" belongs to "/devices"; "/" only matches itself.
 function currentPage(pathname: string) {
   const section = "/" + (pathname.split("/")[1] ?? "");
@@ -227,7 +233,7 @@ export function App() {
           </Avatar>
           <div className="sidebar-account-name">
             <strong>{session.username}</strong>
-            <span>{session.roles.map((r) => roleLabels[r] ?? r).join(" · ")}</span>
+            <span>{accountRole(session.roles)}</span>
           </div>
           <UpOutlined className="sidebar-account-caret" />
         </Flex>
