@@ -9,7 +9,7 @@ import {
   useParams,
 } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, Avatar, Button, Drawer, Flex, Layout, Menu, Typography } from "antd";
+import { Alert, Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu, Typography } from "antd";
 import {
   AlertOutlined,
   AuditOutlined,
@@ -22,6 +22,7 @@ import {
   LogoutOutlined,
   MenuOutlined,
   SafetyCertificateOutlined,
+  UpOutlined,
 } from "@ant-design/icons";
 import { HttpError, idleMs, markUse, onSessionLost, request } from "./api";
 import {
@@ -202,40 +203,36 @@ export function App() {
       }))}
     />
   );
+  // The account's actions stay out of sight until the name is clicked.
   const account = (
-    <div className="sidebar-account">
-      <Flex align="center" gap={10}>
-        <Avatar size={32} className="avatar">
-          {session.username.slice(0, 1).toUpperCase()}
-        </Avatar>
-        <div className="sidebar-account-name">
-          <strong>{session.username}</strong>
-          <span>{session.roles.map((r) => roleLabels[r] ?? r).join(" · ")}</span>
-        </div>
-      </Flex>
-      <Flex gap={4} className="sidebar-account-actions">
-        <Button
-          type="text"
-          size="small"
-          icon={<LockOutlined />}
-          onClick={() => {
-            setNavOpen(false);
-            setPasswordOpen(true);
-          }}
-        >
-          修改密码
-        </Button>
-        <Button
-          type="text"
-          size="small"
-          icon={<LogoutOutlined />}
-          loading={logoutBusy}
-          onClick={logout}
-        >
-          退出
-        </Button>
-      </Flex>
-    </div>
+    <Dropdown
+      trigger={["click"]}
+      placement="topLeft"
+      menu={{
+        items: [
+          { key: "password", icon: <LockOutlined />, label: "修改密码" },
+          { key: "logout", icon: <LogoutOutlined />, label: "退出", disabled: logoutBusy },
+        ],
+        onClick: ({ key }) => {
+          setNavOpen(false);
+          if (key === "password") setPasswordOpen(true);
+          else void logout();
+        },
+      }}
+    >
+      <button type="button" className="sidebar-account" aria-label={`账号 ${session.username}`}>
+        <Flex align="center" gap={10}>
+          <Avatar size={32} className="avatar">
+            {session.username.slice(0, 1).toUpperCase()}
+          </Avatar>
+          <div className="sidebar-account-name">
+            <strong>{session.username}</strong>
+            <span>{session.roles.map((r) => roleLabels[r] ?? r).join(" · ")}</span>
+          </div>
+          <UpOutlined className="sidebar-account-caret" />
+        </Flex>
+      </button>
+    </Dropdown>
   );
   const brand = (
     <Flex className="sidebar-brand" align="center" gap={10}>

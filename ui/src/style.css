@@ -74,11 +74,29 @@ body {
   box-shadow: inset 3px 0 0 #58d8cb;
 }
 .sidebar-account {
+  display: block;
+  width: calc(100% - 24px);
   margin: 12px;
-  padding: 12px 10px 8px;
+  padding: 10px;
+  border: 0;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-account:hover,
+.sidebar-account[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.12);
+}
+.sidebar-account:focus-visible {
+  outline: 2px solid #5fb3c7;
+  outline-offset: 2px;
+}
+.sidebar-account-caret {
+  font-size: 10px;
+  opacity: 0.55;
 }
 .sidebar-account .avatar {
   flex-shrink: 0;
@@ -102,20 +120,6 @@ body {
 .sidebar-account-name span {
   font-size: 12px;
   opacity: 0.55;
-}
-.sidebar-account-actions {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-.sidebar-account .ant-btn {
-  flex: 1;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.65);
-}
-.sidebar-account .ant-btn:hover {
-  color: #fff !important;
-  background: rgba(255, 255, 255, 0.1) !important;
 }
 .mobile-bar {
   display: none;

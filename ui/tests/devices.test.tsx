@@ -99,6 +99,21 @@ describe("deleting a device", () => {
   });
 });
 
+describe("account menu", () => {
+  it("keeps changing the password and signing out behind the account name", async () => {
+    stubApi(["Reader"]);
+    renderAt("/devices");
+    const account = (
+      await screen.findAllByRole("button", { name: "账号 admin" }, { timeout: 10_000 })
+    )[0];
+    expect(screen.queryByText("修改密码")).toBeNull();
+    await userEvent.click(account);
+    expect(await screen.findByRole("menuitem", { name: /退出/ })).toBeTruthy();
+    await userEvent.click(screen.getByRole("menuitem", { name: /修改密码/ }));
+    expect(await screen.findByLabelText("当前密码")).toBeTruthy();
+  });
+});
+
 describe("device list", () => {
   it("opens from an overview count already filtered to what it counts", async () => {
     stubApi(["Reader"]);
