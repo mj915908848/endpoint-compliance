@@ -31,6 +31,10 @@ public sealed class PackageService(Settings settings, TimeProvider clock)
     public async Task<ClientPackage> Receive(Stream body, string version, CancellationToken ct)
     {
         System.IO.Directory.CreateDirectory(Directory);
+        // Uploads a restart cut off leave their temporary file; none takes a day.
+        foreach (var stale in System.IO.Directory.GetFiles(Directory, "upload-*.tmp"))
+            if (File.GetLastWriteTimeUtc(stale) < clock.GetUtcNow().UtcDateTime.AddDays(-1))
+                File.Delete(stale);
         var temporary = Path.Combine(Directory, "upload-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {

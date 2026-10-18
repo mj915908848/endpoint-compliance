@@ -128,8 +128,14 @@ public static class Program
             if (server is not null)
             {
                 server = server.Trim().TrimEnd('/');
-                // A device whose key is lost cannot sign anything, so it may enroll again, as a new device.
-                if (config is { DeviceId.Length: > 0 } && IdentityUsable(config, simulated))
+                // A device whose key is lost cannot sign anything, so it may enroll again, as a new device; so may one
+                // the server no longer knows, at the same server.
+                var removed = AgentRuntime.RemovedFromServer(data);
+                if (removed && config is { ServerUrl: var was } && !SameServer(was, server))
+                    throw new EnrollmentRefusedException(
+                        $"本机原登记在管理端 {was}，只能重新登记到该管理端。如需改登记到其他管理端，请先卸载客户端再重新安装。"
+                    );
+                if (!removed && config is { DeviceId.Length: > 0 } && IdentityUsable(config, simulated))
                 {
                     if (!SameServer(config.ServerUrl, server))
                         throw new EnrollmentRefusedException(
@@ -150,6 +156,7 @@ public static class Program
                 code.Trim(),
                 CancellationToken.None
             );
+            File.Delete(Path.Combine(data, AgentRuntime.RemovedMarker));
             // The identity key and configuration were just written by the enrolling administrator's account.
             if (!simulated)
                 NativeDataDirectory.EnsureSecure(data);

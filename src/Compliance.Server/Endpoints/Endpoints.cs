@@ -33,5 +33,7 @@ static partial class Endpoints
     const string JsonBody = "application/json";
 
     static async Task<T> Body<T>(HttpContext c) =>
-        await c.Request.ReadFromJsonAsync<T>(Wire.Json) ?? throw new ApiError(400, "Body required");
+        !c.Request.HasJsonContentType()
+            ? throw new ApiError(415, "JSON body required")
+            : await c.Request.ReadFromJsonAsync<T>(Wire.Json) ?? throw new ApiError(400, "Body required");
 }

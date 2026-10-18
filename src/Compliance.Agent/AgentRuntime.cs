@@ -190,10 +190,38 @@ public sealed class DeviceIdentityLostException(string problem)
         $"{problem}。本机无法再向管理端证明身份，请在管理端删除这台终端后用新的登记码重新登记。"
     );
 
-public sealed class AgentApiException(string message, HttpStatusCode status, TimeSpan? retryAfter)
-    : HttpRequestException(message, null, status)
+/// <summary>The configuration names another device than the running service: it was enrolled again.</summary>
+public sealed class DeviceReenrolledException() : Exception("本机已重新登记，服务重新启动后使用新的登记");
+
+public sealed class AgentApiException(
+    string message,
+    HttpStatusCode status,
+    TimeSpan? retryAfter,
+    string? serverError = null
+) : HttpRequestException(message, null, status)
 {
     public TimeSpan? RetryAfter { get; } = retryAfter;
+
+    /// <summary>The <c>error</c> the server gave, if it gave one.</summary>
+    public string? ServerError { get; } = serverError;
+
+    /// <summary>The server does not know this device: an administrator deleted it.</summary>
+    public bool DeviceUnknown =>
+        StatusCode == HttpStatusCode.Unauthorized && ServerError == RequestAuthentication.UnknownDevice;
+
+    public static async Task<string?> ErrorOf(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("error", out var error) ? error.GetString() : null;
+        }
+        catch (Exception e) when (e is JsonException or HttpRequestException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
 }
 
 public sealed class AgentApi(HttpClient client, Uri baseUri, string? deviceId, ECDsa key)
@@ -255,7 +283,8 @@ public sealed class AgentApi(HttpClient client, Uri baseUri, string? deviceId, E
                 throw new AgentApiException(
                     $"Agent API {path}: {(int)response.StatusCode}",
                     response.StatusCode,
-                    retry
+                    retry,
+                    await AgentApiException.ErrorOf(response, ct)
                 );
             }
             return Wire.Read<T>(await response.Content.ReadAsStringAsync(ct));
@@ -313,6 +342,15 @@ public sealed class AgentRuntime(
     bool localDemo = false
 )
 {
+    /// <summary>
+    /// Written while the server says it does not know this device (an administrator deleted it); while it is there,
+    /// enrolling again with a code is allowed although the device has a configuration and key.
+    /// </summary>
+    public const string RemovedMarker = "removed-from-server";
+
+    public static bool RemovedFromServer(string dataDirectory) =>
+        File.Exists(Path.Combine(dataDirectory, RemovedMarker));
+
     public const string DataAclRepairedMessage =
         "客户端数据目录的访问权限被修改过（允许了系统和管理员以外的账户），已自动恢复。期间该账户可能读取过本机的登记密钥；如不是管理员本人操作，请删除该终端并重新登记。";
 
@@ -521,6 +559,9 @@ public sealed class AgentRuntime(
         var failures = new Dictionary<string, DateTimeOffset>();
         while (!ct.IsCancellationRequested)
         {
+            // Enrolled again (as a new device) by an administrator: the service restarts to use it.
+            if (EnrolledElsewhere())
+                throw new DeviceReenrolledException();
             // A failed side task is started again on its own; checking and uploading carry on meanwhile. The loop's
             // own delay paces restarts of a task that keeps failing.
             if (pipeTask.IsFaulted && OperatingSystem.IsWindows())
@@ -576,6 +617,18 @@ public sealed class AgentRuntime(
     }
 
     private int reportedDrops;
+
+    private bool EnrolledElsewhere()
+    {
+        try
+        {
+            return AgentConfiguration.Read(configPath).DeviceId is { Length: > 0 } id && id != config.DeviceId;
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Queues an event. When the queue is full of events that cannot be dropped, the user is told and the service
@@ -755,6 +808,7 @@ public sealed class AgentRuntime(
                 PolicyKeys.Ids(config)
             );
             var reply = await api.SendAsync<JsonElement>(HttpMethod.Post, "/api/agent/heartbeat", heartbeat, ct);
+            File.Delete(Path.Combine(config.DataDirectory, RemovedMarker));
             // Servers before 0.2.9 do not say so and take uncompressed bodies only.
             api.Gzip =
                 reply.ValueKind == JsonValueKind.Object
@@ -807,6 +861,23 @@ public sealed class AgentRuntime(
                     ct
                 );
             }
+        }
+        catch (AgentApiException e) when (e.DeviceUnknown)
+        {
+            // Checking and blocking go on with the last policy; reports cannot reach the server until it is enrolled
+            // again, which the marker allows.
+            var marker = Path.Combine(config.DataDirectory, RemovedMarker);
+            if (!File.Exists(marker))
+            {
+                File.WriteAllText(marker, DateTimeOffset.UtcNow.ToString("O"));
+                Console.Error.WriteLine("管理端已删除本机，需要用登记码重新登记");
+            }
+            await notices.AddAsync(
+                "device-removed",
+                null,
+                "本机已从管理端删除，检查结果无法上报，请联系管理员用新的登记码重新登记。",
+                ct
+            );
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
         {
@@ -1012,7 +1083,7 @@ public sealed class AgentRuntime(
                 ct
             );
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException)
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or IOException or JsonException)
         {
             Console.Error.WriteLine("客户端安装包下载失败，下次检查时重试：" + e.GetType().Name);
             return;
@@ -1021,7 +1092,15 @@ public sealed class AgentRuntime(
         // The reply goes first: the installer stops this service.
         await AckAsync(api, command, prepared.Reply, ct);
         if (prepared.Installer != null)
-            ClientUpgrade.Install(prepared.Installer);
+            try
+            {
+                ClientUpgrade.Install(prepared.Installer);
+            }
+            catch (System.ComponentModel.Win32Exception e)
+            {
+                // Already answered; the version the next heartbeat reports shows the upgrade did not happen.
+                Console.Error.WriteLine("无法启动客户端安装程序：" + e.Message);
+            }
     }
 
     /// <summary>

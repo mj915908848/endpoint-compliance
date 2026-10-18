@@ -9,6 +9,7 @@ static partial class Endpoints
     static void MapAuth(IEndpointRouteBuilder routes, ComplianceService s, Settings settings)
     {
         var throttle = new LoginThrottle();
+        var log = routes.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Compliance.Server.Login");
         var group = routes.MapGroup("/api");
 
         group.MapGet(
@@ -44,7 +45,9 @@ static partial class Endpoints
                         || login.Password.Length > 1024
                     )
                         throw new ApiError(401, "Invalid credentials");
-                    if (throttle.LockedFor(login.Username, s.Now) is { } wait)
+                    var address = c.Connection.RemoteIpAddress?.ToString() ?? "loopback";
+                    var who = $"{login.Username}（{address}）";
+                    if (throttle.LockedFor(login.Username, address, s.Now) is { } wait)
                         throw new ApiError(
                             429,
                             $"该账号密码错误次数过多，请 {Math.Ceiling(wait.TotalMinutes)} 分钟后再试"
@@ -53,17 +56,32 @@ static partial class Endpoints
                     {
                         var user = await tx.GetUser(login.Username);
                         if (!Secrets.Check(login.Password, user?.PasswordHash ?? Secrets.Unknown) || user == null)
-                        {
-                            throttle.Failed(login.Username, s.Now);
-                            throw new ApiError(401, "Invalid credentials");
-                        }
-                        throttle.Succeeded(login.Username);
+                            return default;
+                        throttle.Succeeded(login.Username, address);
                         var token = Secrets.Token();
                         var session = new SessionRecord(user.Username, Secrets.Token(), s.Now.AddHours(8), s.Now);
                         await tx.InsertSession(Secrets.Hash(token), session);
-                        await tx.Audit(user.Username, "Login", user.Username, s.Now);
+                        await tx.Audit(user.Username, "Login", who, s.Now);
                         return (user, token, session);
                     });
+                    if (result.user is null)
+                    {
+                        // Recorded so guessing shows in the audit log and the container log. The name typed is the
+                        // target, never the actor: anyone can type any name.
+                        var locked = throttle.Failed(login.Username, address, s.Now);
+                        log.LogWarning(
+                            "Wrong password for {Username} from {Address}{Locked}",
+                            login.Username,
+                            address,
+                            locked ? "; sign-in from there paused" : ""
+                        );
+                        await s.Tx(async tx =>
+                        {
+                            await tx.Audit("anonymous", locked ? "LoginLocked" : "LoginFailed", who, s.Now);
+                            return true;
+                        });
+                        throw new ApiError(401, "Invalid credentials");
+                    }
                     c.Response.Cookies.Append(
                         "compliance-session",
                         result.token,

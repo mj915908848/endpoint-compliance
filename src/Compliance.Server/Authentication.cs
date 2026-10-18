@@ -71,10 +71,10 @@ static class Authentication
         var raw = bytes.ToArray();
         await s.Tx(async tx =>
         {
-            var publicKey = await tx.GetDevicePublicKey(device);
+            var publicKey =
+                await tx.GetDevicePublicKey(device) ?? throw new ApiError(401, RequestAuthentication.UnknownDevice);
             if (
-                publicKey == null
-                || !RequestAuthentication.Verify(
+                !RequestAuthentication.Verify(
                     publicKey,
                     c.Request.Method,
                     c.Request.Path,
@@ -130,56 +130,86 @@ static class Authentication
 }
 
 /// <summary>
-/// Stops password guessing against one account from many addresses, which the per-address rate limit cannot see:
-/// after <see cref="MaxFailures"/> wrong passwords within <see cref="Window"/>, the account refuses sign-in until the
-/// oldest of them is that old. Kept in memory, so a restart clears it.
+/// Stops password guessing against one account, which the per-address rate limit cannot see. Wrong passwords are
+/// counted per account and source address: after <see cref="MaxFailures"/> within <see cref="Window"/> that address
+/// may not sign in to that account until the oldest of them is that old. Someone who knows an account's name therefore
+/// cannot lock its owner out from one machine. Guessing spread over many addresses is stopped by a higher limit per
+/// account, <see cref="MaxAccountFailures"/>. Kept in memory, so a restart clears it.
 /// </summary>
 public sealed class LoginThrottle
 {
     public const int MaxFailures = 10;
+    public const int MaxAccountFailures = 50;
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(15);
-    const int MaxAccounts = 10_000;
+    const int MaxEntries = 10_000;
 
     readonly Dictionary<string, Queue<DateTimeOffset>> failures = new(StringComparer.OrdinalIgnoreCase);
 
-    public TimeSpan? LockedFor(string username, DateTimeOffset now)
+    static string Pair(string username, string address) => username + "\n" + address;
+
+    static string Account(string username) => username + "\n*";
+
+    public TimeSpan? LockedFor(string username, string address, DateTimeOffset now)
     {
         lock (failures)
         {
-            if (!failures.TryGetValue(username, out var times))
-                return null;
-            Expire(username, times, now);
-            return times.Count >= MaxFailures ? times.Peek() + Window - now : null;
+            TimeSpan? Wait(string key, int limit)
+            {
+                if (!failures.TryGetValue(key, out var times))
+                    return null;
+                Expire(key, times, now);
+                return times.Count >= limit ? times.Peek() + Window - now : null;
+            }
+            var pair = Wait(Pair(username, address), MaxFailures);
+            var account = Wait(Account(username), MaxAccountFailures);
+            return pair > account || account is null ? pair : account;
         }
     }
 
-    public void Failed(string username, DateTimeOffset now)
+    /// <summary>Counts a wrong password; whether this one locked the account for the address.</summary>
+    public bool Failed(string username, string address, DateTimeOffset now)
     {
         lock (failures)
         {
             // Names that do not exist count too, so an attacker cannot tell them apart; old entries make room.
-            if (failures.Count >= MaxAccounts)
-                foreach (var (name, times) in failures.ToList())
-                    Expire(name, times, now);
-            if (failures.Count >= MaxAccounts)
-                return;
-            if (!failures.TryGetValue(username, out var list))
-                failures[username] = list = new();
-            list.Enqueue(now);
+            if (failures.Count >= MaxEntries)
+                foreach (var (key, times) in failures.ToList())
+                    Expire(key, times, now);
+            if (failures.Count >= MaxEntries - 1)
+                return false;
+            var locked = false;
+            foreach (
+                var (key, limit) in new[]
+                {
+                    (Pair(username, address), MaxFailures),
+                    (Account(username), MaxAccountFailures),
+                }
+            )
+            {
+                if (!failures.TryGetValue(key, out var list))
+                    failures[key] = list = new();
+                list.Enqueue(now);
+                // A queue never holds more than its limit needs.
+                while (list.Count > limit)
+                    list.Dequeue();
+                locked |= list.Count == limit;
+            }
+            return locked;
         }
     }
 
-    public void Succeeded(string username)
+    /// <summary>Clears the address's count; failures from elsewhere still count towards the account's limit.</summary>
+    public void Succeeded(string username, string address)
     {
         lock (failures)
-            failures.Remove(username);
+            failures.Remove(Pair(username, address));
     }
 
-    void Expire(string username, Queue<DateTimeOffset> times, DateTimeOffset now)
+    void Expire(string key, Queue<DateTimeOffset> times, DateTimeOffset now)
     {
         while (times.Count > 0 && times.Peek() + Window <= now)
             times.Dequeue();
         if (times.Count == 0)
-            failures.Remove(username);
+            failures.Remove(key);
     }
 }

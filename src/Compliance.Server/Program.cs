@@ -8,8 +8,16 @@ namespace Compliance.Server;
 
 public partial class Program
 {
+    /// <summary>Device requests handled at once; the database pool holds 100 connections by default.</summary>
+    public const int AgentConcurrency = 32;
+
     public static async Task Main(string[] args)
     {
+        if (args is [HealthCheck.Argument])
+        {
+            Environment.ExitCode = await HealthCheck.RunAsync();
+            return;
+        }
         var b = WebApplication.CreateBuilder(
             new WebApplicationOptions { Args = args, WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot") }
         );
@@ -48,6 +56,22 @@ public partial class Program
             // Enrollment codes are random and long, so this only stops floods; a whole office may enroll at once.
             PerAddress("enroll", 300);
             PerAddress("notify-test", 5);
+            // Device requests are checked against the database before anything else, signed or not; a flood of
+            // forged ones could take every database connection. They take turns instead, leaving connections for
+            // the pages. Not per address: a whole office reports through one NAT.
+            o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(c =>
+                (c.Request.Path.Value ?? "").StartsWith("/api/agent/", StringComparison.OrdinalIgnoreCase)
+                    ? RateLimitPartition.GetConcurrencyLimiter(
+                        "agent",
+                        _ => new ConcurrencyLimiterOptions
+                        {
+                            PermitLimit = AgentConcurrency,
+                            QueueLimit = 2000,
+                            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        }
+                    )
+                    : RateLimitPartition.GetNoLimiter("other")
+            );
         });
 
         var app = b.Build();
@@ -156,6 +180,23 @@ public partial class Program
             }
         );
 
+        // For the container's health check: answers without signing in, and says whether the database does.
+        app.MapGet(
+                "/healthz",
+                async () =>
+                {
+                    try
+                    {
+                        await service.Tx(async tx => await tx.GetSetting("health"));
+                        return Results.Text("ok");
+                    }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        return Results.Text("database unavailable: " + e.GetType().Name, statusCode: 503);
+                    }
+                }
+            )
+            .ExcludeFromDescription();
         Endpoints.Map(app, service, settings, app.Services.GetRequiredService<AlertNotifier>());
         app.MapOpenApi(ApiDocument.Path);
         app.UseDefaultFiles();

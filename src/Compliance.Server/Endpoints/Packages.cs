@@ -65,6 +65,9 @@ static partial class Endpoints
                         await tx.Lock(PackageService.PackageLock);
                         if (await tx.GetClientPackage(version) != null)
                             throw new ApiError(409, $"已有 {version} 的安装包，如需替换请先删除");
+                        // A package with the same contents may have been deleted, with its file, since it was received.
+                        if (!File.Exists(s.Packages.FilePath(package)))
+                            throw new ApiError(409, "安装包文件刚被删除，请重新上传");
                         var record = new ClientPackageRecord(package, u.Username, s.Policies.Sign(package));
                         await tx.InsertClientPackage(record);
                         await tx.Audit(
@@ -92,16 +95,17 @@ static partial class Endpoints
             async (HttpContext c, string version) =>
             {
                 var u = Require(c, "Publisher");
-                var (package, fileUsed) = await s.Tx(async tx =>
+                await s.Tx(async tx =>
                 {
                     await tx.Lock(PackageService.PackageLock);
                     var p = await tx.GetClientPackage(version) ?? throw new ApiError(404, "安装包不存在");
                     await tx.DeleteClientPackage(version);
                     await tx.Audit(u.Username, "DeleteClientPackage", version, s.Now);
-                    return (p.Package, await tx.ClientPackageFileUsed(p.Package.Sha256));
+                    // Under the lock, so an upload of the same file cannot start using it in between.
+                    if (!await tx.ClientPackageFileUsed(p.Package.Sha256))
+                        s.Packages.DeleteFile(p.Package);
+                    return true;
                 });
-                if (!fileUsed)
-                    s.Packages.DeleteFile(package);
                 return new Done();
             }
         );
@@ -113,6 +117,8 @@ static partial class Endpoints
                 var u = Require(c, "Operator");
                 return await s.Tx(async tx =>
                 {
+                    // Two operators starting it at once would queue two upgrades per device.
+                    await tx.Lock("rollout");
                     var package = await NewestPackage(tx, version);
                     var upgrading = (await tx.DevicesUpgrading(s.Now)).ToHashSet();
                     var queued = 0;
