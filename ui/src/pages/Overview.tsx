@@ -16,6 +16,7 @@ import {
   VerdictTrendChart,
 } from "../components";
 import type { Alert, DeviceSummary, TrendDay } from "../types";
+import { OverviewAlertsA, OverviewAlertsB, variant } from "./alertProto";
 
 export function Overview({
   openDevice,
@@ -82,7 +83,7 @@ export function Overview({
             </Fresh>
           </Panel>
           <Row gutter={[16, 16]}>
-            <Col xs={24} xl={15}>
+            <Col xs={24} xl={variant() ? 12 : 15}>
               <Panel title={`需要关注的终端（${attention.length}）`}>
                 <DeviceTable
                   devices={attention.slice(0, 8)}
@@ -92,7 +93,12 @@ export function Overview({
                 />
               </Panel>
             </Col>
-            <Col xs={24} xl={9}>
+            <Col xs={24} xl={variant() ? 12 : 9}>
+              {variant() === "a" ? (
+                <OverviewAlertsA alerts={alerts.data ?? []} devices={devices.data ?? []} openDevice={openDevice} openAlerts={openAlerts} />
+              ) : variant() === "b" ? (
+                <OverviewAlertsB alerts={alerts.data ?? []} devices={devices.data ?? []} openDevice={openDevice} openAlerts={openAlerts} />
+              ) : (
               <Panel
                 title={`未恢复告警（${openAlertList.length}）`}
                 actions={
@@ -126,7 +132,7 @@ export function Overview({
                     </Space>
                   )}
                 </Fresh>
-              </Panel>
+              </Panel>)}
             </Col>
           </Row>
         </Space>

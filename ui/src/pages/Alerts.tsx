@@ -17,6 +17,7 @@ import {
   UpdatedAt,
 } from "../components";
 import { role } from "../session";
+import { AlertsA, AlertsB, variant } from "./alertProto";
 import type { Alert, DeviceSummary, Session } from "../types";
 
 /** Unresolved violations and sensitive files are listed per device; everything else is a single list. */
@@ -102,7 +103,13 @@ export function Alerts({
       />
       <Fresh error={data.error} loading={data.loading}>
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-          {groups.violating.length ? (
+          {variant() === "a" && (
+            <AlertsA alerts={all} devices={devices.data ?? []} openDevice={openDevice} ack={canAck ? async (ids) => { for (const id of ids) await ack(id); refresh(); } : undefined} />
+          )}
+          {variant() === "b" && (
+            <AlertsB alerts={all} devices={devices.data ?? []} openDevice={openDevice} ack={canAck ? async (ids) => { for (const id of ids) await ack(id); refresh(); } : undefined} />
+          )}
+          {!variant() && (<>{groups.violating.length ? (
             <DeviceGroups
               icon={<CloseCircleFilled style={{ color: "var(--danger)" }} />}
               title="违规设备"
@@ -177,7 +184,7 @@ export function Alerts({
                 )}
               </div>
             )}
-          </Panel>
+          </Panel></>)}
         </Space>
       </Fresh>
     </>
