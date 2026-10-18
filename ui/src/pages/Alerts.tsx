@@ -102,9 +102,7 @@ export function Alerts({
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           <Panel
             title={
-              groups.length
-                ? `未恢复（${groups.length} 台终端，${open.length} 项）`
-                : "未恢复"
+              groups.length ? `未恢复（${groups.length} 台终端，${open.length} 项）` : "未恢复"
             }
           >
             {groups.length ? (
@@ -120,7 +118,13 @@ export function Alerts({
               <Empty title="当前没有未恢复的告警" />
             )}
           </Panel>
-          <Panel title={olderDone || older.length ? `已恢复（${resolved.length} 项）` : `近 30 天已恢复（${resolved.length} 项）`}>
+          <Panel
+            title={
+              olderDone || older.length
+                ? `已恢复（${resolved.length} 项）`
+                : `近 30 天已恢复（${resolved.length} 项）`
+            }
+          >
             {resolved.length ? (
               resolved.map((a) => (
                 <AlertRow

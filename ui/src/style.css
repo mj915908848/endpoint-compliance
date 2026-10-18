@@ -171,20 +171,6 @@ body {
 .device-fact .muted {
   margin-right: 6px;
 }
-.alert-group {
-  border-left: 4px solid var(--warning);
-}
-.alert-group-danger {
-  border-left-color: var(--danger);
-}
-.alert-group-list {
-  margin: 10px 0 0;
-  padding-left: 20px;
-  line-height: 1.9;
-}
-.alert-group-more {
-  list-style: none;
-}
 .metric.ant-card {
   height: 100%;
   border-color: transparent;
@@ -539,7 +525,7 @@ body {
 .alert-row-action {
   text-align: right;
 }
-.alert-row-acked {
+.alert-row-quiet {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.35);
   white-space: nowrap;
@@ -600,44 +586,64 @@ body {
   padding: 6px 0;
   border-bottom: none;
 }
+.device-alerts-host {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+  cursor: pointer;
+}
+.device-alerts-host:hover,
+.device-alerts-host:focus-visible {
+  color: #1f6f84;
+}
 @media (max-width: 640px) {
-  .alert-row {
+  .alert-row,
+  .device-alerts-items .alert-row {
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "type time"
+      "main action";
     gap: 2px 12px;
   }
   .alert-row .alert-type {
-    grid-column: 1 / -1;
+    grid-area: type;
   }
   .alert-row-main {
+    grid-area: main;
     flex-direction: column;
     align-items: start;
     gap: 0;
   }
-  .alert-row-time {
-    grid-row: 2;
-    grid-column: 2;
-    align-self: start;
+  .alert-row .alert-row-time {
+    grid-area: time;
   }
-  .alert-row-action {
-    grid-column: 2;
+  .alert-row .alert-row-action {
+    grid-area: action;
   }
-  .device-alerts-head,
-  .device-alerts-items .alert-row {
+  .device-alerts-head {
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "name action"
+      "counts time";
+    gap: 4px 12px;
+  }
+  .device-alerts-name {
+    grid-area: name;
   }
   .device-alerts-counts {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    grid-area: counts;
   }
-}
-.alert-row-stacked .alert-row-main {
-  flex-direction: column;
-  align-items: start;
-  gap: 0;
-}
-.alert-row-stacked {
-  grid-template-columns: 76px minmax(0, 1fr) auto;
-}
-.alert-row-stacked .alert-row-action:empty {
-  display: none;
+  .device-alerts-head .alert-row-time {
+    grid-area: time;
+  }
+  .device-alerts-head .alert-row-action {
+    grid-area: action;
+  }
+  .device-alerts-items {
+    margin-left: 4px;
+    padding-left: 12px;
+  }
 }

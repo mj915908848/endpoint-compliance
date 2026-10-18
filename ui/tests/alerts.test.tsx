@@ -57,7 +57,7 @@ describe("alert center", () => {
         url === "/api/alerts/2/ack" ? json(500, { error: "数据库忙" }) : json(200, { ok: true }),
     );
     renderAlerts();
-    fireEvent.click(await screen.findByText("全部确认已阅"));
+    fireEvent.click(await screen.findByText("全部确认（3）"));
     expect(await screen.findByText(/已确认 2 条，1 条失败/)).toBeTruthy();
     expect(calls.filter((c) => c.startsWith("POST"))).toEqual([
       "POST /api/alerts/1/ack",
@@ -72,7 +72,6 @@ describe("alert center", () => {
       json(500, { error: "数据库忙" }),
     );
     renderAlerts();
-    fireEvent.click(await screen.findByText("已恢复"));
     fireEvent.click(await screen.findByText("加载 30 天前恢复的告警"));
     expect(await screen.findByText(/加载更早的已恢复告警失败/)).toBeTruthy();
     // No browser-clock cursor on the first page.

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import { AgentVersion, DeviceState, DeviceTable, AlertCard, Login } from "../src/components";
+import { AgentVersion, DeviceState, DeviceTable, AlertRow, Login } from "../src/components";
 import type { DeviceSummary } from "../src/types";
 // Explicit fixtures only: these are synthetic records, never runtime demonstration data.
 const deviceFixture: DeviceSummary = {
@@ -72,27 +72,28 @@ describe("safety boundaries", () => {
   it("acknowledging does not locally resolve a technical incident", async () => {
     const user = userEvent.setup();
     const acknowledge = vi.fn().mockResolvedValue(undefined);
-    render(<AlertCard alert={alertFixture} canAck onAck={acknowledge} />);
-    await user.click(screen.getByRole("button", { name: "确认已阅" }));
+    const { container } = render(<AlertRow alert={alertFixture} onAck={acknowledge} />);
+    await user.click(screen.getByRole("button", { name: "确认" }));
     await waitFor(() => expect(screen.getByText("已确认")).toBeTruthy());
+    expect(acknowledge).toHaveBeenCalledWith([alertFixture.id]);
     // Acknowledging records that someone has seen it; only new scan evidence resolves it.
-    expect(screen.getByText("未恢复")).toBeTruthy();
+    expect(container.querySelector(".alert-row-resolved")).toBeNull();
   });
   it("reader cannot acknowledge", () => {
-    render(<AlertCard alert={alertFixture} canAck={false} onAck={async () => {}} />);
-    expect(screen.queryByRole("button", { name: "确认已阅" })).toBeNull();
+    render(<AlertRow alert={alertFixture} />);
+    expect(screen.queryByRole("button", { name: "确认" })).toBeNull();
   });
   it("server Resolved state is shown as technical recovery, separate from acknowledgment", () => {
-    render(
-      <AlertCard
+    const { container } = render(
+      <AlertRow
         alert={{ ...alertFixture, state: "Resolved", acknowledged: false }}
-        canAck={false}
         onAck={async () => {}}
       />,
     );
-    expect(screen.getByText("已恢复")).toBeTruthy();
-    expect(screen.getByText("待确认")).toBeTruthy();
-    expect(screen.queryByText("未恢复")).toBeNull();
+    expect(container.querySelector(".alert-row-resolved")).toBeTruthy();
+    // Nothing left to acknowledge, and it is not shown as acknowledged either.
+    expect(screen.queryByRole("button", { name: "确认" })).toBeNull();
+    expect(screen.queryByText("已确认")).toBeNull();
   });
   it("rejected authentication is visible and password stays masked", async () => {
     const user = userEvent.setup();

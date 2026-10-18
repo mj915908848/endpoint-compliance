@@ -95,9 +95,7 @@ export function Overview({
             <Col xs={24} xl={12}>
               <Panel
                 title={
-                  openByDevice.length
-                    ? `未恢复告警（${openByDevice.length} 台终端）`
-                    : "未恢复告警"
+                  openByDevice.length ? `未恢复告警（${openByDevice.length} 台终端）` : "未恢复告警"
                 }
                 actions={
                   <Button type="link" onClick={openAlerts} style={{ paddingInline: 0 }}>
