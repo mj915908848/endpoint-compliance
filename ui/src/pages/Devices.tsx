@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { App, Button, Input, Select, Space, Typography } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { downloadFile } from "../api";
@@ -17,8 +18,10 @@ import type { DeviceSummary } from "../types";
 export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
   const refresh = useRefresh();
   const { message } = App.useApp();
+  // The overview links here with ?filter=, so its counts open the devices they count.
+  const [params] = useSearchParams();
   const [query, setQuery] = useState(""),
-    [filter, setFilter] = useState("all"),
+    [filter, setFilter] = useState(params.get("filter") ?? "all"),
     [exporting, setExporting] = useState(false);
   const data = useResource<DeviceSummary[]>("/api/devices");
   const all = data.data ?? [];
@@ -26,11 +29,13 @@ export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
   const visible = all.filter(
     (d) =>
       (filter === "all" ||
-        (filter === "offline"
-          ? d.onlineState !== "Online"
-          : filter === "online"
-            ? d.onlineState === "Online"
-            : d.onlineState === "Online" && d.currentVerdict === filter)) &&
+        (filter === "attention"
+          ? d.onlineState !== "Online" || d.currentVerdict !== "PASS"
+          : filter === "offline"
+            ? d.onlineState !== "Online"
+            : filter === "online"
+              ? d.onlineState === "Online"
+              : d.onlineState === "Online" && d.currentVerdict === filter)) &&
       `${d.hostName} ${d.note ?? ""} ${d.id} ${networkText(d)}`
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
@@ -99,6 +104,7 @@ export function Devices({ openDevice }: { openDevice: (id: string) => void }) {
                 { value: "FAIL", label: "不通过" },
                 { value: "UNKNOWN", label: "无法判断" },
                 { value: "offline", label: "失联 / 疑似失联" },
+                { value: "attention", label: "需要关注" },
               ]}
             />
           </Space>

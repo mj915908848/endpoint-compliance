@@ -9,18 +9,20 @@ import {
   Input,
   Select,
   Space,
+  Row,
+  Col,
   Switch,
-  Table,
+  Tabs,
   Tag,
   Typography,
 } from "antd";
+import { useSearchParams } from "react-router";
 import { request } from "../api";
 import { role } from "../session";
 import { useRefresh, useResource } from "../useResource";
 import {
   alertTypeLabel,
   ClientPackagesPanel,
-  Empty,
   ErrorNotice,
   errorText,
   Fresh,
@@ -171,91 +173,105 @@ function NotificationPanel({
           }
         />
       )}
-      <Form layout="vertical" style={{ maxWidth: 640 }} onFinish={save}>
-        <Form.Item
-          label="推送新告警"
-          extra="开启后，新出现的告警约 30 秒内推送到群里；同时出现多条时合并成一条消息。"
-        >
-          <Switch aria-label="推送新告警" checked={enabled} onChange={setEnabled} />
-        </Form.Item>
-        <Form.Item label="推送到" extra={current.help}>
-          <Select
-            aria-label="推送渠道"
-            value={channel}
-            onChange={setChannel}
-            options={channels.map((c) => ({ value: c.value, label: c.label }))}
-          />
-        </Form.Item>
-        <Form.Item
-          label="机器人地址（Webhook）"
-          extra={
-            saved.webhookUrl
-              ? "地址里带有机器人的访问令牌，已保存的地址只显示开头和末尾；不修改就保留原地址。"
-              : undefined
-          }
-        >
-          <Input
-            aria-label="机器人地址"
-            value={url}
-            onChange={(e) => setUrl(e.target.value.trim())}
-            placeholder={`https://${current.host}/...`}
-          />
-        </Form.Item>
-        {channel !== "WeCom" && (
-          <Form.Item
-            label="签名密钥"
-            extra="机器人安全设置为「加签」或「签名校验」时填写，否则留空。"
-          >
-            <Space.Compact style={{ width: "100%" }}>
-              <Input.Password
-                aria-label="签名密钥"
-                value={secret ?? ""}
-                onChange={(e) => setSecret(e.target.value)}
-                placeholder={
-                  saved.hasSecret && secret === null ? "已设置，留空则不变" : "SEC 开头的密钥"
-                }
-                autoComplete="off"
+      <Row gutter={[32, 16]}>
+        <Col xs={{ span: 24, order: 2 }} lg={{ span: 14, order: 1 }}>
+          <Form layout="vertical" style={{ maxWidth: 640 }} onFinish={save}>
+            <Form.Item
+              label="推送新告警"
+              extra="开启后，新出现的告警约 30 秒内推送到群里；同时出现多条时合并成一条消息。"
+            >
+              <Switch aria-label="推送新告警" checked={enabled} onChange={setEnabled} />
+            </Form.Item>
+            <Form.Item label="推送到">
+              <Select
+                aria-label="推送渠道"
+                value={channel}
+                onChange={setChannel}
+                options={channels.map((c) => ({ value: c.value, label: c.label }))}
               />
-              {saved.hasSecret && (
-                <Button onClick={() => setSecret("")} disabled={secret === ""}>
-                  清除
-                </Button>
+            </Form.Item>
+            <Form.Item
+              label="机器人地址（Webhook）"
+              extra={
+                saved.webhookUrl
+                  ? "地址里带有机器人的访问令牌，已保存的地址只显示开头和末尾；不修改就保留原地址。"
+                  : undefined
+              }
+            >
+              <Input
+                aria-label="机器人地址"
+                value={url}
+                onChange={(e) => setUrl(e.target.value.trim())}
+                placeholder={`https://${current.host}/...`}
+              />
+            </Form.Item>
+            {channel !== "WeCom" && (
+              <Form.Item
+                label="签名密钥"
+                extra="机器人安全设置为「加签」或「签名校验」时填写，否则留空。"
+              >
+                <Space.Compact style={{ width: "100%" }}>
+                  <Input.Password
+                    aria-label="签名密钥"
+                    value={secret ?? ""}
+                    onChange={(e) => setSecret(e.target.value)}
+                    placeholder={
+                      saved.hasSecret && secret === null ? "已设置，留空则不变" : "SEC 开头的密钥"
+                    }
+                    autoComplete="off"
+                  />
+                  {saved.hasSecret && (
+                    <Button onClick={() => setSecret("")} disabled={secret === ""}>
+                      清除
+                    </Button>
+                  )}
+                </Space.Compact>
+              </Form.Item>
+            )}
+            <Form.Item label="推送哪些告警">
+              <Checkbox.Group
+                value={types}
+                onChange={(v) => setTypes(v as string[])}
+                options={pushTypes.map((t) => ({ value: t, label: alertTypeLabel(t) }))}
+              />
+              {types.includes("Offline") && (
+                <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+                  员工下班关机也会产生「设备失联」告警，开启后每天下班时会收到较多消息。
+                </Typography.Paragraph>
               )}
-            </Space.Compact>
-          </Form.Item>
-        )}
-        <Form.Item label="推送哪些告警">
-          <Checkbox.Group
-            value={types}
-            onChange={(v) => setTypes(v as string[])}
-            options={pushTypes.map((t) => ({ value: t, label: alertTypeLabel(t) }))}
-          />
-          {types.includes("Offline") && (
-            <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-              员工下班关机也会产生「设备失联」告警，开启后每天下班时会收到较多消息。
+            </Form.Item>
+            <Form.Item
+              label="管理端地址"
+              extra="消息里附上告警页面的链接，经网关访问时填网关上的域名。"
+            >
+              <Input
+                aria-label="管理端地址"
+                value={consoleUrl}
+                onChange={(e) => setConsoleUrl(e.target.value.trim())}
+              />
+            </Form.Item>
+            <Space wrap>
+              <Button type="primary" htmlType="submit" loading={busy}>
+                保存
+              </Button>
+              <Button onClick={test} loading={testing} disabled={!saved.webhookUrl}>
+                发送测试消息
+              </Button>
+              <Typography.Text type="secondary">测试消息使用已保存的设置。</Typography.Text>
+            </Space>
+          </Form>
+        </Col>
+        <Col xs={{ span: 24, order: 1 }} lg={{ span: 10, order: 2 }}>
+          <div className="settings-aside">
+            <Typography.Title level={5} style={{ marginTop: 0 }}>
+              获取{current.label}地址
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              {current.help}
             </Typography.Paragraph>
-          )}
-        </Form.Item>
-        <Form.Item
-          label="管理端地址"
-          extra="消息里附上告警页面的链接，经网关访问时填网关上的域名。"
-        >
-          <Input
-            aria-label="管理端地址"
-            value={consoleUrl}
-            onChange={(e) => setConsoleUrl(e.target.value.trim())}
-          />
-        </Form.Item>
-        <Space wrap>
-          <Button type="primary" htmlType="submit" loading={busy}>
-            保存
-          </Button>
-          <Button onClick={test} loading={testing} disabled={!saved.webhookUrl}>
-            发送测试消息
-          </Button>
-          <Typography.Text type="secondary">测试消息使用已保存的设置。</Typography.Text>
-        </Space>
-      </Form>
+          </div>
+        </Col>
+      </Row>
       <div style={{ marginTop: 16 }}>
         <ErrorNotice error={error} />
         {last && (
@@ -329,8 +345,14 @@ function RetentionPanel({ session, days }: { session: Session; days: number }) {
   );
 }
 
-/** Mounts the forms once the settings are loaded, so polling does not overwrite what is being typed. */
-function SettingsPanels({ session }: { session: Session }) {
+/** Mounts the form once the settings are loaded, so polling does not overwrite what is being typed. */
+function SettingsPanel({
+  session,
+  part,
+}: {
+  session: Session;
+  part: "notifications" | "retention";
+}) {
   const settings = useResource<AppSettings>("/api/settings");
   const [initial, setInitial] = useState<AppSettings | null>(null);
   useEffect(() => {
@@ -338,103 +360,119 @@ function SettingsPanels({ session }: { session: Session }) {
   }, [settings.data, initial]);
   if (!initial)
     return (
-      <Panel title="告警推送">
+      <Panel title={part === "notifications" ? "告警推送" : "审计记录保留"}>
         <Fresh error={settings.error} loading={settings.loading}>
           {null}
         </Fresh>
       </Panel>
     );
   const current = settings.data ?? initial;
-  return (
-    <>
-      <NotificationPanel session={session} initial={initial} live={current} />
-      <RetentionPanel
-        key={current.auditRetentionDays}
-        session={session}
-        days={current.auditRetentionDays}
-      />
-    </>
+  return part === "notifications" ? (
+    <NotificationPanel session={session} initial={initial} live={current} />
+  ) : (
+    <RetentionPanel
+      key={current.auditRetentionDays}
+      session={session}
+      days={current.auditRetentionDays}
+    />
   );
 }
 
-export function SystemPage({ session }: { session: Session }) {
+function capabilityText(c: Capability) {
+  return `${c.implemented ? "已实现" : "未实现"}，${c.verified ? "已验证" : "未验证"}`;
+}
+
+function AboutPanel({ showKeyId }: { showKeyId: boolean }) {
   const status = useResource<Status>("/api/status");
   const caps: Capability[] = (status.data?.networkCapabilities ?? []).map((c) =>
     typeof c === "string" ? { id: c, implemented: false, verified: false, detail: "" } : c,
   );
   return (
-    <>
-      <PageHeading
-        title="系统设置"
-        description="告警推送、审计记录保留期限、客户端远程升级、策略签名密钥，以及管理端的运行模式和网络防护能力。终端上的实际防护效果以终端上报的证据为准。"
-      />
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        {role(session, "Operator") && <SettingsPanels session={session} />}
-        {(role(session, "Operator") || role(session, "Publisher")) && (
-          <ClientPackagesPanel session={session} />
+    <Panel title="运行环境">
+      <Fresh error={status.error} loading={status.loading}>
+        {status.data && (
+          <Descriptions
+            size="small"
+            bordered
+            column={1}
+            items={[
+              {
+                label: "运行模式",
+                children: (
+                  <Tag color={status.data.mode === "Production" ? "success" : "warning"}>
+                    {modeLabels[status.data.mode] ?? status.data.mode}
+                  </Tag>
+                ),
+              },
+              { label: "版本", children: status.data.version ?? "未知" },
+              { label: "数据库", children: status.data.storage },
+              // Publishers see it with the key itself under 安全.
+              ...(showKeyId
+                ? [
+                    {
+                      label: "策略签名密钥 ID",
+                      children: <span className="mono">{status.data.policyKeyId}</span>,
+                    },
+                  ]
+                : []),
+              ...caps.map((c) => ({
+                label: capabilityNames[c.id] ?? c.id,
+                children: (
+                  <Space orientation="vertical" size={4}>
+                    <Tag color={c.implemented && c.verified ? "success" : "warning"}>
+                      {capabilityText(c)}
+                    </Tag>
+                    {c.detail && <Typography.Text type="secondary">{c.detail}</Typography.Text>}
+                  </Space>
+                ),
+              })),
+            ]}
+          />
         )}
-        {role(session, "Publisher") && <SigningKeyPanel session={session} />}
-        <Panel title="运行环境">
-          <Fresh error={status.error} loading={status.loading}>
-            {status.data && (
-              <Descriptions
-                size="small"
-                bordered
-                column={1}
-                items={[
-                  {
-                    label: "运行模式",
-                    children: (
-                      <Tag color={status.data.mode === "Production" ? "success" : "warning"}>
-                        {modeLabels[status.data.mode] ?? status.data.mode}
-                      </Tag>
-                    ),
-                  },
-                  { label: "版本", children: status.data.version ?? "未知" },
-                  { label: "数据库", children: status.data.storage },
-                  {
-                    label: "策略签名密钥 ID",
-                    children: <span className="mono">{status.data.policyKeyId}</span>,
-                  },
-                ]}
-              />
-            )}
-          </Fresh>
-        </Panel>
-        <Panel title="网络防护能力">
-          <Fresh error={status.error} loading={status.loading}>
-            <Table<Capability>
-              rowKey="id"
-              dataSource={caps}
-              size="small"
-              pagination={false}
-              locale={{ emptyText: <Empty title="管理端未声明网络防护能力" /> }}
-              columns={[
-                { title: "能力", key: "id", render: (_, c) => capabilityNames[c.id] ?? c.id },
-                {
-                  title: "状态",
-                  key: "state",
-                  render: (_, c) => (
-                    <Space size={4}>
-                      <Tag color={c.implemented ? "success" : "warning"}>
-                        {c.implemented ? "已实现" : "未实现"}
-                      </Tag>
-                      <Tag color={c.verified ? "success" : "warning"}>
-                        {c.verified ? "已验证" : "未验证"}
-                      </Tag>
-                    </Space>
-                  ),
-                },
-                {
-                  title: "说明",
-                  key: "detail",
-                  render: (_, c) => <Typography.Text type="secondary">{c.detail}</Typography.Text>,
-                },
-              ]}
-            />
-          </Fresh>
-        </Panel>
-      </Space>
+      </Fresh>
+    </Panel>
+  );
+}
+
+export function SystemPage({ session }: { session: Session }) {
+  const operator = role(session, "Operator"),
+    publisher = role(session, "Publisher");
+  const tabs = [
+    operator && {
+      key: "notifications",
+      label: "告警推送",
+      children: <SettingsPanel session={session} part="notifications" />,
+    },
+    (operator || publisher) && {
+      key: "upgrade",
+      label: "客户端升级",
+      children: <ClientPackagesPanel session={session} />,
+    },
+    (operator || publisher) && {
+      key: "security",
+      label: "安全",
+      children: (
+        <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+          {publisher && <SigningKeyPanel session={session} />}
+          {operator && <SettingsPanel session={session} part="retention" />}
+        </Space>
+      ),
+    },
+    { key: "about", label: "关于", children: <AboutPanel showKeyId={!publisher} /> },
+  ].filter((t) => !!t);
+  // In the address so a reload or a shared link opens the same tab.
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("tab");
+  const active = tabs.some((t) => t.key === asked) ? asked! : tabs[0].key;
+  return (
+    <>
+      <PageHeading title="系统设置" description="终端上的实际防护效果以终端上报的证据为准。" />
+      <Tabs
+        className="settings-tabs"
+        activeKey={active}
+        onChange={(tab) => setParams({ tab }, { replace: true })}
+        items={tabs}
+      />
     </>
   );
 }

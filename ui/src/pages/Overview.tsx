@@ -19,9 +19,12 @@ import type { Alert, DeviceSummary, TrendDay } from "../types";
 
 export function Overview({
   openDevice,
+  openDevices,
   openAlerts,
 }: {
   openDevice: (id: string) => void;
+  /** The device list, filtered as in its status menu. */
+  openDevices: (filter: string) => void;
   openAlerts: () => void;
 }) {
   const devices = useResource<DeviceSummary[]>("/api/devices"),
@@ -54,14 +57,27 @@ export function Overview({
           <OverviewGuide devices={devices.data ?? []} />
           <Row gutter={[16, 16]}>
             <Col xs={12} lg={6}>
-              <Metric label="通过" value={stats.pass} tone="good" caption="在线终端" />
+              <Metric
+                label="通过"
+                value={stats.pass}
+                tone="good"
+                caption="在线终端"
+                onClick={() => openDevices("PASS")}
+              />
             </Col>
             <Col xs={12} lg={6}>
-              <Metric label="不通过" value={stats.fail} tone="danger" caption="存在确认违规" />
+              <Metric
+                label="不通过"
+                value={stats.fail}
+                tone="danger"
+                caption="存在确认违规"
+                onClick={() => openDevices("FAIL")}
+              />
             </Col>
             <Col xs={12} lg={6}>
               <Metric
                 label="无法判断"
+                onClick={() => openDevices("UNKNOWN")}
                 value={stats.unknown}
                 tone="warning"
                 caption="检查不完整或防护未验证"
@@ -70,6 +86,7 @@ export function Overview({
             <Col xs={12} lg={6}>
               <Metric
                 label="失联 / 疑似失联"
+                onClick={() => openDevices("offline")}
                 value={stats.offline}
                 tone="neutral"
                 caption="不计入当前通过"
@@ -83,7 +100,20 @@ export function Overview({
           </Panel>
           <Row gutter={[16, 16]}>
             <Col xs={24} xl={12}>
-              <Panel title={`需要关注的终端（${attention.length}）`}>
+              <Panel
+                title={`需要关注的终端（${attention.length}）`}
+                actions={
+                  attention.length > 0 && (
+                    <Button
+                      type="link"
+                      onClick={() => openDevices("attention")}
+                      style={{ paddingInline: 0 }}
+                    >
+                      查看全部
+                    </Button>
+                  )
+                }
+              >
                 <DeviceTable
                   devices={attention.slice(0, 8)}
                   onSelect={openDevice}

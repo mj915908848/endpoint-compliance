@@ -3,24 +3,42 @@ import { render, screen } from "@testing-library/react";
 import { VerdictHistory, VerdictTrendChart } from "../src/components";
 
 describe("verdict trend", () => {
-  it("draws one bar per day and summarizes today for screen readers", () => {
-    const { container } = render(
-      <VerdictTrendChart
-        days={[
-          { date: "2026-10-16", pass: 1, fail: 1, unknown: 0 },
-          { date: "2026-10-17", pass: 2, fail: 0, unknown: 1 },
-        ]}
-      />,
-    );
-    expect(container.querySelectorAll("svg > g")).toHaveLength(2);
+  const day = (n: number, pass: number, fail = 0, unknown = 0) => ({
+    date: `2026-10-${String(n).padStart(2, "0")}`,
+    pass,
+    fail,
+    unknown,
+  });
+
+  it("draws one bar per day from the first recorded one and summarizes today for screen readers", () => {
+    const days = [
+      day(1, 0),
+      day(2, 0),
+      ...[3, 4, 5, 6, 7, 8].map((n) => day(n, 1, 1)),
+      day(9, 2, 0, 1),
+    ];
+    const { container } = render(<VerdictTrendChart days={days} />);
+    expect(container.querySelectorAll("svg > g")).toHaveLength(7);
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain(
       "今天通过 2 台，不通过 0 台，无法判断 1 台",
     );
   });
 
+  it("sums up a few recorded days in a line instead of a chart", () => {
+    const { container } = render(
+      <VerdictTrendChart days={[day(16, 0), day(17, 1, 1), day(18, 2, 0, 1)]} />,
+    );
+    expect(container.querySelector("svg")).toBeNull();
+    expect(
+      screen.getByText(
+        /已记录 2 天。今天通过 2 台，不通过 0 台，无法判断 1 台。满 7 天后显示趋势图/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("says so when nothing was recorded yet", () => {
-    render(<VerdictTrendChart days={[{ date: "2026-10-17", pass: 0, fail: 0, unknown: 0 }]} />);
-    expect(screen.getByText("暂无历史结论")).toBeTruthy();
+    render(<VerdictTrendChart days={[day(17, 0)]} />);
+    expect(screen.getByText(/暂无历史结论/)).toBeTruthy();
   });
 
   it("lists a device's changes newest first", () => {

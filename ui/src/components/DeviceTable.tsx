@@ -1,6 +1,7 @@
 import { Button, Space, Table, Typography, type TableColumnsType } from "antd";
 import { ago, AgentVersion, DeviceState, Empty, NetworkLine, OnlineDot, time } from "./common";
 import { onlineLabel } from "./labels";
+import { sinceText } from "./alertList";
 import type { DeviceSummary } from "../types";
 
 export function DeviceTable({
@@ -31,14 +32,12 @@ export function DeviceTable({
             )}
           </Space>
           {d.note && <Typography.Text>{d.note}</Typography.Text>}
-          {d.network?.length ? (
+          {compact ? null : d.network?.length ? (
             <NetworkLine device={d} />
           ) : (
-            !compact && (
-              <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
-                {d.id}
-              </Typography.Text>
-            )
+            <Typography.Text type="secondary" className="mono" style={{ fontSize: 12 }}>
+              {d.id}
+            </Typography.Text>
           )}
         </Space>
       ),
@@ -62,9 +61,17 @@ export function DeviceTable({
     {
       title: "最近检查",
       key: "scan",
+      width: compact ? 104 : undefined,
       render: (_, d) => (
         <Space orientation="vertical" size={0}>
-          <span>{time(d.lastScan)}</span>
+          {/* Relative on dashboards, where the column is narrow; the full time is on hover. */}
+          {compact && d.lastScan ? (
+            <span title={time(d.lastScan)} style={{ whiteSpace: "nowrap" }}>
+              {sinceText(d.lastScan)}
+            </span>
+          ) : (
+            <span>{time(d.lastScan)}</span>
+          )}
           {!compact && (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               心跳 {time(d.lastHeartbeat)}

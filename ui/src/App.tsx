@@ -302,6 +302,7 @@ export function App() {
                 element={
                   <Overview
                     openDevice={(id) => navigate(devicePath(id))}
+                    openDevices={(filter) => navigate(`/devices?filter=${filter}`)}
                     openAlerts={() => navigate("/alerts")}
                   />
                 }
