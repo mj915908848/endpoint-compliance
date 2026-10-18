@@ -2111,7 +2111,8 @@
           "lastSequence",
           "serverVersion",
           "minimumAgentVersion",
-          "keyRotation"
+          "keyRotation",
+          "policySerial"
         ],
         "type": "object",
         "properties": {
@@ -2140,6 +2141,13 @@
                 "$ref": "#/components/schemas/SignedKeyRotation"
               }
             ]
+          },
+          "policySerial": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
           }
         }
       },

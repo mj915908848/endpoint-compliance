@@ -104,7 +104,7 @@ static partial class Endpoints
                     {
                         var deviceId = Agent(c);
                         await tx.Lock(ComplianceService.DeviceLock(deviceId));
-                        await s.DeviceHead(tx, deviceId);
+                        var device = await s.DeviceHead(tx, deviceId);
                         var controls = r
                             .Controls.Select(x => x with { Detail = EvidenceSanitizer.Clean(x.Detail) })
                             .ToArray();
@@ -132,14 +132,16 @@ static partial class Endpoints
                         // heartbeat wait for the one global offline lock.
                         // Clients from 0.2.9 compress larger uploads once a server says it accepts them. The highest
                         // sequence held lets a client whose local queue file was lost carry on after it: a snapshot
-                        // numbered below the current one is ignored.
+                        // numbered below the current one is ignored. The assigned policy's serial lets newer clients
+                        // skip fetching a policy they already hold.
                         return new HeartbeatReply(
                             Ok: true,
                             GzipUploads: true,
                             await tx.LastSequence(deviceId),
                             ComplianceService.Version,
                             ReleaseVersion.MinimumAgent,
-                            s.Policies.Rotation
+                            s.Policies.Rotation,
+                            device.TargetPolicyVersion
                         );
                     });
                 }

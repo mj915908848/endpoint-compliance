@@ -794,6 +794,7 @@ public sealed class AgentRuntime(
     )
     {
         string? policyIssue = null;
+        long? assignedSerial = null;
         // Health goes first when connectivity resumes, then historical events.
         try
         {
@@ -822,6 +823,13 @@ public sealed class AgentRuntime(
                 && await queue.AdvanceSequenceAsync(sequence, ct)
             )
                 Console.Error.WriteLine($"本地上报序号落后于管理端，已改为从 {sequence + 1} 继续");
+            // Servers from this release say which policy release is assigned; one already held is not fetched again.
+            if (
+                reply.ValueKind == JsonValueKind.Object
+                && reply.TryGetProperty("policySerial", out var serial)
+                && serial.TryGetInt64(out var assigned)
+            )
+                assignedSerial = assigned;
             // While the server rotates its policy key it announces the next one, signed with the current key. The
             // next key is kept until a policy signed with it arrives, even when a reply stops announcing it: the
             // rotation may have completed between two heartbeats.
@@ -883,59 +891,66 @@ public sealed class AgentRuntime(
         {
             Console.Error.WriteLine("Heartbeat pending: " + e.GetType().Name);
         }
-        try
-        {
-            var fetched = await api.SendAsync<SignedPolicy>(HttpMethod.Get, "/api/agent/policy", null, ct);
-            var verified = PolicyCrypto.Verify(
-                fetched,
-                PolicyKeys.PublicKeyFor(config, fetched.KeyId),
-                config.DeviceId!,
-                policy?.Serial ?? 0,
-                DateTimeOffset.UtcNow
-            );
-            if (
-                policy is not null
-                && verified.Serial == policy.Serial
-                && signedPolicy is not null
-                && fetched.Payload != signedPolicy.Payload
-            )
-                throw new CryptographicException("Immutable policy version changed content");
-            if (policy?.Serial != verified.Serial)
+        // The same release comes back unchanged, so it is fetched (up to 4 MB) only when another one is assigned.
+        var held = signedPolicy is not null && policy is not null && assignedSerial == policy.Serial;
+        if (!held)
+            try
             {
-                forceFull = true;
-                Console.WriteLine(
-                    $"收到新策略“{verified.PolicyId}”v{verified.Version}"
-                        + (policy is null ? "" : $"（原“{policy.PolicyId}”v{policy.Version}）")
-                        + "，立即完整检查"
+                var fetched = await api.SendAsync<SignedPolicy>(HttpMethod.Get, "/api/agent/policy", null, ct);
+                var verified = PolicyCrypto.Verify(
+                    fetched,
+                    PolicyKeys.PublicKeyFor(config, fetched.KeyId),
+                    config.DeviceId!,
+                    policy?.Serial ?? 0,
+                    DateTimeOffset.UtcNow
                 );
+                if (
+                    policy is not null
+                    && verified.Serial == policy.Serial
+                    && signedPolicy is not null
+                    && fetched.Payload != signedPolicy.Payload
+                )
+                    throw new CryptographicException("Immutable policy version changed content");
+                if (policy?.Serial != verified.Serial)
+                {
+                    forceFull = true;
+                    Console.WriteLine(
+                        $"收到新策略“{verified.PolicyId}”v{verified.Version}"
+                            + (policy is null ? "" : $"（原“{policy.PolicyId}”v{policy.Version}）")
+                            + "，立即完整检查"
+                    );
+                }
+                policy = verified;
+                // Rewritten only when it changed: the same policy comes back every minute.
+                if (
+                    signedPolicy is null
+                    || fetched.Payload != signedPolicy.Payload
+                    || fetched.KeyId != signedPolicy.KeyId
+                )
+                    DurableFile.Write(statePath, Wire.Serialize(fetched));
+                signedPolicy = fetched;
+                if (PolicyKeys.Verified(config, fetched.KeyId) is var promoted && promoted != config)
+                {
+                    config = promoted;
+                    AgentConfiguration.Save(configPath, config);
+                    Console.WriteLine($"管理端已更换策略签名密钥，现在信任 {config.PolicyKeyId}");
+                }
             }
-            policy = verified;
-            // Rewritten only when it changed: the same policy comes back every minute.
-            if (signedPolicy is null || fetched.Payload != signedPolicy.Payload || fetched.KeyId != signedPolicy.KeyId)
-                DurableFile.Write(statePath, Wire.Serialize(fetched));
-            signedPolicy = fetched;
-            if (PolicyKeys.Verified(config, fetched.KeyId) is var promoted && promoted != config)
+            catch (Exception e)
+                when (e
+                        is HttpRequestException
+                            or TaskCanceledException
+                            or CryptographicException
+                            or ArgumentException
+                            or JsonException
+                )
             {
-                config = promoted;
-                AgentConfiguration.Save(configPath, config);
-                Console.WriteLine($"管理端已更换策略签名密钥，现在信任 {config.PolicyKeyId}");
+                policyIssue =
+                    (e is HttpRequestException or TaskCanceledException) && signedPolicy is not null
+                        ? null
+                        : "Policy refresh failed: " + e.GetType().Name;
+                Console.Error.WriteLine("Policy refresh failed; retained last signed policy: " + e.GetType().Name);
             }
-        }
-        catch (Exception e)
-            when (e
-                    is HttpRequestException
-                        or TaskCanceledException
-                        or CryptographicException
-                        or ArgumentException
-                        or JsonException
-            )
-        {
-            policyIssue =
-                (e is HttpRequestException or TaskCanceledException) && signedPolicy is not null
-                    ? null
-                    : "Policy refresh failed: " + e.GetType().Name;
-            Console.Error.WriteLine("Policy refresh failed; retained last signed policy: " + e.GetType().Name);
-        }
         if (policy is null)
         {
             policy = PolicySeed.Create();
@@ -1259,12 +1274,10 @@ public sealed class AgentRuntime(
     {
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException();
-        return new WindowsCollector(volumes is null ? null : v => volumes.Open(v, ct)).CollectAsync(
-            deviceId,
-            policy,
-            ct,
-            previous
-        );
+        return new WindowsCollector(
+            volumes is null ? null : v => volumes.Open(v, ct),
+            volumes is null ? null : volumes.FirstReadRunning
+        ).CollectAsync(deviceId, policy, ct, previous);
     }
 
     // Direct on purpose: a proxy on this machine is what the client checks for, and one could intercept or block its

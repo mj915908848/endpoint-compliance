@@ -62,16 +62,40 @@ public sealed class VolumeCatalog(Func<string, IVolumeIndex?> open, TimeProvider
     public int Reads => Volatile.Read(ref reads);
     private int reads;
 
-    /// <summary>Sets or (with null) drops what a scan needs kept. Set before scanning so one read serves every scan.</summary>
+    /// <summary>
+    /// Sets or (with null) drops what a scan needs kept. Set before scanning so one read serves every scan. Dropping
+    /// the last lets go of every volume (up to a few hundred MB on large disks); dropping another keeps what is held,
+    /// since the folders are needed anyway and the names only it kept are few.
+    /// </summary>
     public void Want(string key, VolumeInterest? interest)
     {
         lock (gate)
         {
-            if (interest is null)
-                interests.Remove(key);
-            else
+            if (interest is not null)
+            {
                 interests[key] = interest;
+                return;
+            }
+            if (!interests.Remove(key) || interests.Count > 0)
+                return;
+            foreach (var held in volumes.Values)
+                // A volume being scanned right now is let go of the next time nothing wants it.
+                if (held.Busy.Wait(0))
+                {
+                    held.Clear();
+                    held.Busy.Release();
+                }
         }
+    }
+
+    /// <summary>Whether another scan is reading the volume's file table and none has been read yet.</summary>
+    public bool FirstReadRunning(string volume)
+    {
+        lock (gate)
+            return volumes.TryGetValue(volume, out var held)
+                && held.Busy.CurrentCount == 0
+                && held.Cursor is null
+                && held.DirectUntil <= time.GetUtcNow();
     }
 
     /// <summary>
@@ -276,6 +300,10 @@ public sealed class VolumeCatalog(Func<string, IVolumeIndex?> open, TimeProvider
         public ulong RootId => volume.RootId;
 
         public VolumeCursor? Cursor() => held.Cursor;
+
+        public bool HoldsFolders => true;
+
+        public bool TryFolder(ulong id, out VolumeEntry folder) => held.Folders.TryGetValue(id, out folder);
 
         public IEnumerable<VolumeEntry> Entries(CancellationToken ct)
         {

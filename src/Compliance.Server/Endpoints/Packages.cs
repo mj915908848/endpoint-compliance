@@ -29,7 +29,11 @@ static partial class Endpoints
                 Require(c, "Reader");
                 return await s.Tx(async tx =>
                 {
-                    var devices = await tx.AllDeviceHeads();
+                    // Devices by client version: a few distinct versions to compare with each package, not every device.
+                    var versions = (await tx.AllDeviceHeads())
+                        .GroupBy(d => d.AgentVersion)
+                        .Select(g => (Version: g.Key, Count: g.Count()))
+                        .ToArray();
                     return (await tx.ClientPackages())
                         .OrderByDescending(p => Version.Parse(p.Package.Version))
                         .Select(p => new ClientPackageItem(
@@ -38,7 +42,7 @@ static partial class Endpoints
                             p.Package.Size,
                             p.Package.UploadedAt,
                             p.UploadedBy,
-                            devices.Count(d => ReleaseVersion.Older(d.AgentVersion, p.Package.Version))
+                            versions.Where(v => ReleaseVersion.Older(v.Version, p.Package.Version)).Sum(v => v.Count)
                         ))
                         .ToArray();
                 });

@@ -1952,6 +1952,8 @@ export interface components {
       serverVersion: string;
       minimumAgentVersion: string;
       keyRotation: null | components["schemas"]["SignedKeyRotation"];
+      /** Format: int64 */
+      policySerial: null | number;
     };
     HeartbeatRequest: {
       hostName: string;

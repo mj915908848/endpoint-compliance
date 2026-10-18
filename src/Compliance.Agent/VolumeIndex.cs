@@ -63,6 +63,15 @@ public interface IVolumeIndex : IDisposable
 
     /// <summary>A path as the volume spells it (long names rather than 8.3 short names), or null when it does not exist.</summary>
     string? Canonical(string path);
+
+    /// <summary>The folders listed by <see cref="Entries"/> can be looked up by id, so a scan need not copy them.</summary>
+    bool HoldsFolders => false;
+
+    bool TryFolder(ulong id, out VolumeEntry folder)
+    {
+        folder = default;
+        return false;
+    }
 }
 
 /// <summary>
@@ -99,7 +108,21 @@ public static class SensitiveIndexScan
         var spelled = targets.ToDictionary(t => t.Scope, t => t.Root);
         targets = Spelled(index, targets);
         var rules = new SensitiveScopeRules(targets, policy);
+        // Up to two million folders on a large volume: looked up in the catalog's copy when it holds them.
         var folders = new Dictionary<ulong, Folder>();
+        var held = index.HoldsFolders;
+        bool Lookup(ulong id, out Folder folder)
+        {
+            if (!held)
+                return folders.TryGetValue(id, out folder);
+            if (!index.TryFolder(id, out var entry))
+            {
+                folder = default;
+                return false;
+            }
+            folder = new(entry.ParentId, entry.Name, (entry.Attributes & FileAttributes.ReparsePoint) != 0);
+            return true;
+        }
         var candidates = new List<VolumeEntry>();
         names = 0;
         foreach (var entry in index.Entries(ct))
@@ -107,7 +130,7 @@ public static class SensitiveIndexScan
             names++;
             if (entry.Id == index.RootId)
                 continue;
-            if (entry.IsDirectory)
+            if (entry.IsDirectory && !held)
                 folders[entry.Id] = new(
                     entry.ParentId,
                     entry.Name,
@@ -125,13 +148,15 @@ public static class SensitiveIndexScan
             while (!paths.TryGetValue(id, out path))
             {
                 // Records still being written, or a loop in damaged metadata, leave the name unplaced.
-                if (!folders.TryGetValue(id, out var folder) || chain.Count > 4096)
+                if (!Lookup(id, out var folder) || chain.Count > 4096)
                     break;
                 chain.Add(id);
                 id = folder.Parent;
             }
             for (var i = chain.Count - 1; i >= 0; i--)
-                paths[chain[i]] = path = path is null ? null : Path.Join(path, folders[chain[i]].Name);
+                paths[chain[i]] = path = path is null
+                    ? null
+                    : Path.Join(path, Lookup(chain[i], out var f) ? f.Name : "");
             return path;
         }
 
@@ -148,11 +173,7 @@ public static class SensitiveIndexScan
             if (rules.TargetOf(path) is not var (target, root))
                 continue;
             var between = new List<(string Name, string Path, bool Linked)>();
-            for (
-                var id = candidate.ParentId;
-                id != index.RootId && folders.TryGetValue(id, out var folder);
-                id = folder.Parent
-            )
+            for (var id = candidate.ParentId; id != index.RootId && Lookup(id, out var folder); id = folder.Parent)
             {
                 var folderPath = paths[id]!;
                 if (folderPath.Equals(root, StringComparison.OrdinalIgnoreCase))

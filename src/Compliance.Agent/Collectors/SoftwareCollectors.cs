@@ -144,7 +144,16 @@ internal sealed class ProgramFilesCollector : ICollector
             try
             {
                 if (drive.DriveType == DriveType.Fixed && drive.IsReady && drive.DriveFormat == "NTFS")
-                    scopes.Add(new(SensitiveFiles.DriveScope(drive.Name[0])));
+                    // A large disk's first read after start can outlast this check's time limit; the check waits
+                    // for it as not yet known rather than reporting an error.
+                    scopes.Add(
+                        context.VolumeReading?.Invoke(drive.Name) == true
+                            ? new(
+                                SensitiveFiles.DriveScope(drive.Name[0]),
+                                Unavailable: "正在首次读取该分区的文件表，稍后检查"
+                            )
+                            : new(SensitiveFiles.DriveScope(drive.Name[0]))
+                    );
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }

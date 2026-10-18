@@ -86,6 +86,8 @@ public sealed class Housekeeping(Store store, Settings settings, TimeProvider cl
     public async Task UpdateOffline(Transaction tx)
     {
         await tx.Lock("offline");
+        // Not audited: the alert records each outage, and two audit rows per device per day (shut down at night,
+        // started in the morning) buried what people did.
         var silentSince = Now - TimeSpan.FromMinutes(5);
         var goingOffline = started < silentSince ? await tx.DevicesGoingOffline(silentSince) : [];
         foreach (var (id, hostName) in goingOffline)
@@ -105,12 +107,10 @@ public sealed class Housekeeping(Store store, Settings settings, TimeProvider cl
                     false
                 )
             );
-            await tx.Audit("system", "Offline", id, Now);
         }
         foreach (var id in await tx.DevicesBackOnline(Now - TimeSpan.FromMinutes(3)))
         {
             await tx.ResolveAlert("offline:" + id, Now);
-            await tx.Audit("system", "OnlineRecovered", id, Now);
         }
     }
 }
