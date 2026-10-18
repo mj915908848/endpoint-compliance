@@ -1002,6 +1002,36 @@ public class ApiTests
 
         f.Clock.Now += LoginThrottle.Window;
         await f.Login();
+        // The guessing and the pause are in the audit log, with the address they came from.
+        var audit = await f.Client.GetStringAsync("/api/audit");
+        Assert.Contains("LoginFailed", audit);
+        Assert.Contains("LoginLocked", audit);
+        Assert.Contains("ADMIN（loopback）", audit);
+    }
+
+    [Fact]
+    public void Wrong_passwords_from_one_address_do_not_lock_the_account_for_others()
+    {
+        var throttle = new LoginThrottle();
+        var now = DateTimeOffset.UtcNow;
+        for (var i = 0; i < LoginThrottle.MaxFailures; i++)
+            throttle.Failed("admin", "10.0.0.9", now);
+        Assert.NotNull(throttle.LockedFor("admin", "10.0.0.9", now));
+        Assert.Null(throttle.LockedFor("admin", "10.0.0.2", now));
+        // Guessing from many addresses still stops at the account's own limit.
+        for (var i = 0; i < LoginThrottle.MaxAccountFailures; i++)
+            throttle.Failed("admin", "10.1.0." + i, now);
+        Assert.NotNull(throttle.LockedFor("admin", "10.0.0.2", now));
+        Assert.Null(throttle.LockedFor("admin", "10.0.0.2", now + LoginThrottle.Window));
+    }
+
+    [Fact]
+    public async Task Health_check_answers_without_signing_in()
+    {
+        await using var f = new Fixture();
+        var health = await f.Client.GetAsync("/healthz");
+        Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+        Assert.Equal("ok", await health.Content.ReadAsStringAsync());
     }
 
     [Fact]

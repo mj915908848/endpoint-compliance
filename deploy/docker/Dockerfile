@@ -29,4 +29,7 @@ ENV ASPNETCORE_URLS=https://+:8443 \
     Compliance__Storage=Postgres \
     Compliance__SigningKeyPath=/var/lib/compliance/signing.key
 EXPOSE 8443
+# A server that stops answering is ended after three misses so the restart policy starts it again (see HealthCheck.cs).
+HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=3 \
+    CMD ["dotnet", "Compliance.Server.dll", "--healthcheck"]
 ENTRYPOINT ["dotnet", "Compliance.Server.dll"]

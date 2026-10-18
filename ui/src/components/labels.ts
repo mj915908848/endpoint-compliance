@@ -59,6 +59,8 @@ export const alertTypeLabel = lookup({
 
 export const auditActionLabel = lookup({
   Login: "登录",
+  LoginFailed: "登录失败（密码错误）",
+  LoginLocked: "登录失败次数过多，已暂停",
   Logout: "退出登录",
   CreateUser: "创建账号",
   CreateEnrollmentCode: "生成登记码",

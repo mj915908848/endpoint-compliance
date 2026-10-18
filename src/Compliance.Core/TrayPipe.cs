@@ -79,9 +79,18 @@ public static class TrayPipe
             TokenImpersonationLevel.Identification
         );
         await pipe.ConnectAsync(2000);
-        using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
-        using var reader = new StreamReader(pipe, leaveOpen: true);
-        await writer.WriteLineAsync(Wire.Serialize(request));
-        return await reader.ReadLineAsync() ?? throw new IOException("Empty service response");
+        // An end that accepts but never answers must not leave the tray waiting for ever.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
+            using var reader = new StreamReader(pipe, leaveOpen: true);
+            await writer.WriteLineAsync(Wire.Serialize(request).AsMemory(), timeout.Token);
+            return await reader.ReadLineAsync(timeout.Token) ?? throw new IOException("Empty service response");
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            throw new IOException("The service did not answer");
+        }
     }
 }

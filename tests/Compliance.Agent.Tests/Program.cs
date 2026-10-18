@@ -2175,6 +2175,21 @@ await Check(
         var past = new ProcessEnforcer(failing);
         Assert(past.Sweep(enforce, DateTimeOffset.UtcNow).Single().Pid == 21, "the next process is still ended");
 
+        // A renamed copy is found by its original file name (product name still checked) or by an uploaded hash.
+        const string hash = "AB12";
+        var renamed = new FakeProcesses([
+            new(40, "notes.exe", () => "Cursor", () => null, OriginalName: () => "Cursor.exe"),
+            new(41, "tool.exe", () => "Other", () => null, OriginalName: () => "Cursor.exe"),
+            new(42, "x.exe", () => null, () => null, OriginalName: () => null, Sha256: () => "ab12"),
+            new(43, "y.exe", () => null, () => null, OriginalName: () => null, Sha256: () => "CD34"),
+        ]);
+        var hashed = enforce with { ApplicationRules = [new("cursor", "Cursor", hash)] };
+        new ProcessEnforcer(renamed).Sweep(hashed, DateTimeOffset.UtcNow);
+        Assert(
+            renamed.Killed.SequenceEqual([40, 42]),
+            "renamed copies are ended by original name or hash: " + string.Join(",", renamed.Killed)
+        );
+
         // Microsoft Store apps are confirmed by their protected install folder, whatever the version info says.
         const string store = @"C:\Program Files\WindowsApps\OpenAI.ChatGPT-Desktop_1.2025.1.0_x64__2p2nqsd0c76g0\app\";
         var packaged = new FakeProcesses([

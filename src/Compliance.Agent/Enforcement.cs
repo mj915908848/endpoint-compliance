@@ -8,13 +8,19 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Compliance.Agent;
 
-/// <summary>A running program; <paramref name="ImagePath"/> is the full path of its executable when readable.</summary>
+/// <summary>
+/// A running program; <paramref name="ImagePath"/> is the full path of its executable when readable,
+/// <paramref name="OriginalName"/> the file name its version information gives (kept when the file is renamed) and
+/// <paramref name="Sha256"/> the hash of its contents, both read only when asked.
+/// </summary>
 public sealed record RunningProcess(
     int Pid,
     string Name,
     Func<string?> ProductName,
     Func<string?> UserSid,
-    Func<string?>? ImagePath = null
+    Func<string?>? ImagePath = null,
+    Func<string?>? OriginalName = null,
+    Func<string?>? Sha256 = null
 );
 
 public sealed record BlockedProcess(string ProductId, string ProductName, string Executable, int Pid, string? UserSid);
@@ -55,8 +61,10 @@ public sealed class ProcessEnforcer(IProcessTable table)
     private readonly HashSet<string> skipped = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The product a process belongs to: a Microsoft Store app running from its protected install folder whose
-    /// package name the product lists, or an executable whose file name and product name both match.
+    /// The product a process belongs to: an executable whose contents match an application rule's SHA-256, a
+    /// Microsoft Store app running from its protected install folder whose package name the product lists, or an
+    /// executable whose file name and product name both match. A renamed copy is matched by the original file name in
+    /// its version information.
     /// </summary>
     public static ProductRule? Confirmed(RunningProcess process, PolicyDocument policy) =>
         Confirm(process, policy, out _);
@@ -64,6 +72,16 @@ public sealed class ProcessEnforcer(IProcessTable table)
     private static ProductRule? Confirm(RunningProcess process, PolicyDocument policy, out string? reason)
     {
         reason = null;
+        if (
+            policy.ApplicationRules.Length > 0
+            && process.Sha256?.Invoke() is { } hash
+            && policy.ApplicationRules.FirstOrDefault(r =>
+                r.Type == "Exe" && string.Equals(r.Sha256, hash, StringComparison.OrdinalIgnoreCase)
+            )
+                is { } byHash
+            && policy.Products.FirstOrDefault(p => p.Id == byHash.ProductId) is { } hashed
+        )
+            return hashed;
         var path = process.ImagePath?.Invoke();
         if (PackageName(path) is { } package)
         {
@@ -73,11 +91,18 @@ public sealed class ProcessEnforcer(IProcessTable table)
             if (packaged is not null)
                 return packaged;
         }
-        var candidates = policy
-            .Products.Where(r =>
-                r.ExecutableNames.Any(x => string.Equals(x, process.Name, StringComparison.OrdinalIgnoreCase))
-            )
-            .ToArray();
+        ProductRule[] Named(string? name) =>
+            name is null
+                ? []
+                : policy
+                    .Products.Where(r =>
+                        r.ExecutableNames.Any(x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase))
+                    )
+                    .ToArray();
+        var candidates = Named(process.Name);
+        // Copied under another name, the file still carries its original name; the product name must match as well.
+        if (candidates.Length == 0 && policy.Products.Any(r => r.ExecutableNames.Length > 0))
+            candidates = Named(process.OriginalName?.Invoke());
         if (candidates.Length == 0)
             return null;
         var product = process.ProductName();
@@ -309,8 +334,77 @@ public sealed class WindowsProcessTable : IProcessTable
                         (path, read) = (ImagePath(pid), true);
                     return path;
                 }
-                yield return new(pid, name, () => ProductName(Path()), () => Owner(pid), Path);
+                yield return new(
+                    pid,
+                    name,
+                    () => ProductName(Path()),
+                    () => Owner(pid),
+                    Path,
+                    () => Facts(Path())?.OriginalName,
+                    () => Facts(Path())?.Sha256.Value
+                );
             }
+        }
+    }
+
+    sealed record FileFacts(string? OriginalName, Lazy<string?> Sha256);
+
+    // By path, size and time written, so a program running all day is read and hashed once, not every 2 seconds.
+    readonly Dictionary<(string, long, DateTime), FileFacts> facts = [];
+
+    static readonly string[] SystemFolders =
+    [
+        Environment.GetFolderPath(Environment.SpecialFolder.System) + System.IO.Path.DirectorySeparatorChar,
+        Environment.GetFolderPath(Environment.SpecialFolder.SystemX86) + System.IO.Path.DirectorySeparatorChar,
+        System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "WinSxS")
+            + System.IO.Path.DirectorySeparatorChar,
+    ];
+
+    /// <summary>
+    /// What the file says about itself beyond its name. Programs in Windows' own folders, which users cannot write,
+    /// are skipped. Null when the file cannot be read.
+    /// </summary>
+    FileFacts? Facts(string? path)
+    {
+        if (
+            path is null
+            || SystemFolders.Any(f => f.Length > 1 && path.StartsWith(f, StringComparison.OrdinalIgnoreCase))
+        )
+            return null;
+        try
+        {
+            var info = new FileInfo(path);
+            var key = (path.ToUpperInvariant(), info.Length, info.LastWriteTimeUtc);
+            if (facts.TryGetValue(key, out var known))
+                return known;
+            if (facts.Count >= 2000)
+                facts.Clear();
+            return facts[key] = new(
+                System.IO.Path.GetFileName(FileVersionInfo.GetVersionInfo(path).OriginalFilename),
+                new(() => Hash(path))
+            );
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    static string? Hash(string path)
+    {
+        try
+        {
+            using var file = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete
+            );
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(file));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 

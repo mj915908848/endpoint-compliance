@@ -134,6 +134,9 @@ public static class PolicyCrypto
 
 public static class RequestAuthentication
 {
+    /// <summary>The server's answer to a device it does not know, such as one an administrator deleted.</summary>
+    public const string UnknownDevice = "Unknown device";
+
     private static byte[] Canonical(
         string method,
         string path,
