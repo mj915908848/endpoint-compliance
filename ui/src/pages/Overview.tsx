@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Button, Col, Row, Space } from "antd";
 import { useResource } from "../useResource";
 import {
-  DeviceAlertCard,
+  DeviceAlertRow,
   DeviceTable,
   Empty,
   Fresh,
@@ -82,7 +82,7 @@ export function Overview({
             </Fresh>
           </Panel>
           <Row gutter={[16, 16]}>
-            <Col xs={24} xl={15}>
+            <Col xs={24} xl={12}>
               <Panel title={`需要关注的终端（${attention.length}）`}>
                 <DeviceTable
                   devices={attention.slice(0, 8)}
@@ -92,38 +92,36 @@ export function Overview({
                 />
               </Panel>
             </Col>
-            <Col xs={24} xl={9}>
+            <Col xs={24} xl={12}>
               <Panel
-                title={`未恢复告警（${openAlertList.length}）`}
+                title={
+                  openByDevice.length ? `未恢复告警（${openByDevice.length} 台终端）` : "未恢复告警"
+                }
                 actions={
-                  <Button type="link" onClick={openAlerts}>
+                  <Button type="link" onClick={openAlerts} style={{ paddingInline: 0 }}>
                     查看全部
                   </Button>
                 }
               >
                 <Fresh error={alerts.error} loading={alerts.loading}>
-                  {openAlertList.length === 0 ? (
+                  {openByDevice.length === 0 ? (
                     <Empty title="当前没有未恢复的告警" />
                   ) : (
-                    <Space orientation="vertical" size={10} style={{ width: "100%" }}>
-                      {openByDevice.slice(0, 5).map((d) => (
-                        <DeviceAlertCard
+                    <>
+                      {openByDevice.slice(0, 7).map((d) => (
+                        <DeviceAlertRow
                           key={d.id}
                           device={d}
-                          label="未恢复告警"
-                          count="项未恢复"
-                          danger={d.alerts.some((a) => a.type === "Violation")}
                           onOpen={() => openDevice(d.id)}
                           compact
-                          limit={3}
                         />
                       ))}
-                      {openByDevice.length > 5 && (
+                      {openByDevice.length > 7 && (
                         <Button type="link" onClick={openAlerts} style={{ paddingInline: 0 }}>
-                          还有 {openByDevice.length - 5} 台终端有未恢复告警
+                          还有 {openByDevice.length - 7} 台终端有未恢复告警
                         </Button>
                       )}
-                    </Space>
+                    </>
                   )}
                 </Fresh>
               </Panel>

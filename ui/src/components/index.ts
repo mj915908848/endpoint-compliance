@@ -4,7 +4,7 @@ export * from "./labels";
 export * from "./report";
 export * from "./DeviceTable";
 export * from "./policyEditor";
-export * from "./alertGroups";
+export * from "./alertList";
 export * from "./account";
 export * from "./trend";
 export * from "./packages";

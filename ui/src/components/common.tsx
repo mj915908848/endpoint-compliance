@@ -296,64 +296,6 @@ export function CoverageGuide({ modules }: { modules: ModuleResult[] }) {
   );
 }
 
-export function AlertCard({
-  alert,
-  note,
-  canAck,
-  onAck,
-}: {
-  alert: Alert;
-  note?: string;
-  canAck: boolean;
-  onAck: (id: string) => Promise<unknown>;
-}) {
-  const [acked, setAcked] = useState(alert.acknowledged),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState<string | null>(null);
-  useEffect(() => setAcked(alert.acknowledged), [alert.id, alert.acknowledged]);
-  async function ack() {
-    setBusy(true);
-    setError(null);
-    try {
-      await onAck(alert.id);
-      setAcked(true);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  const recovered = alert.state === "Resolved";
-  const severity = recovered ? "default" : alert.type === "Violation" ? "error" : "warning";
-  return (
-    <Card size="small">
-      <Flex justify="space-between" align="start" gap={16} wrap>
-        <Space orientation="vertical" size={4} style={{ flex: 1, minWidth: 240 }}>
-          <Space size={4} wrap>
-            <Tag color={severity}>{alertTypeLabel(alert.type)}</Tag>
-            <Tag color={recovered ? "success" : "warning"}>{recovered ? "已恢复" : "未恢复"}</Tag>
-            <Tag>{acked ? "已确认" : "待确认"}</Tag>
-          </Space>
-          <Typography.Text strong>{alert.summary}</Typography.Text>
-          <Typography.Text type="secondary">
-            {deviceName({ hostName: alert.hostName, note })} · {alert.objectKey}
-          </Typography.Text>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            首次发现 {time(alert.firstSeen)} · 最近发现 {time(alert.lastSeen)} · 事件序号{" "}
-            {alert.lastSequence}
-          </Typography.Text>
-          <ErrorNotice error={error} />
-        </Space>
-        {canAck && !acked && (
-          <Button loading={busy} onClick={ack}>
-            确认已阅
-          </Button>
-        )}
-      </Flex>
-    </Card>
-  );
-}
-
 export function Login({
   onLogin,
   notice,

@@ -272,7 +272,7 @@ describe("alert center", () => {
     acknowledged: false,
   });
 
-  it("groups violations and sensitive files per device, newest first", async () => {
+  it("groups open alerts per device, violations first, and lists recovered ones apart", async () => {
     vi.stubGlobal("fetch", async (url: string) => {
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
@@ -296,28 +296,29 @@ describe("alert center", () => {
       return json([]);
     });
     renderAt("/alerts");
-    expect(await screen.findByText("违规设备（2 台）")).toBeTruthy();
-    const cards = screen.getAllByLabelText(/^违规设备 /);
-    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual([
-      "违规设备 PC-A",
-      "违规设备 PC-B",
+    expect(await screen.findByText("未恢复（2 台终端，7 项）")).toBeTruthy();
+    const devices = screen.getAllByRole("region", { name: /的告警$/ });
+    // Both have violations; the device with the newest alert comes first.
+    expect(devices.map((d) => d.getAttribute("aria-label"))).toEqual([
+      "PC-A 的告警",
+      "PC-B 的告警",
     ]);
-    expect(within(cards[0]).getByText("张三")).toBeTruthy();
-    expect(within(cards[0]).getByText("2 项违规")).toBeTruthy();
-    // Newest alert first within a device.
+    expect(within(devices[0]).getByText("张三")).toBeTruthy();
+    expect(within(devices[0]).getByText("违规 2")).toBeTruthy();
+    expect(within(devices[1]).getByText("敏感文件 2")).toBeTruthy();
+    // Violations first, newest first, then the rest.
     expect(
-      within(cards[0])
-        .getAllByRole("listitem")
-        .map((li) => li.textContent?.slice(0, 18)),
-    ).toEqual(["PC-A Violation 2首次", "PC-A Violation 3首次"]);
-    const sensitive = screen.getAllByLabelText(/^敏感文件 /);
-    expect(screen.getByText("敏感文件（1 台）")).toBeTruthy();
-    expect(within(sensitive[0]).getByText("2 个敏感文件")).toBeTruthy();
-    // Other alerts list only what is not shown above, newest first; not the resolved violation.
-    expect(screen.getByText("其他告警（2）")).toBeTruthy();
-    const others = screen.getAllByText(/^PC-A (Clue|Offline)/).map((e) => e.textContent);
-    expect(others).toEqual(["PC-A Clue 8", "PC-A Offline 4"]);
-    await userEvent.click(within(cards[0]).getByRole("button", { name: "查看终端" }));
+      within(devices[0])
+        .getAllByText(/^PC-A /)
+        .map((e) => e.textContent),
+    ).toEqual(["PC-A Violation 2", "PC-A Violation 3", "PC-A Clue 8", "PC-A Offline 4"]);
+    // The resolved violation is listed only with the recovered ones.
+    expect(within(devices[1]).queryByText("PC-B Violation 5")).toBeNull();
+    expect(screen.getByText("近 30 天已恢复（1 项）")).toBeTruthy();
+    expect(screen.getByText("PC-B Violation 5")).toBeTruthy();
+    // A reader sees nothing to acknowledge.
+    expect(screen.queryByRole("button", { name: /确认/ })).toBeNull();
+    await userEvent.click(within(devices[0]).getByRole("button", { name: "PC-A" }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/devices/a"));
   });
 });
