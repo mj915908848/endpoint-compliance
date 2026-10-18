@@ -241,6 +241,11 @@ public class ApiTests
         var reply = (await r.Content.ReadFromJsonAsync<HeartbeatReply>(Wire.Json))!;
         Assert.Equal(ReleaseVersion.MinimumAgent, reply.MinimumAgentVersion);
         Assert.Equal(ComplianceService.Version, reply.ServerVersion);
+        // The assigned release, so the client fetches the policy only when it changes.
+        var policy = await (await f.Agent("GET", "/api/agent/policy")).Content.ReadFromJsonAsync<SignedPolicy>(
+            Wire.Json
+        );
+        Assert.Equal(Wire.Read<PolicyDocument>(policy!.Payload).Serial, reply.PolicySerial);
     }
 
     [Fact]
@@ -714,6 +719,9 @@ public class ApiTests
             (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!,
             x => x.Type == "Offline" && x.State == "Active"
         );
+        // The alert is the record of the outage; the audit log keeps what people did.
+        var audit = await f.Client.GetStringAsync("/api/audit");
+        Assert.DoesNotContain("\"Offline\"", audit);
     }
 
     [Fact]

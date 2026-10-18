@@ -337,7 +337,7 @@ public sealed class WindowsProcessTable : IProcessTable
                 yield return new(
                     pid,
                     name,
-                    () => ProductName(Path()),
+                    () => Facts(Path(), true)?.ProductName,
                     () => Owner(pid),
                     Path,
                     () => Facts(Path())?.OriginalName,
@@ -347,7 +347,7 @@ public sealed class WindowsProcessTable : IProcessTable
         }
     }
 
-    sealed record FileFacts(string? OriginalName, Lazy<string?> Sha256);
+    sealed record FileFacts(string? ProductName, string? OriginalName, Lazy<string?> Sha256);
 
     // By path, size and time written, so a program running all day is read and hashed once, not every 2 seconds.
     readonly Dictionary<(string, long, DateTime), FileFacts> facts = [];
@@ -361,15 +361,15 @@ public sealed class WindowsProcessTable : IProcessTable
     ];
 
     /// <summary>
-    /// What the file says about itself beyond its name. Programs in Windows' own folders, which users cannot write,
-    /// are skipped. Null when the file cannot be read.
+    /// What the file says about itself beyond its name. Only the product name is read for programs in Windows' own
+    /// folders, which users cannot write. Null when the file cannot be read.
     /// </summary>
-    FileFacts? Facts(string? path)
+    FileFacts? Facts(string? path, bool productOnly = false)
     {
-        if (
-            path is null
-            || SystemFolders.Any(f => f.Length > 1 && path.StartsWith(f, StringComparison.OrdinalIgnoreCase))
-        )
+        if (path is null)
+            return null;
+        var system = SystemFolders.Any(f => f.Length > 1 && path.StartsWith(f, StringComparison.OrdinalIgnoreCase));
+        if (system && !productOnly)
             return null;
         try
         {
@@ -379,9 +379,11 @@ public sealed class WindowsProcessTable : IProcessTable
                 return known;
             if (facts.Count >= 2000)
                 facts.Clear();
+            var version = FileVersionInfo.GetVersionInfo(path);
             return facts[key] = new(
-                System.IO.Path.GetFileName(FileVersionInfo.GetVersionInfo(path).OriginalFilename),
-                new(() => Hash(path))
+                version.ProductName,
+                system ? null : System.IO.Path.GetFileName(version.OriginalFilename),
+                new(() => system ? null : Hash(path))
             );
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
@@ -408,39 +410,34 @@ public sealed class WindowsProcessTable : IProcessTable
         }
     }
 
-    public static string? ProductName(string? path)
-    {
-        if (path is null)
-            return null;
-        try
-        {
-            return FileVersionInfo.GetVersionInfo(path).ProductName;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // Unreadable: not confirmed, so never ended.
-            return null;
-        }
-    }
-
     /// <summary>
     /// The executable's full path. Unlike Process.MainModule this needs only limited query access, so it also
     /// works for Microsoft Store apps and processes of other users.
     /// </summary>
     public static string? ImagePath(int pid)
     {
+        const int InsufficientBuffer = 122;
         const uint QueryLimitedInformation = 0x1000;
         var process = OpenProcess(QueryLimitedInformation, false, pid);
         if (process == IntPtr.Zero)
             return null;
+        // Runs for every process every 2 seconds: a pooled buffer, long enough for nearly every path, instead of a
+        // fresh 64 KB one each time.
+        var buffer = System.Buffers.ArrayPool<char>.Shared.Rent(1024);
         try
         {
-            var buffer = new char[32768];
             var size = buffer.Length;
-            return QueryFullProcessImageName(process, 0, buffer, ref size) ? new string(buffer, 0, size) : null;
+            if (QueryFullProcessImageName(process, 0, buffer, ref size))
+                return new string(buffer, 0, size);
+            if (Marshal.GetLastWin32Error() != InsufficientBuffer)
+                return null;
+            var large = new char[32768];
+            size = large.Length;
+            return QueryFullProcessImageName(process, 0, large, ref size) ? new string(large, 0, size) : null;
         }
         finally
         {
+            System.Buffers.ArrayPool<char>.Shared.Return(buffer);
             CloseHandle(process);
         }
     }

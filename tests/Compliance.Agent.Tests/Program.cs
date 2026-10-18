@@ -2000,6 +2000,23 @@ await Check(
             clock.Now += VolumeCatalog.Reread;
             Held();
             Assert(volume.Scans == 4, "weekly read missing");
+            // With nothing wanted (both scans turned off) the records are let go of, and read again when wanted.
+            catalog.Want("sensitive", null);
+            Assert(!catalog.FirstReadRunning(root), "nothing is being read");
+            catalog.Want("sensitive", new("v1", n => n.Contains("机密")));
+            Assert(Held() is ["docs/new/机密合同.pdf"] && volume.Scans == 5, "released volume was not read again");
+            using (catalog.Open(root))
+                Assert(!catalog.FirstReadRunning(root), "a volume already read is not a first read");
+            VolumeCatalog? first = null;
+            var during = false;
+            first = new VolumeCatalog(v =>
+            {
+                during = first!.FirstReadRunning(v);
+                return volume;
+            });
+            first.Want("sensitive", new("v1", n => n.Contains("机密")));
+            first.Open(root)?.Dispose();
+            Assert(during, "the first read of a volume is reported while it runs");
         }
         finally
         {

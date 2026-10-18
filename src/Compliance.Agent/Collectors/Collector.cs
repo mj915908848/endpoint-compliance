@@ -13,7 +13,8 @@ public sealed record Profile(string Sid, string Path, bool HiveLoaded, bool Path
 public sealed record ScanContext(
     PolicyDocument Policy,
     IReadOnlyList<Profile> Profiles,
-    Func<string, IVolumeIndex?>? Volumes = null
+    Func<string, IVolumeIndex?>? Volumes = null,
+    Func<string, bool>? VolumeReading = null
 );
 
 /// <summary>One scope a collector covers. When <see cref="Unavailable"/> is set the scope is reported as not covered.</summary>
@@ -98,8 +99,12 @@ public static class FixtureCollector
 }
 
 /// <param name="volumes">Opens a volume's file records; by default each scan reads the file table itself.</param>
+/// <param name="volumeReading">Whether a volume's file table is being read for the first time by another scan.</param>
 [SupportedOSPlatform("windows")]
-public sealed partial class WindowsCollector(Func<string, IVolumeIndex?>? volumes = null)
+public sealed partial class WindowsCollector(
+    Func<string, IVolumeIndex?>? volumes = null,
+    Func<string, bool>? volumeReading = null
+)
 {
     // One per process: each cycle creates a new collector, and runs abandoned by earlier cycles must stay known.
     private static readonly AbandonedRuns Abandoned = new();
@@ -180,7 +185,7 @@ public sealed partial class WindowsCollector(Func<string, IVolumeIndex?>? volume
             );
         }
 
-        var context = new ScanContext(policy, profiles, volumes);
+        var context = new ScanContext(policy, profiles, volumes, volumeReading);
         // Modules the policy leaves out are not run at all.
         foreach (
             var collector in Collectors.Where(c => (full || !c.Inventory) && policy.RequiredModules.Contains(c.Module))

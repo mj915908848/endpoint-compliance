@@ -59,11 +59,13 @@ public record NotificationTested(bool Ok, string? Error);
 /// <param name="ServerVersion">The server's release.</param>
 /// <param name="MinimumAgentVersion">Clients older than this should be upgraded (<see cref="ReleaseVersion.MinimumAgent"/>).</param>
 /// <param name="KeyRotation">While the signing key is being replaced: the next key, signed with the current one.</param>
+/// <param name="PolicySerial">The serial of the policy release assigned to the device; releases never change.</param>
 public record HeartbeatReply(
     bool Ok,
     bool GzipUploads,
     long LastSequence,
     string ServerVersion,
     string MinimumAgentVersion,
-    SignedKeyRotation? KeyRotation = null
+    SignedKeyRotation? KeyRotation = null,
+    long? PolicySerial = null
 );
