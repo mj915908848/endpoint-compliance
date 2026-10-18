@@ -42,7 +42,9 @@ public static class Program
             }
             var aclRepaired = !simulated && NativeDataDirectory.EnsureSecure(data);
             var server = Arg("--server");
-            AgentConfiguration? config = File.Exists(configPath) ? AgentConfiguration.Read(configPath) : null;
+            AgentConfiguration? config = AgentConfiguration.Exists(configPath)
+                ? AgentConfiguration.Read(configPath)
+                : null;
             if (Has("--enroll"))
                 return await EnrollAsync(
                     config,
@@ -201,7 +203,7 @@ public static class Program
         var identityReported = false;
         AgentRuntime? Load()
         {
-            if (!File.Exists(configPath))
+            if (!AgentConfiguration.Exists(configPath))
                 return null;
             var config = AgentConfiguration.Read(configPath);
             if (string.IsNullOrWhiteSpace(config.DeviceId) || string.IsNullOrWhiteSpace(config.PolicyPublicKeyPem))
@@ -243,6 +245,11 @@ public sealed class AgentWorker(Func<AgentRuntime?> load) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (
+            OperatingSystem.IsWindows()
+            && Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService()
+        )
+            _ = StartTraysAsync(stoppingToken);
         try
         {
             var runtime = load();
@@ -284,6 +291,29 @@ public sealed class AgentWorker(Func<AgentRuntime?> load) : BackgroundService
         {
             Console.Error.WriteLine("Service fault: " + ex.GetType().Name + ": " + ex.Message);
             Environment.Exit(1); // SCM recovery must see a process failure.
+        }
+    }
+
+    /// <summary>
+    /// Brings back the trays an upgrade closed, once the installer is done: Windows Installer holds
+    /// <c>Global\_MSIExecute</c> while it runs. Started before that, a tray could be running from files an uninstall
+    /// is about to remove; an uninstall stops this service while it still holds the name, so none is started then.
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    static async Task StartTraysAsync(CancellationToken ct)
+    {
+        try
+        {
+            var deadline = DateTime.UtcNow.AddMinutes(30);
+            do await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            while (TrayLauncher.InstallerRunning() && DateTime.UtcNow < deadline);
+            if (!TrayLauncher.InstallerRunning())
+                TrayLauncher.StartInSignedInSessions();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"启动托盘失败：{e.GetType().Name}: {e.Message}");
         }
     }
 }

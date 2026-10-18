@@ -21,15 +21,11 @@ public sealed record AgentConfiguration(
     string? NextPolicyKeyId = null
 )
 {
-    public static AgentConfiguration Read(string path) => Wire.Read<AgentConfiguration>(File.ReadAllText(path));
+    public static AgentConfiguration Read(string path) => DurableFile.Read(path, Wire.Read<AgentConfiguration>);
 
-    public static void Save(string path, AgentConfiguration value)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        File.WriteAllText(temp, Wire.Serialize(value));
-        File.Move(temp, path, true);
-    }
+    public static bool Exists(string path) => DurableFile.Exists(path);
+
+    public static void Save(string path, AgentConfiguration value) => DurableFile.Write(path, Wire.Serialize(value));
 }
 
 /// <summary>
@@ -469,8 +465,19 @@ public sealed class AgentRuntime(
         using var client = CreateInternalClient();
         await VerifyLocalDemoAsync(client, uri, ct, tolerateOffline: !once);
         var api = new AgentApi(client, uri, config.DeviceId, key);
-        await using var queue = new EventOutbox(Path.Combine(config.DataDirectory, "outbox.sqlite"));
-        await using var notices = new NotificationStore(Path.Combine(config.DataDirectory, "notices.sqlite"));
+        var rebuilt = new List<string>();
+        await using var queue = LocalDatabase.Open(
+            Path.Combine(config.DataDirectory, "outbox.sqlite"),
+            path => new EventOutbox(path),
+            rebuilt.Add
+        );
+        await using var notices = LocalDatabase.Open(
+            Path.Combine(config.DataDirectory, "notices.sqlite"),
+            path => new NotificationStore(path),
+            rebuilt.Add
+        );
+        foreach (var message in rebuilt)
+            await TryEnqueueAsync(queue, notices, "Health", "agent:local-database", null, message, ct);
         if (DataAclRepaired)
         {
             await TryEnqueueAsync(queue, notices, "Health", "agent:data-acl", null, DataAclRepairedMessage, ct);
@@ -666,20 +673,42 @@ public sealed class AgentRuntime(
                     continue;
                 reported[key] = DateTimeOffset.UtcNow;
                 var detail = $"{b.ProductName}（{b.Executable}）已被结束：单位策略禁止在本机使用该程序";
-                await notices.AddAsync(Guid.NewGuid().ToString("D"), b.UserSid, "Blocked: " + detail, ct);
-                await TryEnqueueAsync(queue, notices, "BlockedAttempt", "blocked:" + b.ProductId, null, detail, ct);
+                // Failing to record it (a full disk, a locked database) must not stop ending programs.
+                try
+                {
+                    await notices.AddAsync(Guid.NewGuid().ToString("D"), b.UserSid, "Blocked: " + detail, ct);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"拦截提示写入失败：{e.GetType().Name}: {e.Message}");
+                }
+                try
+                {
+                    await TryEnqueueAsync(queue, notices, "BlockedAttempt", "blocked:" + b.ProductId, null, detail, ct);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"拦截记录入队失败：{e.GetType().Name}: {e.Message}");
+                }
             }
         }
     }
 
     private async Task LoadCachedPolicy()
     {
-        if (!File.Exists(statePath))
+        if (!DurableFile.Exists(statePath))
             return;
         try
         {
-            var signed = Wire.Read<SignedPolicy>(await File.ReadAllTextAsync(statePath));
-            var doc = VerifyRetained(signed, 0);
+            // A cache the power cut emptied falls back to the policy before it rather than to the detection-only seed.
+            var (signed, doc) = DurableFile.Read(
+                statePath,
+                text =>
+                {
+                    var read = Wire.Read<SignedPolicy>(text);
+                    return (read, VerifyRetained(read, 0));
+                }
+            );
             signedPolicy = signed;
             policy = doc;
         }
@@ -810,10 +839,10 @@ public sealed class AgentRuntime(
                 );
             }
             policy = verified;
+            // Rewritten only when it changed: the same policy comes back every minute.
+            if (signedPolicy is null || fetched.Payload != signedPolicy.Payload || fetched.KeyId != signedPolicy.KeyId)
+                DurableFile.Write(statePath, Wire.Serialize(fetched));
             signedPolicy = fetched;
-            var temp = statePath + ".tmp";
-            await File.WriteAllTextAsync(temp, Wire.Serialize(fetched), ct);
-            File.Move(temp, statePath, true);
             if (PolicyKeys.Verified(config, fetched.KeyId) is var promoted && promoted != config)
             {
                 config = promoted;
@@ -1016,7 +1045,24 @@ public sealed class AgentRuntime(
         }
     }
 
+    /// <summary>
+    /// Sends batches until the queue is empty or one fails, so a device back from days offline catches up within the
+    /// cycle instead of one batch a minute. Bounded, so checking resumes even when events keep arriving.
+    /// </summary>
     private async Task UploadAsync(AgentApi api, EventOutbox queue, NotificationStore notices, CancellationToken ct)
+    {
+        for (var round = 0; round < 50; round++)
+            if (!await UploadBatchAsync(api, queue, notices, ct))
+                return;
+    }
+
+    /// <summary>Sends one batch; whether all of it was accepted and more may be waiting.</summary>
+    private async Task<bool> UploadBatchAsync(
+        AgentApi api,
+        EventOutbox queue,
+        NotificationStore notices,
+        CancellationToken ct
+    )
     {
         var pending = await queue.PendingBatchAsync(100, 1_500_000, ct);
         if (queue.OversizedInLastBatch > 0)
@@ -1040,7 +1086,7 @@ public sealed class AgentRuntime(
                 pending = await queue.PendingBatchAsync(100, 1_500_000, ct);
         }
         if (pending.Length == 0)
-            return;
+            return false;
         var result = await EventUpload.SendAsync(
             queue,
             pending,
@@ -1069,6 +1115,7 @@ public sealed class AgentRuntime(
                 ct
             );
         }
+        return result.Failure is null && result.Accepted == pending.Length;
     }
 
     private static string LocalKey(Evidence e) =>

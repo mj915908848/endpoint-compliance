@@ -119,22 +119,30 @@ public sealed class ProcessEnforcer(IProcessTable table)
         lastFailure = null;
         foreach (var process in table.Running())
         {
-            var rule = Confirm(process, policy, out var reason);
-            if (rule is null)
+            // One process that cannot be inspected or ended must not shield the ones after it.
+            try
             {
-                if (reason is not null && skipped.Add(reason))
-                    Skipped.Add(reason);
-                continue;
+                var rule = Confirm(process, policy, out var reason);
+                if (rule is null)
+                {
+                    if (reason is not null && skipped.Add(reason))
+                        Skipped.Add(reason);
+                    continue;
+                }
+                var sid = process.UserSid();
+                if (table.Kill(process.Pid))
+                {
+                    ended++;
+                    lastEnded = (rule.Name, now);
+                    blocked.Add(new(rule.Id, rule.Name, process.Name, process.Pid, sid));
+                }
+                else
+                    lastFailure = $"{process.Name}（进程号 {process.Pid}）无法结束";
             }
-            var sid = process.UserSid();
-            if (table.Kill(process.Pid))
+            catch (Exception e) when (e is not OperationCanceledException)
             {
-                ended++;
-                lastEnded = (rule.Name, now);
-                blocked.Add(new(rule.Id, rule.Name, process.Name, process.Pid, sid));
+                lastFailure = $"{process.Name}（进程号 {process.Pid}）检查或结束时出错：{e.GetType().Name}";
             }
-            else
-                lastFailure = $"{process.Name}（进程号 {process.Pid}）无法结束";
         }
         return blocked;
     }
@@ -176,8 +184,8 @@ public sealed class BrowserBlocklist(IBlocklistStore store, string statePath)
     {
         try
         {
-            return File.Exists(statePath)
-                ? Wire.Read<Dictionary<string, string[]>>(File.ReadAllText(statePath)) ?? []
+            return DurableFile.Exists(statePath)
+                ? DurableFile.Read(statePath, Wire.Read<Dictionary<string, string[]>>) ?? []
                 : [];
         }
         catch (Exception e) when (e is IOException or System.Text.Json.JsonException)
@@ -188,9 +196,7 @@ public sealed class BrowserBlocklist(IBlocklistStore store, string statePath)
 
     private void Save(Dictionary<string, string[]> owned)
     {
-        var temp = statePath + ".tmp";
-        File.WriteAllText(temp, Wire.Serialize(owned));
-        File.Move(temp, statePath, true);
+        DurableFile.Write(statePath, Wire.Serialize(owned));
     }
 
     /// <summary>Writes the rules when the policy enforces this measure, otherwise removes the ones this agent added.</summary>
@@ -347,15 +353,39 @@ public sealed class WindowsProcessTable : IProcessTable
 
     public bool Kill(int pid)
     {
+        Process p;
         try
         {
-            using var p = Process.GetProcessById(pid);
-            p.Kill(entireProcessTree: true);
-            return true;
+            p = Process.GetProcessById(pid);
         }
         catch (ArgumentException)
         {
             return true; // already exited
+        }
+        using (p)
+        {
+            try
+            {
+                p.Kill(entireProcessTree: true);
+                return true;
+            }
+            catch (AggregateException)
+            {
+                // Some processes of the tree could not be ended; what counts is whether the program itself was.
+                return Exited(p);
+            }
+            catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                return false;
+            }
+        }
+    }
+
+    private static bool Exited(Process p)
+    {
+        try
+        {
+            return p.WaitForExit(TimeSpan.FromSeconds(1));
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {

@@ -15,14 +15,23 @@ public sealed class NotificationStore : IAsyncDisposable
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
-        db.Open();
-        using var command = db.CreateCommand();
-        command.CommandText =
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; "
-            + "CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY,sid TEXT,message TEXT NOT NULL,at TEXT NOT NULL); "
-            + "CREATE TABLE IF NOT EXISTS acknowledgments(id TEXT NOT NULL,sid TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(id,sid)); "
-            + "CREATE INDEX IF NOT EXISTS notices_at ON notices(at);";
-        command.ExecuteNonQuery();
+        try
+        {
+            db.Open();
+            using var command = db.CreateCommand();
+            command.CommandText =
+                "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; "
+                + "CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY,sid TEXT,message TEXT NOT NULL,at TEXT NOT NULL); "
+                + "CREATE TABLE IF NOT EXISTS acknowledgments(id TEXT NOT NULL,sid TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(id,sid)); "
+                + "CREATE INDEX IF NOT EXISTS notices_at ON notices(at);";
+            command.ExecuteNonQuery();
+        }
+        catch
+        {
+            // Releases the file so a damaged one can be set aside.
+            db.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Notices kept: the newest this many, and none older than <see cref="KeepFor"/>.</summary>
@@ -182,6 +191,9 @@ public sealed class NotificationPipe(NotificationStore? store)
         {
             await slots.WaitAsync(ct);
             NamedPipeServerStream? pipe = null;
+            // The slot passes to the connection's handler; until then every way out, including failing to create
+            // the pipe, must give it back or five failures would stop the listener for good.
+            var handedOff = false;
             try
             {
                 pipe = NamedPipeServerStreamAcl.Create(
@@ -223,6 +235,7 @@ public sealed class NotificationPipe(NotificationStore? store)
                     },
                     CancellationToken.None
                 );
+                handedOff = true;
                 pipe = null;
             }
             catch (IOException ex)
@@ -242,7 +255,7 @@ public sealed class NotificationPipe(NotificationStore? store)
             finally
             {
                 pipe?.Dispose();
-                if (pipe is not null)
+                if (!handedOff)
                     slots.Release();
             }
             if (failed)

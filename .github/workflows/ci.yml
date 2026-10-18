@@ -320,6 +320,6 @@ jobs:
           ./backup.sh
           docker compose -f compose.yml -f compose.build.yml up -d --build --wait --wait-timeout 180
           check
-          test -s backups/*/compliance.dump && grep -q 'BEGIN EC PRIVATE KEY' backups/*/signing.key
+          test -s backups/*/compliance.dump && tar -xOf backups/*/files.tar ./signing.key | grep -q 'BEGIN EC PRIVATE KEY'
       - if: failure()
         run: docker compose logs

@@ -46,6 +46,23 @@ csrf = ""
 
 
 
+def tray_running():
+    found = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "if (Get-Process Compliance.Tray -ErrorAction SilentlyContinue) { 'yes' }"],
+        capture_output=True, text=True, timeout=60,
+    )
+    return "yes" in found.stdout
+
+
+def wait_service_tray():
+    """The service starts the tray in signed-in sessions without one once no installation runs, as after an upgrade."""
+    deadline = time.monotonic() + 90
+    while not tray_running():
+        assert time.monotonic() < deadline, "The service did not start the tray in the signed-in session"
+        time.sleep(2)
+
+
 def stop_trays():
     """Ends trays already running in this session; a new one would otherwise hand over to them and exit."""
     subprocess.run(
@@ -375,6 +392,8 @@ try:
         # Explorer's "permanently get access" prompt grants the signed-in user access to the data directory.
         # The service must remove that grant on its next start, keep running and tell the administrator.
         before = wait_reporting()[0]["lastHeartbeat"]
+        # With no tray running, the restarted service starts one in this session, as after a silent upgrade.
+        stop_trays()
         grant = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              f"icacls '{agent_data}' /grant '*S-1-5-32-545:(OI)(CI)R' /Q | Out-Null; "
@@ -390,6 +409,8 @@ try:
             assert time.monotonic() < deadline, "No health alert for the repaired data directory permissions"
             time.sleep(2)
         print("PASS a user granted access to the data directory is removed at start and reported")
+        wait_service_tray()
+        print("PASS the service starts the tray in the signed-in session that has none")
         # The installed tray shares the service's runtime folder; it must load from there. The install script
         # already started one, and only one runs per session, so stop it first.
         installed_tray = pathlib.Path(os.environ["ProgramFiles"]) / "ComplianceAgent" / "Compliance.Tray.exe"
@@ -508,6 +529,8 @@ try:
         setup_dir = data / "setup"
         setup_dir.mkdir()
         (setup_dir / "登记配置.json").write_text(json.dumps({"serverUrl": base, "code": code}), encoding="utf-8")
+        # The service starts a tray once the installer is done; end it so the window below is the only one.
+        wait_service_tray()
         stop_trays()
         viewer = subprocess.Popen([str(program / "Compliance.Tray.exe"), "--setup", str(setup_dir / "client.msi")])
         try:

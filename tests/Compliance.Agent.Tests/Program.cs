@@ -235,11 +235,14 @@ await Check(
         {
             await using (var q = new EventOutbox(path, 4))
             {
+                // An hour apart: snapshots from the same hour replace each other before the queue is full.
+                ScanSnapshot Hour(int h) =>
+                    new() { HostName = h.ToString(), CollectedAt = DateTimeOffset.UtcNow.AddHours(h - 10) };
                 var health = await q.EnqueueAsync("Health", "test:health", null, "kept");
-                var oldest = await q.EnqueueAsync("Snapshot", "device:a", new ScanSnapshot { HostName = "1" }, null);
-                await q.EnqueueAsync("Snapshot", "device:a", new ScanSnapshot { HostName = "2" }, null);
+                var oldest = await q.EnqueueAsync("Snapshot", "device:a", Hour(1), null);
+                await q.EnqueueAsync("Snapshot", "device:a", Hour(2), null);
                 await q.EnqueueAsync("Violation", "test:violation", null, "kept");
-                var newest = await q.EnqueueAsync("Snapshot", "device:a", new ScanSnapshot { HostName = "3" }, null);
+                var newest = await q.EnqueueAsync("Snapshot", "device:a", Hour(3), null);
                 var pending = (await q.PendingAsync(10)).Select(e => e.EventId).ToArray();
                 Assert(pending.Length == 4, "queue did not stay at its limit");
                 Assert(!pending.Contains(oldest.EventId), "oldest snapshot kept");
@@ -264,6 +267,108 @@ await Check(
         }
         finally
         {
+            DeleteDatabase(path);
+        }
+    }
+);
+await Check(
+    "a queued snapshot replaces the ones from the same hour that are still waiting",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-hourly-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            await using var q = new EventOutbox(path);
+            var hour = new DateTimeOffset(2026, 10, 17, 8, 0, 0, TimeSpan.Zero);
+            ScanSnapshot At(int minutes) => new() { HostName = "h", CollectedAt = hour.AddMinutes(minutes) };
+            var earlier = await q.EnqueueAsync("Snapshot", "device:a", At(-5), null);
+            await q.EnqueueAsync("Snapshot", "device:a", At(5), null);
+            var health = await q.EnqueueAsync("Health", "test:health", null, "kept");
+            // The same hour written with another offset is still the same hour.
+            var last = await q.EnqueueAsync(
+                "Snapshot",
+                "device:a",
+                new ScanSnapshot { HostName = "h", CollectedAt = hour.AddMinutes(50).ToOffset(TimeSpan.FromHours(8)) },
+                null
+            );
+            var pending = (await q.PendingAsync(10)).Select(e => e.EventId).ToArray();
+            Assert(
+                pending.SequenceEqual([earlier.EventId, health.EventId, last.EventId]),
+                "expected the previous hour's snapshot, the other event and the newest snapshot"
+            );
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+);
+await Check(
+    "a state file a power cut emptied is read from its previous version",
+    () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-durable-" + Guid.NewGuid() + ".json");
+        try
+        {
+            DurableFile.Write(path, "\"one\"");
+            DurableFile.Write(path, "\"two\"");
+            Assert(DurableFile.Read(path, Wire.Read<string>) == "two", "the newest version is read");
+            File.WriteAllText(path, "");
+            Assert(DurableFile.Read(path, Wire.Read<string>) == "one", "an empty file falls back to the one before");
+            File.Delete(path);
+            Assert(DurableFile.Exists(path), "the previous version alone still counts");
+            Assert(DurableFile.Read(path, Wire.Read<string>) == "one", "a missing file falls back too");
+            File.WriteAllText(DurableFile.BackupPath(path), "{");
+            var threw = false;
+            try
+            {
+                DurableFile.Read(path, Wire.Read<string>);
+            }
+            catch (FileNotFoundException)
+            {
+                threw = true;
+            }
+            Assert(threw, "with neither usable, reading the current file's error is thrown");
+            Assert(
+                Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".*.tmp").Length == 0,
+                "no temporary files left"
+            );
+        }
+        finally
+        {
+            File.Delete(path);
+            File.Delete(DurableFile.BackupPath(path));
+        }
+        return Task.CompletedTask;
+    }
+);
+await Check(
+    "a damaged local database is set aside and created afresh",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-damaged-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            File.WriteAllBytes(path, [.. Enumerable.Repeat((byte)0x5A, 8192)]);
+            var said = new List<string>();
+            await using (var q = LocalDatabase.Open(path, p => new EventOutbox(p), said.Add))
+            {
+                await q.EnqueueAsync("Health", "test:health", null, "after");
+                Assert((await q.PendingAsync(10)).Length == 1, "the new queue works");
+            }
+            Assert(
+                said.Count == 1 && said[0].Contains(".corrupt-"),
+                "the rebuild is reported: " + string.Join(";", said)
+            );
+            Assert(
+                Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*").Length == 1,
+                "the damaged file is kept aside"
+            );
+        }
+        finally
+        {
+            foreach (var f in Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*"))
+                File.Delete(f);
             DeleteDatabase(path);
         }
     }
@@ -2061,6 +2166,14 @@ await Check(
             enforcer.Skipped.Single().Contains("Some Other Cursor"),
             "a same-named program left running says why: " + string.Join(";", enforcer.Skipped)
         );
+
+        // A process that cannot be inspected does not shield the ones after it.
+        var failing = new FakeProcesses([
+            new(20, "Cursor.exe", () => throw new UnauthorizedAccessException(), () => null),
+            new(21, "Cursor.exe", () => "Cursor", () => null),
+        ]);
+        var past = new ProcessEnforcer(failing);
+        Assert(past.Sweep(enforce, DateTimeOffset.UtcNow).Single().Pid == 21, "the next process is still ended");
 
         // Microsoft Store apps are confirmed by their protected install folder, whatever the version info says.
         const string store = @"C:\Program Files\WindowsApps\OpenAI.ChatGPT-Desktop_1.2025.1.0_x64__2p2nqsd0c76g0\app\";

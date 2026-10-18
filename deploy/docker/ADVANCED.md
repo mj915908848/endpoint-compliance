@@ -114,7 +114,7 @@ server {
 
 ## 管理员密码与系统设置
 
-**管理员密码**：`compose.yml` 里 `Compliance__BootstrapUsers` 的密码只在第一次启动时用来创建账号，之后再改不起作用。登录后点右上角「修改密码」修改，修改后其他浏览器上的登录会退出。
+**管理员密码**：`compose.yml` 里 `Compliance__BootstrapUsers` 的密码只在第一次启动时用来创建账号，之后再改不起作用。登录后点左下角账号下的「修改密码」修改，修改后其他浏览器上的登录会退出。
 
 忘记密码时，删掉账号和所有登录会话再重启，管理端会按 `compose.yml` 里 `Compliance__BootstrapUsers` 的账号和密码重新创建账号。终端、策略、告警和审计记录都不受影响。下面的 `admin` 换成实际的账号名：
 
@@ -139,17 +139,19 @@ curl -fsSLO https://raw.githubusercontent.com/mj915908848/endpoint-compliance/ma
 ./backup.sh
 ```
 
-在 `backups/<时间>/` 下生成数据库备份 `compliance.dump` 和策略签名密钥 `signing.key`（正在更换密钥时还有新密钥 `signing.key.next`），请拷贝到别的机器保存。**签名密钥丢失后，所有已登记终端都会拒收新策略，只能逐台重新登记。**
+在 `backups/<时间>/` 下生成数据库备份 `compliance.dump` 和管理端文件 `files.tar`（策略签名密钥、正在更换或已换下的密钥、上传的客户端安装包），请拷贝到别的机器保存。**签名密钥丢失后，所有已登记终端都会拒收新策略，只能逐台重新登记。** 用 `KEEP=14 ./backup.sh` 可只保留最近 14 份。
 
 恢复到新服务器：先按 README 的“部署”放好 `compose.yml` 和证书但不要启动（`compose.yml` 里的数据库密码要与原服务器相同），然后：
 
 ```bash
 docker compose up -d db
 docker compose run --rm --no-deps -v "$PWD/backups/<时间>:/restore:ro" --entrypoint sh server \
-  -c 'cp /restore/signing.key* /var/lib/compliance/ && chmod 600 /var/lib/compliance/signing.key*'
+  -c 'tar -C /var/lib/compliance -xf /restore/files.tar'
 docker compose exec -T db pg_restore -U compliance -d compliance --clean --if-exists < backups/<时间>/compliance.dump
 docker compose up -d
 ```
+
+旧版脚本生成的备份没有 `files.tar`，第二条命令改为 `-c 'cp /restore/signing.key* /var/lib/compliance/ && chmod 600 /var/lib/compliance/signing.key*'`，客户端安装包需要在系统设置里重新上传。
 
 ## 版本与升级
 

@@ -717,6 +717,38 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task A_restarted_server_waits_a_heartbeat_period_before_reporting_devices_offline()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        await f.Agent("POST", "/api/agent/heartbeat", new HeartbeatRequest("host", "1", f.Clock.Now, 1, []));
+        // The server was down for an hour and has just started again.
+        f.Clock.Now = f.Clock.Now.AddHours(1);
+        var restarted = new Housekeeping(
+            f.Services.GetRequiredService<Store>(),
+            f.Services.GetRequiredService<Settings>(),
+            f.Clock
+        );
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        async Task<bool> Offline()
+        {
+            // Read directly: an hour without use has signed the browser session out.
+            return await service.Tx(async tx =>
+            {
+                await restarted.UpdateOffline(tx);
+                return (await tx.AlertsNewestFirst(f.Clock.Now)).Any(x => x.Type == "Offline" && x.State == "Active");
+            });
+        }
+        Assert.False(await Offline());
+        f.Clock.Now = f.Clock.Now.AddMinutes(4);
+        Assert.False(await Offline());
+        // Still silent a whole heartbeat period after the start: now it is offline.
+        f.Clock.Now = f.Clock.Now.AddMinutes(2);
+        Assert.True(await Offline());
+    }
+
+    [Fact]
     public async Task An_event_alert_stays_acknowledged_while_active_and_needs_it_again_after_recovering()
     {
         await using var f = new Fixture();
