@@ -49,7 +49,7 @@ export const evidenceLabel = lookup({
 });
 
 export const alertTypeLabel = lookup({
-  Violation: "确认违规",
+  Violation: "违规",
   BlockedAttempt: "已拦截",
   Health: "设备健康",
   Offline: "设备失联",

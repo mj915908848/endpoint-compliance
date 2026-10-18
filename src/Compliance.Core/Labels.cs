@@ -101,7 +101,7 @@ public static class Labels
     public static string AlertType(string type) =>
         type switch
         {
-            "Violation" => "确认违规",
+            "Violation" => "违规",
             "BlockedAttempt" => "已拦截",
             "Health" => "设备健康",
             "Offline" => "设备失联",
