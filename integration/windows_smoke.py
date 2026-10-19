@@ -448,12 +448,30 @@ try:
         def msiexec(action, name, *properties):
             global msi_installed
             log = data / name
+            started = time.monotonic()
             result = subprocess.run(["msiexec", action, str(msi), "/qn", "/l*v", str(log), *properties], timeout=600)
+            took = time.monotonic() - started
             raw = log.read_bytes() if log.exists() else b""
             text = raw.decode("utf-16", errors="replace") if raw[:2] == b"\xff\xfe" else raw.decode("mbcs", errors="replace")
             assert result.returncode == 0, f"msiexec {action} exited with {result.returncode}: {text[-3000:]}"
+            # No system restore point: where System Protection is on, creating one is slow (runners have it off).
+            assert re.search(r"Property\(S\): MSIFASTINSTALL = 1\r?$", text, re.M), "The MSI does not skip the restore point"
+            print(f"TIME msiexec {action} ({name}) {took:.1f}s; slowest actions: {slowest_actions(text)}", flush=True)
             msi_installed = action == "/i"
             return text
+
+        def slowest_actions(text, count=6):
+            """The actions that took longest: from each action's start in the verbose log, immediate ("Doing
+            action") or in the installation script ("ActionStart"), to the next one's."""
+            marks = []
+            for m in re.finditer(r"\[(\d+):(\d+):(\d+):(\d+)\]: (?:Doing action: |Executing op: ActionStart\(Name=)([\w.]+)", text):
+                h, mi, se, ms = (int(x) for x in m.groups()[:4])
+                marks.append(((h * 3600 + mi * 60 + se) * 1000 + ms, m.group(5)))
+            spans = {}
+            for (at, name), (after, _) in zip(marks, marks[1:]):
+                spans[name] = spans.get(name, 0) + (after - at) % 86400000
+            ranked = sorted(spans.items(), key=lambda x: -x[1])[:count]
+            return ", ".join(f"{name} {ms / 1000:.1f}s" for name, ms in ranked)
 
         def wait_device(device_id=None, known=(), since=""):
             """The device with this id, or the first one not in known, once it has a newer heartbeat and a scan."""

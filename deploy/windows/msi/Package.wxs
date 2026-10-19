@@ -31,6 +31,9 @@
     <Property Id="ARPNOREPAIR" Value="1" />
     <!-- The tray is closed below; Restart Manager would only ask about it. -->
     <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
+    <!-- No system restore point: where System Protection is on, creating one keeps every install and removal on
+         "正在配置" for up to minutes, and restoring one would not undo the service or the enrollment anyway. -->
+    <Property Id="MSIFASTINSTALL" Value="1" />
     <Property Id="SERVERURL" Secure="yes" />
     <Property Id="CODE" Secure="yes" Hidden="yes" />
     <!-- The enrollment's command line holds the code. -->
