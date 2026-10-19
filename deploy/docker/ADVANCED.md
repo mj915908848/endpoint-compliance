@@ -35,10 +35,11 @@ PFX 格式的证书：按 `.env` 里的说明改证书那两行。
 **打包好的镜像**：服务器上不能访问 `ghcr.io` 时用。每个版本的 Releases 页都附带 `compliance-server-<版本>.tar.gz`（x86-64），就是镜像仓库里同一版本的镜像。下载后拷到服务器：
 
 ```bash
-docker load -i compliance-server-0.2.26.tar.gz   # 显示 Loaded image: ghcr.io/mj915908848/compliance-server:0.2.26
+docker load -i compliance-server-0.2.26.tar.gz   # 载入 ghcr.io/mj915908848/compliance-server 的 0.2.26 和 latest
+docker compose up -d
 ```
 
-`.env` 里 `COMPLIANCE_IMAGE` 不用改，`COMPLIANCE_VERSION=0.2.26`，然后 `docker compose up -d`。用这种方式时不要运行 `docker compose pull`（服务器连不上镜像仓库）。
+`.env` 不用改：默认的 `latest` 就是最后载入的那个包。固定过 `COMPLIANCE_VERSION` 的，改成包的版本。升级时载入新版本的包再 `docker compose up -d`。用这种方式时不要运行 `docker compose pull`（服务器连不上镜像仓库）。
 
 想用自己构建的镜像时，在能联网的机器上构建并打包（在源码仓库根目录运行，版本号按实际填）：
 
