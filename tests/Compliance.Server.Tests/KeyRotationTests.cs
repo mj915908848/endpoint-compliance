@@ -146,6 +146,12 @@ public class KeyRotationTests
     [Fact]
     public async Task A_completion_that_never_committed_is_undone_at_startup()
     {
+        await Undone_at_startup(halfway: false);
+        await Undone_at_startup(halfway: true);
+    }
+
+    static async Task Undone_at_startup(bool halfway)
+    {
         await using var f = new Fixture();
         await f.Login();
         var enrolled = await f.Enroll(await f.Code());
@@ -156,8 +162,10 @@ public class KeyRotationTests
 
         // The key files as a completion leaves them, with the releases still signed by the old key.
         var key = Path.Combine(f.Directory, "policy.pem");
+        // Halfway: stopped between the two moves, with no key in place.
         File.Move(key, key + ".retired-20260101000000");
-        File.Move(key + ".next", key);
+        if (!halfway)
+            File.Move(key + ".next", key);
 
         await using var restart = new Fixture(f.Directory, f.Clock);
         restart.Key = f.Key;

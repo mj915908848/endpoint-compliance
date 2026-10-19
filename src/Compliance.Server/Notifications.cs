@@ -76,7 +76,7 @@ public sealed class AlertNotifier(ComplianceService service, IHttpClientFactory 
             var send = pending
                 .Where(p => settings.Enabled && settings.Types.Contains(p.Alert.Type) && !p.Alert.Acknowledged)
                 .ToList();
-            var skipped = pending.Except(send).Select(p => p.Alert.Id).ToList();
+            var skipped = pending.Except(send).Select(p => (p.Alert.Id, p.Activation)).ToList();
             if (skipped.Count > 0)
                 await service.Tx(async tx =>
                 {
@@ -95,7 +95,7 @@ public sealed class AlertNotifier(ComplianceService service, IHttpClientFactory 
             }
             await service.Tx(async tx =>
             {
-                await tx.MarkNotified(send.Select(p => p.Alert.Id));
+                await tx.MarkNotified(send.Select(p => (p.Alert.Id, p.Activation)));
                 return true;
             });
         }
@@ -116,10 +116,13 @@ public sealed class AlertNotifier(ComplianceService service, IHttpClientFactory 
         return error;
     }
 
-    static string Message(NotificationSettings settings, List<(AlertSummary Alert, string Note)> alerts)
+    static string Message(
+        NotificationSettings settings,
+        List<(AlertSummary Alert, string Note, long Activation)> alerts
+    )
     {
         var b = new StringBuilder($"【终端合规】新告警 {alerts.Count} 条");
-        foreach (var (a, note) in alerts.Take(Listed))
+        foreach (var (a, note, _) in alerts.Take(Listed))
         {
             var device = note.Length > 0 ? $"{a.HostName}（{note}）" : a.HostName;
             var summary = a.Summary.ReplaceLineEndings(" ");

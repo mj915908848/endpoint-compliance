@@ -43,7 +43,11 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
     /// <summary>Names the default policy had in earlier versions; renamed to "Default" at startup.</summary>
     static readonly string[] LegacyDefaultNames = ["customer-no-foreign-ai", "endpoint-compliance"];
 
-    /// <summary>Loads the signing key, creating it on first start.</summary>
+    /// <summary>
+    /// Loads the signing key, creating it on first start. A rotation's completion, or its undo, stopped between its two
+    /// moves leaves no key, the new one pending and the old one retired; the old key goes back, since the transaction
+    /// re-signing the releases never committed.
+    /// </summary>
     public async Task LoadSigningKey()
     {
         if (string.IsNullOrWhiteSpace(settings.SigningKeyPath))
@@ -51,7 +55,12 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
 
         Directory.CreateDirectory(Path.GetDirectoryName(KeyPath)!);
         if (!File.Exists(KeyPath))
-            CreateKeyFile(KeyPath);
+        {
+            if (File.Exists(NextKeyPath) && NewestRetired() is { } retired)
+                File.Move(retired, KeyPath);
+            else
+                CreateKeyFile(KeyPath);
+        }
         Replace(await File.ReadAllTextAsync(KeyPath));
         await LoadNextKey();
     }

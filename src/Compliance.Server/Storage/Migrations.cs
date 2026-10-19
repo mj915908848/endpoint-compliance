@@ -34,6 +34,11 @@ public static class Migrations
             "policy keys devices trust",
             tx => tx.Execute("ALTER TABLE devices ADD COLUMN policy_keys TEXT NOT NULL DEFAULT ''")
         ),
+        new(
+            14,
+            "alert activations",
+            tx => tx.Execute("ALTER TABLE alerts ADD COLUMN activations BIGINT NOT NULL DEFAULT 0")
+        ),
     ];
 
     public static async Task<bool> Apply(Transaction tx)

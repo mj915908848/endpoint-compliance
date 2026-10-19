@@ -91,17 +91,19 @@ public sealed partial class PolicyService
         await LoadNextKey();
     }
 
+    string? NewestRetired() =>
+        Directory
+            .GetFiles(Path.GetDirectoryName(KeyPath)!, Path.GetFileName(KeyPath) + ".retired-*")
+            .OrderDescending(StringComparer.Ordinal)
+            .FirstOrDefault();
+
     /// <summary>
     /// At startup, when the stored releases were signed with another key: a completion that did not commit left the
     /// old key retired. If the newest retired key is the one the releases need, it is put back.
     /// </summary>
     async Task<bool> RecoverRotation(string storedKeyId)
     {
-        var directory = Path.GetDirectoryName(KeyPath)!;
-        var retired = Directory
-            .GetFiles(directory, Path.GetFileName(KeyPath) + ".retired-*")
-            .OrderDescending(StringComparer.Ordinal)
-            .FirstOrDefault();
+        var retired = NewestRetired();
         if (retired == null || File.Exists(NextKeyPath))
             return false;
         using var key = ECDsa.Create();

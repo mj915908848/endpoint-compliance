@@ -1936,9 +1936,17 @@ public sealed class WebhookStub : HttpMessageHandler
     public readonly List<(Uri Url, string Body)> Requests = [];
     public string Reply = """{"errcode":0,"errmsg":"ok"}""";
 
+    /// <summary>Runs once while the next message is being sent.</summary>
+    public Func<Task>? WhileSending;
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         Requests.Add((request.RequestUri!, await request.Content!.ReadAsStringAsync(ct)));
+        if (WhileSending is { } during)
+        {
+            WhileSending = null;
+            await during();
+        }
         return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Reply) };
     }
 
