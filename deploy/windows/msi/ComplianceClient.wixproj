@@ -7,6 +7,12 @@
     <OutputName>compliance-client</OutputName>
     <InstallerPlatform>x64</InstallerPlatform>
     <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <!-- Known and intended, so they stay out of the build output:
+         WIX1149: the plain ServiceConfig only sets FailureActionsWhen; the restarts already use util:ServiceConfig.
+         ICE61: AllowSameVersionUpgrades lets the same version reinstall over itself.
+         ICE60: a bundled versioned file has no language; Windows Installer still compares its version on upgrade. -->
+    <SuppressSpecificWarnings>1149</SuppressSpecificWarnings>
+    <SuppressIces>ICE60;ICE61</SuppressIces>
     <DefineConstants>ClientDir=$(ClientDir);ProductVersion=$(ProductVersion);AssetsDir=$(MSBuildThisFileDirectory)..\..\..\src\Compliance.Tray\Assets</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
