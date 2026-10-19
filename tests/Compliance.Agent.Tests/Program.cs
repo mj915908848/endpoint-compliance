@@ -2288,6 +2288,21 @@ await Check(
             Assert(store.Values["Edge"].SequenceEqual(["gpo.example.com"]), "Edge back to the group policy entry");
             Assert(store.Values["Chrome"].SequenceEqual(["other.example.com"]), "Chrome back to the other entry");
             Assert(!File.Exists(state) || File.ReadAllText(state).Trim() == "{}", "nothing left owned");
+
+            // Edge written, Chrome refused: Edge's rules stay this agent's, so turning enforcement off removes them.
+            store.Failing = "Chrome";
+            blocklist = new BrowserBlocklist(store, state);
+            blocklist.Apply(enforce);
+            Assert(blocklist.State(enforce).State == "Error", "a refused write is reported");
+            store.Failing = null;
+            blocklist.Apply(enforce);
+            Assert(store.Values["Chrome"].SequenceEqual(["other.example.com", .. wanted]), "Chrome written on retry");
+            new BrowserBlocklist(store, state).Apply(policy);
+            Assert(
+                store.Values["Edge"].SequenceEqual(["gpo.example.com"]),
+                "Edge's rules removed after a partial write: " + string.Join(",", store.Values["Edge"])
+            );
+            Assert(store.Values["Chrome"].SequenceEqual(["other.example.com"]), "Chrome's rules removed too");
         }
         finally
         {
@@ -2912,8 +2927,12 @@ sealed class FakeBlocklist : IBlocklistStore
 
     public List<string> Read(string browser) => [.. Values[browser]];
 
+    public string? Failing { get; set; }
+
     public void Write(string browser, IReadOnlyList<string> values)
     {
+        if (browser == Failing)
+            throw new UnauthorizedAccessException(browser + " refused");
         Writes++;
         Values[browser] = [.. values];
     }

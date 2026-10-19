@@ -244,7 +244,13 @@ public sealed class BrowserBlocklist(IBlocklistStore store, string statePath)
                 if (values.Count > 1000)
                     throw new InvalidOperationException($"{browser} 的网址拦截规则超过 1000 条");
                 if (!values.SequenceEqual(current))
+                {
+                    // Claimed before writing: if this or the next browser's write fails, the rules already written
+                    // must not look like someone else's on the next attempt, or turning enforcement off would keep them.
+                    owned[browser] = ours.Union(added, StringComparer.OrdinalIgnoreCase).ToArray();
+                    Save(owned.Where(o => o.Value.Length > 0).ToDictionary());
                     store.Write(browser, values);
+                }
                 owned[browser] = added;
             }
             Save(owned.Where(o => o.Value.Length > 0).ToDictionary());

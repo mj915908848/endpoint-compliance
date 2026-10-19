@@ -87,6 +87,38 @@ Test(
     () => Eq(Verdict.UNKNOWN, ReportEngine.Evaluate(p, clean with { Modules = clean.Modules[..2] }, now).Verdict)
 );
 Test(
+    "user accounts the policy does not list do not limit the verdict, unless they could not be listed at all",
+    () =>
+    {
+        var processesOnly = p with { RequiredModules = ["processes"] };
+        var hiveNotLoaded = clean with
+        {
+            Modules =
+            [
+                new("processes", "machine", "Complete", now),
+                new("users", "machine", "Complete", now),
+                new("users", "S-1-5-21-123", "Unknown", now, "Hive not loaded"),
+            ],
+        };
+        Eq(Verdict.PASS, ReportEngine.Evaluate(processesOnly, hiveNotLoaded, now).Verdict);
+        Eq(
+            Verdict.UNKNOWN,
+            ReportEngine
+                .Evaluate(processesOnly with { RequiredModules = ["processes", "users"] }, hiveNotLoaded, now)
+                .Verdict
+        );
+        var unlisted = clean with
+        {
+            Modules =
+            [
+                new("processes", "machine", "Complete", now),
+                new("users", "machine", "Error", now, "ProfileList unreadable"),
+            ],
+        };
+        Eq(Verdict.UNKNOWN, ReportEngine.Evaluate(processesOnly, unlisted, now).Verdict);
+    }
+);
+Test(
     "offline user hive failure cannot be hidden by machine success",
     () =>
         Eq(

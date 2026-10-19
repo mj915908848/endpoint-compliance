@@ -160,13 +160,30 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
 
         string ObjectId(Evidence e) =>
             e.ProductId + "|" + (e.UserSid ?? "machine") + (e.Kind == EvidenceKind.Proxy ? "|" + e.ObjectKey : "");
-        string Module(Evidence e) =>
-            e.Kind switch
+        // The module that found a piece of evidence, from the prefix every collector gives its object keys; recovery
+        // waits for that module to check again.
+        static string Module(Evidence e) =>
+            e.ObjectKey.Split(':')[0] switch
             {
-                EvidenceKind.Installation => e.Source == "Appx" ? "appx" : "installed",
-                EvidenceKind.Extension => "extensions",
-                EvidenceKind.Proxy => "proxy",
-                _ => "processes",
+                "uninstall" => "installed",
+                "install-dir" => "installed-paths",
+                "service" => "services",
+                "program" => "programs",
+                "ide" or "jetbrains" => "extensions",
+                "npm" or "pip" or "cli-file" or "cli-shim" => "cli",
+                "appx" => "appx",
+                "proxy" or "pac" => "proxy",
+                "env" => "proxy-env",
+                "connection-settings" => "proxy-advanced",
+                "pid" => "processes",
+                "tcp" => "ports",
+                _ => e.Kind switch
+                {
+                    EvidenceKind.Installation => "installed",
+                    EvidenceKind.Extension => "extensions",
+                    EvidenceKind.Proxy => "proxy",
+                    _ => "processes",
+                },
             };
 
         // Each alert below is read and written at most once, so one read of the device's alerts serves them all.
@@ -215,15 +232,22 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
             var previous = alerts.GetValueOrDefault(metadata.Id);
             if (previous == null || previous.LastSequence >= sequence)
                 continue;
-            var complete = metadata.Modules.All(module =>
-                snapshot.Modules.Any(m =>
-                    m.Module == module
-                    && m.Scope == metadata.Scope
-                    && m.Status == "Complete"
-                    && m.CollectedAt >= Now.AddMinutes(-policy.FreshMinutes(module))
-                    && m.CollectedAt <= Now.AddMinutes(2)
-                )
-            );
+            // Modules the policy no longer runs cannot check again. The whole-drive scan reports per drive rather than
+            // per user, so a module without a result for the alert's scope needs all of its results complete.
+            var complete = metadata
+                .Modules.Where(policy.RequiredModules.Contains)
+                .All(module =>
+                {
+                    var results = snapshot.Modules.Where(m => m.Module == module).ToArray();
+                    var scoped = results.Where(m => m.Scope == metadata.Scope).ToArray();
+                    var relevant = scoped.Length > 0 ? scoped : results;
+                    return relevant.Length > 0
+                        && relevant.All(m =>
+                            m.Status == "Complete"
+                            && m.CollectedAt >= Now.AddMinutes(-policy.FreshMinutes(module))
+                            && m.CollectedAt <= Now.AddMinutes(2)
+                        );
+                });
             if (complete)
             {
                 await tx.UpsertAlert(

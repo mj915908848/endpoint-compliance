@@ -1498,6 +1498,66 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task A_store_app_alert_recovers_when_only_the_store_app_check_runs()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        var sid = "S-1-5-21-1-2-3-1001";
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (
+                await f.Publish(PolicySeed.Create() with { RequiredModules = ["appx", "users"], RequiredControls = [] })
+            ).StatusCode
+        );
+        var current = await f.Client.GetFromJsonAsync<SignedPolicy>("/api/policies/current", Wire.Json);
+        var serial = Wire.Read<PolicyDocument>(current!.Payload).Serial;
+        var snap = new ScanSnapshot
+        {
+            DeviceId = f.Device,
+            HostName = "host",
+            PolicyVersion = serial,
+            CollectedAt = f.Clock.Now,
+            Modules =
+            [
+                new("users", "machine", "Complete", f.Clock.Now),
+                new("users", sid, "Complete", f.Clock.Now),
+                new("appx", sid, "Complete", f.Clock.Now),
+            ],
+            Evidence =
+            [
+                new(
+                    "cursor",
+                    "Cursor",
+                    EvidenceKind.Installation,
+                    "appx:" + sid + ":Anysphere.Cursor",
+                    "应用商店应用（按用户）",
+                    "Store app",
+                    sid
+                ),
+            ],
+        };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("found", 1, f.Clock.Now, "Snapshot", "scan", snap)])
+        );
+        Assert.Equal(
+            "Active",
+            Assert.Single((await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!).State
+        );
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("removed", 2, f.Clock.Now, "Snapshot", "scan", snap with { Evidence = [] })])
+        );
+        Assert.Equal(
+            "Resolved",
+            Assert.Single((await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!).State
+        );
+    }
+
+    [Fact]
     public async Task Sensitive_files_alert_per_path_and_resolve_after_complete_rescan()
     {
         await using var f = new Fixture();
