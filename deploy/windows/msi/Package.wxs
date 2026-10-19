@@ -79,7 +79,38 @@
           KeyPath="yes"
         />
       </Component>
+
+      <!-- Uninstalling removes the data directory and what a script install or an earlier release left in the program
+           folder, through RemoveFile rows that roll back with the rest. Their paths must be known before costing, so
+           the program folder is remembered in the registry. Not when an upgrade removes this version: the next one
+           keeps the enrollment and the files. Only a folder named ComplianceAgent is removed whole. -->
+      <Component Id="RemoveLeftovers">
+        <RegistryValue
+          Root="HKLM"
+          Key="SOFTWARE\ComplianceAgent"
+          Name="InstallFolder"
+          Type="string"
+          Value="[INSTALLFOLDER]"
+          KeyPath="yes"
+        />
+        <util:RemoveFolderEx Id="RemoveAgentData" Property="AGENTDATAFOLDER" Condition="NOT UPGRADINGPRODUCTCODE" />
+        <util:RemoveFolderEx
+          Id="RemoveProgramLeftovers"
+          Property="REMEMBEREDINSTALLFOLDER"
+          Condition="NOT UPGRADINGPRODUCTCODE AND REMEMBEREDINSTALLFOLDER ~&gt;&gt; &quot;\ComplianceAgent\&quot;"
+        />
+      </Component>
     </ComponentGroup>
+
+    <Property Id="REMEMBEREDINSTALLFOLDER">
+      <RegistrySearch Root="HKLM" Key="SOFTWARE\ComplianceAgent" Name="InstallFolder" Type="raw" Bitness="always64" />
+    </Property>
+    <SetProperty
+      Id="AGENTDATAFOLDER"
+      Value="[CommonAppDataFolder]ComplianceAgent\"
+      Before="WixRemoveFoldersEx"
+      Sequence="execute"
+    />
 
     <Feature Id="Main" Title="终端合规客户端">
       <ComponentGroupRef Id="Client" />
@@ -121,47 +152,9 @@
       HideTarget="yes"
     />
 
-    <SetProperty
-      Id="RemoveAgentData"
-      Value="&quot;[System64Folder]cmd.exe&quot; /c rd /s /q &quot;[CommonAppDataFolder]ComplianceAgent&quot;"
-      Before="RemoveAgentData"
-      Sequence="execute"
-    />
-    <CustomAction
-      Id="RemoveAgentData"
-      BinaryRef="Wix4UtilCA_X64"
-      DllEntry="WixQuietExec"
-      Execute="deferred"
-      Impersonate="no"
-      Return="ignore"
-    />
-    <!-- A script install or an earlier release leaves files the MSI does not own in the program folder. Only a folder
-         named ComplianceAgent is removed, so a mistyped INSTALLFOLDER cannot take anything else with it. -->
-    <SetProperty
-      Id="RemoveProgramLeftovers"
-      Value="&quot;[System64Folder]cmd.exe&quot; /c rd /s /q &quot;[INSTALLFOLDER]&quot;"
-      Before="RemoveProgramLeftovers"
-      Sequence="execute"
-    />
-    <CustomAction
-      Id="RemoveProgramLeftovers"
-      BinaryRef="Wix4UtilCA_X64"
-      DllEntry="WixQuietExec"
-      Execute="deferred"
-      Impersonate="no"
-      Return="ignore"
-    />
-
     <InstallExecuteSequence>
       <Custom Action="PrepareAgentData" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="EnrollAgent" After="PrepareAgentData" Condition="NOT REMOVE AND SERVERURL AND CODE" />
-      <!-- Not when an upgrade removes this version: the next one keeps the enrollment. -->
-      <Custom Action="RemoveAgentData" After="RemoveFiles" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
-      <Custom
-        Action="RemoveProgramLeftovers"
-        After="RemoveAgentData"
-        Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE AND INSTALLFOLDER &gt;&gt; &quot;\ComplianceAgent\&quot;"
-      />
     </InstallExecuteSequence>
 
     <!-- In the signed-in user's process, not elevated; the window asks for elevation when it enrolls. -->
