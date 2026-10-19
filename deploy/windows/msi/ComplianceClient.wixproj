@@ -7,6 +7,9 @@
     <OutputName>compliance-client</OutputName>
     <InstallerPlatform>x64</InstallerPlatform>
     <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <!-- The package is per-machine (ALLUSERS=1), so ProgramMenuFolder is the all-users Start menu and the tray
+         shortcut's HKLM key path is right; these two ICEs assume a per-user profile folder. -->
+    <SuppressIces>ICE43;ICE57</SuppressIces>
     <DefineConstants>ClientDir=$(ClientDir);ProductVersion=$(ProductVersion);AssetsDir=$(MSBuildThisFileDirectory)..\..\..\src\Compliance.Tray\Assets</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
