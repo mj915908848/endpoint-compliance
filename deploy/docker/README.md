@@ -1,6 +1,6 @@
 # Docker 部署管理端
 
-需要一台装了 Docker 的 Linux 服务器。设置都写在 `.env` 里，`compose.yml` 不用改。
+需要一台装了 Docker 的 Linux 服务器。设置都写在 `.env` 里，`compose.yml` 不用改（只有固定版本时改它的 `image` 行，见 ADVANCED.md）。
 
 ## 部署
 
@@ -24,13 +24,13 @@
    cp .env.example .env && chmod 600 .env && vi .env
    ```
 
-   镜像来源在 `.env` 里选：
+   镜像来源：
 
-   | 来源 | `.env` 里怎么写 |
+   | 来源 | 怎么做 |
    | --- | --- |
-   | 镜像仓库 `ghcr.io`（默认） | 不用改 |
-   | 打包好的镜像 | 先 `docker load -i compliance-server-<版本>.tar.gz`，再把 `COMPLIANCE_IMAGE`、`COMPLIANCE_VERSION` 改成它显示的名字和版本 |
-   | 从源码构建 | 去掉 `COMPOSE_FILE=compose.yml:compose.build.yml` 前面的 `#` |
+   | 镜像仓库 `ghcr.io`（默认） | 什么都不用做 |
+   | 打包好的镜像（Releases 页的 `compliance-server-<版本>.tar.gz`，服务器不能访问 `ghcr.io` 时用） | 先 `docker load -i compliance-server-<版本>.tar.gz` |
+   | 从源码构建 | 在 `.env` 里去掉 `COMPOSE_FILE=compose.yml:compose.build.yml` 前面的 `#` |
 
 3. 在旁边建 `certs` 目录，放入证书 `cert.pem`（含中间证书）和私钥 `key.pem`：
 
@@ -54,7 +54,7 @@
 先备份 `./backup.sh`，然后按镜像来源：
 
 - 镜像仓库：`docker compose pull && docker compose up -d`
-- 打包好的镜像：`docker load -i` 新的包，改 `.env` 里的 `COMPLIANCE_VERSION`，`docker compose up -d`
+- 打包好的镜像：`docker load -i` 新版本的 `compliance-server-<版本>.tar.gz`，然后 `docker compose up -d`
 - 从源码构建：`git pull && docker compose up -d`
 
 ## 备份
@@ -68,4 +68,4 @@
 
 ## 更多
 
-没有证书、打包镜像、经网关转发、忘记密码、恢复备份、从旧版本迁移等，见 [ADVANCED.md](ADVANCED.md)。
+没有证书、自己打包镜像、经网关转发、忘记密码、恢复备份、从旧版本迁移等，见 [ADVANCED.md](ADVANCED.md)。

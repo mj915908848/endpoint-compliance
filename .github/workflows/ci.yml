@@ -311,15 +311,19 @@ jobs:
           docker compose up -d --wait --wait-timeout 180
           check
           test -s backups/*/compliance.dump && tar -xOf backups/*/files.tar ./signing.key | grep -q 'BEGIN EC PRIVATE KEY'
-          # The documented packaged-image path (ADVANCED.md, 镜像来源): docker load a saved image and name it in .env; data is kept.
-          docker save compliance-server:source | gzip > compliance-server-ci.tar.gz
+          # The documented packaged-image path (README.md, ADVANCED.md 镜像来源): the release saves the image under its
+          # registry name as <version> and latest; docker load it and run with the default .env image; data is kept.
+          docker tag compliance-server:source ghcr.io/mj915908848/compliance-server:0.0.0-ci
+          docker tag compliance-server:source ghcr.io/mj915908848/compliance-server:latest
+          docker save ghcr.io/mj915908848/compliance-server:0.0.0-ci ghcr.io/mj915908848/compliance-server:latest | gzip > compliance-server-0.0.0-ci.tar.gz
           docker compose down
-          docker rmi compliance-server:source
-          loaded=$(docker load -i compliance-server-ci.tar.gz)
-          echo "$loaded" | grep -q 'Loaded image: compliance-server:source'
-          sed -i 's#^COMPLIANCE_IMAGE=.*#COMPLIANCE_IMAGE=compliance-server#; s/^COMPLIANCE_VERSION=.*/COMPLIANCE_VERSION=source/; s/^COMPOSE_FILE=/# COMPOSE_FILE=/' .env
+          docker rmi compliance-server:source ghcr.io/mj915908848/compliance-server:0.0.0-ci ghcr.io/mj915908848/compliance-server:latest
+          loaded=$(docker load -i compliance-server-0.0.0-ci.tar.gz)
+          echo "$loaded" | grep -q 'Loaded image: ghcr.io/mj915908848/compliance-server:latest'
+          sed -i 's/^COMPOSE_FILE=/# COMPOSE_FILE=/' .env
+          ! grep -q '^COMPLIANCE_VERSION=' .env
           config=$(docker compose config)
-          echo "$config" | grep -q 'image: compliance-server:source' && ! echo "$config" | grep -q 'build:' || exit 1
+          echo "$config" | grep -q 'image: ghcr.io/mj915908848/compliance-server:latest' && ! echo "$config" | grep -q 'build:' || exit 1
           docker compose up -d --wait --wait-timeout 180
           check
       - if: failure()

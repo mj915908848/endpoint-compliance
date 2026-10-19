@@ -1,7 +1,8 @@
 name: Release
 
 # Run by hand (gh workflow run release.yml) to publish main's latest commit as a GitHub release v<VERSION>.<n>
-# (n counts up from 0) with the Windows client MSI, and to push the management server's image to
+# (n counts up from 0) with the Windows client MSI and the management server's image saved as
+# compliance-server-<version>.tar.gz (for servers that cannot reach ghcr.io), and to push that image to
 # ghcr.io/mj915908848/compliance-server as <version> and latest.
 # The commit's CI run must have passed.
 on:
@@ -95,6 +96,8 @@ jobs:
           v=${{ needs.version.outputs.version }}
           docker build -f deploy/docker/Dockerfile --build-arg VERSION=$v -t $IMAGE:$v -t $IMAGE:latest .
           docker run --rm --entrypoint sh $IMAGE:$v -c 'test -f /app/wwwroot/index.html'
+          # Saved under its registry name as <version> and latest, so after docker load the default .env runs it unchanged.
+          docker save $IMAGE:$v $IMAGE:latest | gzip > artifacts/compliance-server-$v.tar.gz
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -112,8 +115,9 @@ jobs:
             echo
             echo "## 安装与升级"
             echo "- 管理端镜像：\`$IMAGE:$v\`（也是 \`latest\`）。首次部署见 [deploy/docker/README.md](../../blob/v$v/deploy/docker/README.md)；升级在服务器的部署目录运行 \`./backup.sh && docker compose pull && docker compose up -d\`。"
+            echo "- 服务器不能访问 ghcr.io 时用打包好的镜像 \`compliance-server-$v.tar.gz\`：拷到服务器，\`docker load -i compliance-server-$v.tar.gz && docker compose up -d\`（\`.env\` 不用改）。"
             echo "- 客户端：双击 \`compliance-client-$v-windows-x64.msi\` 安装或升级，装完在弹出的窗口中填写管理端地址和登记码；升级保留登记。批量部署：\`msiexec /i compliance-client-$v-windows-x64.msi SERVERURL=https://管理端域名 CODE=登记码 /qn\`。"
           } > notes.md
           gh release create "v$v" --target "$(git rev-parse HEAD)" --title "$v" --notes-file notes.md \
-            "artifacts/compliance-client-$v-windows-x64.msi"
+            "artifacts/compliance-client-$v-windows-x64.msi" "artifacts/compliance-server-$v.tar.gz"
       - run: docker push $IMAGE:latest

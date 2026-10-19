@@ -15,7 +15,7 @@
 
 ## 部署
 
-1. **管理端**：在 Linux 服务器上用 Docker 部署，照 [deploy/docker/README.md](deploy/docker/README.md) 下载部署文件，在 `.env` 里填密码、选镜像来源（镜像仓库、打包好的镜像或从源码构建），放证书，`docker compose up -d`。
+1. **管理端**：在 Linux 服务器上用 Docker 部署，照 [deploy/docker/README.md](deploy/docker/README.md) 下载部署文件，在 `.env` 里填密码、选镜像来源（镜像仓库、Releases 页打包好的镜像或从源码构建），放证书，`docker compose up -d`。
 2. **客户端**：从 [Releases](https://github.com/mj915908848/endpoint-compliance/releases) 下载 MSI，在员工电脑上双击安装，填写管理端地址和登记码。见 [客户端安装说明](deploy/windows/客户端安装说明.md)。
 
 升级：服务器上 `./backup.sh && docker compose pull && docker compose up -d`；客户端装新版 MSI，或在管理页面「系统设置」上传 MSI 远程下发。
@@ -42,7 +42,7 @@ python3 integration/e2e.py
 
 格式化：`dotnet csharpier format src tests`，`cd ui && npm run format`。
 
-发版：手动运行 [Release 流程](.github/workflows/release.yml)，产出客户端 MSI 和管理端镜像 `ghcr.io/mj915908848/compliance-server`。
+发版：手动运行 [Release 流程](.github/workflows/release.yml)，产出客户端 MSI、管理端镜像 `ghcr.io/mj915908848/compliance-server`，以及同一镜像的离线包 `compliance-server-<版本>.tar.gz`。
 
 ## 目前不支持
 

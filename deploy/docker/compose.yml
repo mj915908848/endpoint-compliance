@@ -26,8 +26,9 @@ services:
       retries: 20
 
   server:
-    # COMPLIANCE_IMAGE and COMPLIANCE_VERSION in .env pick the registry image (default), a loaded image, or (with compose.build.yml) a source build.
-    image: ${COMPLIANCE_IMAGE:-ghcr.io/mj915908848/compliance-server}:${COMPLIANCE_VERSION:-latest}
+    # Pulled from the registry, or loaded from a release's packaged image under the same name; compose.build.yml replaces it with a source build.
+    # 固定版本：把 latest 改成版本号，如 0.2.26。
+    image: ghcr.io/mj915908848/compliance-server:latest
     restart: unless-stopped
     logging: *logging
     depends_on:
