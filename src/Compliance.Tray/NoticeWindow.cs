@@ -41,7 +41,7 @@ public sealed class NoticeWindow : Form
         this.acknowledge = acknowledge;
         this.refresh = refresh;
         int S(int v) => LogicalToDeviceUnits(v);
-        Text = "终端合规";
+        Text = "终端合规管控";
         Icon = Icons.Window(Icons.App);
         Font = Theme.Body;
         ForeColor = Theme.Text;
@@ -67,7 +67,7 @@ public sealed class NoticeWindow : Form
             SizeMode = PictureBoxSizeMode.Zoom,
             Bounds = new Rectangle(S(20), S(16), S(36), S(36)),
         };
-        var title = Theme.Label("终端合规", Theme.Title, Theme.Text);
+        var title = Theme.Label("终端合规管控", Theme.Title, Theme.Text);
         title.Location = new Point(S(66), S(13));
         status = Theme.Label("", Theme.Small, Theme.Muted);
         status.Location = new Point(S(67), S(38));

@@ -252,9 +252,11 @@ export function App() {
   );
   const brand = (
     <NavLink to="/" className="brand" aria-label="终端合规管控 首页">
-      <img src="/brand/lockup.svg" alt="恺域科技" className="brand-lockup" />
-      <span className="brand-divider" />
-      <span className="brand-name">终端合规管控</span>
+      <img src="/brand/logo.svg" alt="" className="brand-logo" />
+      <span className="brand-name">
+        终端合规管控
+        <small>恺域科技</small>
+      </span>
     </NavLink>
   );
   return (
@@ -282,8 +284,11 @@ export function App() {
       >
         <Flex vertical style={{ height: "100%" }}>
           <div className="drawer-brand">
-            <img src="/brand/lockup-light.svg" alt="恺域科技" />
-            <span>终端合规管控</span>
+            <img src="/brand/logo.svg" alt="" />
+            <span className="brand-name">
+              终端合规管控
+              <small>恺域科技</small>
+            </span>
           </div>
           <div className="sidebar-nav">{nav}</div>
           {drawerAccount}

@@ -235,7 +235,7 @@ body {
   margin-bottom: 28px;
 }
 .login-logo {
-  width: 56px;
+  width: 60px;
   margin-bottom: 8px;
 }
 .login-sub {
@@ -704,19 +704,23 @@ body {
 .brand:hover {
   color: #1f2633;
 }
-.brand-lockup {
-  height: 30px;
+.brand-logo {
+  width: 34px;
+  height: 34px;
   display: block;
 }
-.brand-divider {
-  width: 1px;
-  height: 20px;
-  background: #d9deea;
-}
 .brand-name {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1.25;
   letter-spacing: 0.04em;
+}
+.brand-name small {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  opacity: 0.5;
 }
 .topbar-end {
   margin-left: auto;
@@ -768,15 +772,17 @@ body {
 }
 .drawer-brand {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 10px;
   padding: 20px 20px 16px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
+  color: #fff;
 }
 .drawer-brand img {
-  height: 30px;
-  width: fit-content;
+  width: 34px;
+  height: 34px;
+  /* Sets the navy tile apart from the navy drawer. */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
 }
 .sidebar.ant-layout-sider,
 .sidebar-drawer .ant-drawer-section,

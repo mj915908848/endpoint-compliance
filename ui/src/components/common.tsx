@@ -329,7 +329,7 @@ export function Login({
       <section className="login-side">
         <div className="login-card">
           <div className="login-head">
-            <img src="/brand/mark.svg" alt="" className="login-logo" />
+            <img src="/brand/logo.svg" alt="" className="login-logo" />
             <Typography.Title level={4} style={{ margin: 0 }}>
               终端合规管控平台
             </Typography.Title>
