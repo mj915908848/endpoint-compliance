@@ -148,7 +148,29 @@
       HideTarget="yes"
     />
 
+    <!-- Removing the client (not upgrading it) first takes out the browser rules it added, while the program and its
+         record of those rules are still there and the service is stopped. A failure does not stop the removal. -->
+    <SetProperty
+      Id="RemoveBrowserRules"
+      Value="&quot;[#AgentExe]&quot; --uninstall-cleanup"
+      Before="RemoveBrowserRules"
+      Sequence="execute"
+    />
+    <CustomAction
+      Id="RemoveBrowserRules"
+      BinaryRef="Wix4UtilCA_X64"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore"
+    />
+
     <InstallExecuteSequence>
+      <Custom
+        Action="RemoveBrowserRules"
+        After="StopServices"
+        Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"
+      />
       <Custom Action="PrepareAgentData" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="EnrollAgent" After="PrepareAgentData" Condition="NOT REMOVE AND SERVERURL AND CODE" />
     </InstallExecuteSequence>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { App, Button, Table, Typography } from "antd";
 import { request } from "../api";
 import { useResource } from "../useResource";
@@ -30,6 +30,20 @@ export function AuditPage() {
   const [olderDone, setOlderDone] = useState(false);
   const [olderLoading, setOlderLoading] = useState(false);
   const latest = data.data ?? [];
+  // Once earlier pages are shown, a refresh that pushes records out of the newest page keeps them: they would
+  // otherwise go missing between that page and the earlier ones, which continue after them.
+  const previous = useRef<Audit[]>([]);
+  useEffect(() => {
+    const current = new Set(latest.map((a) => a.id));
+    const pushed = previous.current.filter((a) => !current.has(a.id));
+    previous.current = latest;
+    if (pushed.length === 0) return;
+    setOlder((o) => {
+      if (o.length === 0) return o;
+      const seen = new Set(o.map((a) => a.id));
+      return [...pushed.filter((a) => !seen.has(a.id)), ...o];
+    });
+  }, [data.data]);
   const known = new Set(latest.map((a) => a.id));
   const rows = [...latest, ...older.filter((a) => !known.has(a.id))];
   const done = olderDone || (data.data !== undefined && latest.length < PAGE);

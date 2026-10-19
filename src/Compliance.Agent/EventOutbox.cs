@@ -126,6 +126,13 @@ public sealed class EventOutbox : IAsyncDisposable
                 + "CREATE TABLE IF NOT EXISTS quarantine(seq INTEGER PRIMARY KEY, id TEXT NOT NULL, json TEXT NOT NULL, error TEXT NOT NULL, at TEXT NOT NULL); "
                 + "CREATE TABLE IF NOT EXISTS local_incidents(key TEXT PRIMARY KEY,detail TEXT NOT NULL,sid TEXT,active INTEGER NOT NULL,last_notice TEXT NOT NULL);";
             cmd.ExecuteNonQuery();
+            // Queues from before findings were recorded get the column; their snapshots are never merged away.
+            cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name='findings'";
+            if (Convert.ToInt64(cmd.ExecuteScalar()) == 0)
+            {
+                cmd.CommandText = "ALTER TABLE events ADD COLUMN findings TEXT";
+                cmd.ExecuteNonQuery();
+            }
         }
         catch
         {
@@ -155,8 +162,9 @@ public sealed class EventOutbox : IAsyncDisposable
                     Wire.Serialize(new AgentEvent(id, long.MaxValue, when, type, objectKey, snapshot, detail))
                 ) + 8192L;
             await PruneQuarantineAsync(tx, ct);
+            var findings = snapshot is null ? null : Findings(snapshot);
             if (type == "Snapshot")
-                await DropSameHourSnapshotsAsync(tx, when, ct);
+                await DropSameHourSnapshotsAsync(tx, when, findings!, ct);
             var dropped = 0;
             while (await FullAsync(tx, needed, ct) && await DropOldestSnapshotAsync(tx, ct) is > 0 and var n)
                 dropped += n;
@@ -168,8 +176,9 @@ public sealed class EventOutbox : IAsyncDisposable
                 );
             using var insert = db.CreateCommand();
             insert.Transaction = tx;
-            insert.CommandText = "INSERT INTO events(id,json) VALUES($id,'') RETURNING seq";
+            insert.CommandText = "INSERT INTO events(id,json,findings) VALUES($id,'',$findings) RETURNING seq";
             insert.Parameters.AddWithValue("$id", id);
+            insert.Parameters.AddWithValue("$findings", (object?)findings ?? DBNull.Value);
             var seq = Convert.ToInt64(await insert.ExecuteScalarAsync(ct));
             var evt = new AgentEvent(id, seq, when, type, objectKey, snapshot, detail);
             using var update = db.CreateCommand();
@@ -238,7 +247,41 @@ public sealed class EventOutbox : IAsyncDisposable
     /// server keeps only the newest snapshot and the verdict changes between them, so a device that was offline for a
     /// week sends about 170 snapshots when it is back rather than 2000, and its current state arrives sooner.
     /// </summary>
-    private async Task DropSameHourSnapshotsAsync(SqliteTransaction tx, DateTimeOffset when, CancellationToken ct)
+    /// <summary>
+    /// What a snapshot found, in the terms the server keeps incidents by: product and user, and the object for proxy
+    /// settings and sensitive files. Process ids and other details that change between scans are left out.
+    /// </summary>
+    internal static string Findings(ScanSnapshot snapshot) =>
+        Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(
+                    string.Join(
+                        "\n",
+                        snapshot
+                            .Evidence.Where(e => e.Confirmed && e.Kind != EvidenceKind.Clue)
+                            .Select(e =>
+                                e.ProductId
+                                + "|"
+                                + (e.UserSid ?? "machine")
+                                + (e.Kind is EvidenceKind.Proxy or EvidenceKind.SensitiveFile ? "|" + e.ObjectKey : "")
+                            )
+                            .Distinct()
+                            .Order(StringComparer.Ordinal)
+                    )
+                )
+            )
+        );
+
+    /// <summary>
+    /// Snapshots from the same hour that found the same things are replaced by the newest one. One that found
+    /// something else is kept, so a violation found and gone again while offline still reaches the server.
+    /// </summary>
+    private async Task DropSameHourSnapshotsAsync(
+        SqliteTransaction tx,
+        DateTimeOffset when,
+        string findings,
+        CancellationToken ct
+    )
     {
         var hour = when.UtcDateTime.ToString("yyyyMMddHH");
         var replaced = new List<long>();
@@ -246,7 +289,8 @@ public sealed class EventOutbox : IAsyncDisposable
         {
             find.Transaction = tx;
             find.CommandText =
-                "SELECT seq, json_extract(json,'$.sourceTime') FROM events WHERE json_extract(json,'$.type')='Snapshot'";
+                "SELECT seq, json_extract(json,'$.sourceTime') FROM events WHERE json_extract(json,'$.type')='Snapshot' AND findings=$findings";
+            find.Parameters.AddWithValue("$findings", findings);
             using var reader = await find.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
                 if (

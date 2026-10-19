@@ -106,6 +106,12 @@ public class KeyRotationTests
         Assert.Equal(rotation.NewKeyId, signedPackage.KeyId);
         PackageCrypto.Verify(signedPackage, rotation.NewPublicKeyPem);
 
+        // A device that missed the rotation is deleted, then enrolls again with its own key and pins the new one.
+        Assert.Equal(HttpStatusCode.OK, (await f.Client.DeleteAsync($"/api/devices/{f.Device}")).StatusCode);
+        var again = await f.Enroll(await f.Code());
+        Assert.Equal(rotation.NewKeyId, again.PolicyKeyId);
+        f.Device = again.DeviceId;
+
         // New devices pin the new key.
         f.Key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         Assert.Equal(rotation.NewKeyId, (await f.Enroll(await f.Code())).PolicyKeyId);

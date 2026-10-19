@@ -65,16 +65,31 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
         await LoadNextKey();
     }
 
-    /// <summary>A new P-256 private key in a file only this account can read.</summary>
+    /// <summary>
+    /// A new P-256 private key in a file only this account can read. Written beside it and flushed to disk before it
+    /// takes the name, so a crash leaves no key or a whole one, never a truncated file startup cannot read.
+    /// </summary>
     static void CreateKeyFile(string path)
     {
         using var created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
         if (!OperatingSystem.IsWindows())
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        using var stream = new FileStream(path, options);
-        using var writer = new StreamWriter(stream);
-        writer.Write(created.ExportECPrivateKeyPem());
+        var temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var stream = new FileStream(temporary, options))
+            {
+                using (var writer = new StreamWriter(stream, leaveOpen: true))
+                    writer.Write(created.ExportECPrivateKeyPem());
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temporary, path);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
     }
 
     /// <summary>

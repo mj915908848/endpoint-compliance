@@ -68,7 +68,7 @@ export function SigningKeyPanel({ session }: { session: Session }) {
     modal.confirm({
       title: `还有 ${rotation.devices - rotation.ready} 台终端没有收到新密钥`,
       content:
-        "现在完成，这些终端将无法再验证策略和安装包，需要重新登记。通常应等它们联网后再完成。",
+        "现在完成，这些终端将无法再验证策略和安装包：要先在终端列表删除它们，再在终端上用登记码重新登记。通常应等它们联网后再完成。",
       okText: "仍然完成",
       okButtonProps: { danger: true },
       cancelText: "取消",

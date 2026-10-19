@@ -35,6 +35,8 @@ public sealed record AgentConfiguration(
 /// </summary>
 public static class PolicyKeys
 {
+    public const string KeyChanged = "Policy key ID changed";
+
     /// <summary>The public key a signature by <paramref name="keyId"/> must verify with.</summary>
     public static string PublicKeyFor(AgentConfiguration config, string keyId)
     {
@@ -43,7 +45,7 @@ public static class PolicyKeys
         // Configurations written before enrollment returned a key id accept the pinned key for any id.
         if (config.PolicyKeyId is null || keyId == config.PolicyKeyId)
             return config.PolicyPublicKeyPem ?? throw new CryptographicException("No policy key");
-        throw new CryptographicException("Policy key ID changed");
+        throw new CryptographicException(KeyChanged);
     }
 
     /// <summary>
@@ -970,6 +972,14 @@ public sealed class AgentRuntime(
                         ? null
                         : "Policy refresh failed: " + e.GetType().Name;
                 Console.Error.WriteLine("Policy refresh failed; retained last signed policy: " + e.GetType().Name);
+                // The server completed a key rotation this device never heard of: only enrolling again helps.
+                if (e is CryptographicException { Message: PolicyKeys.KeyChanged })
+                    await notices.AddAsync(
+                        "policy-key-changed",
+                        null,
+                        "管理端已更换策略签名密钥，本机没有收到新密钥，无法再接收策略。请联系管理员在终端列表删除本机，再用登记码重新登记。",
+                        ct
+                    );
             }
         if (policy is null)
         {

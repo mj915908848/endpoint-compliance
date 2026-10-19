@@ -171,20 +171,31 @@ public sealed class LoginThrottle
     {
         lock (failures)
         {
-            // Names that do not exist count too, so an attacker cannot tell them apart; old entries make room.
-            if (failures.Count >= MaxEntries)
+            var keys = new[] { (Pair(username, address), MaxFailures), (Account(username), MaxAccountFailures) };
+            // Names that do not exist count too, so an attacker cannot tell them apart; old entries make room. When
+            // the table is still full, the entries with the fewest failures go, oldest first: many names tried once
+            // must not stop the count of an account someone keeps guessing.
+            var added = keys.Count(k => !failures.ContainsKey(k.Item1));
+            if (failures.Count + added > MaxEntries)
                 foreach (var (key, times) in failures.ToList())
                     Expire(key, times, now);
-            if (failures.Count >= MaxEntries - 1)
-                return false;
+            // A tenth goes at once, so a flood of names does not sort the table on every attempt.
+            var excess = failures.Count + added - MaxEntries;
+            if (excess > 0)
+                excess = Math.Max(excess, MaxEntries / 10);
+            if (excess > 0)
+                foreach (
+                    var key in failures
+                        .Where(f => !keys.Any(k => k.Item1 == f.Key))
+                        .OrderBy(f => f.Value.Count)
+                        .ThenBy(f => f.Value.Last())
+                        .Take(excess)
+                        .Select(f => f.Key)
+                        .ToList()
+                )
+                    failures.Remove(key);
             var locked = false;
-            foreach (
-                var (key, limit) in new[]
-                {
-                    (Pair(username, address), MaxFailures),
-                    (Account(username), MaxAccountFailures),
-                }
-            )
+            foreach (var (key, limit) in keys)
             {
                 if (!failures.TryGetValue(key, out var list))
                     failures[key] = list = new();

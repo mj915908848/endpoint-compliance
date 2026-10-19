@@ -1018,6 +1018,21 @@ public class ApiTests
     }
 
     [Fact]
+    public void Many_names_tried_once_do_not_stop_the_count_of_an_account_being_guessed()
+    {
+        var throttle = new LoginThrottle();
+        var now = DateTimeOffset.UtcNow;
+        for (var i = 0; i < 6000; i++)
+            throttle.Failed("user" + i, "10.2." + i / 250 + "." + i % 250, now);
+        for (var i = 0; i < LoginThrottle.MaxAccountFailures; i++)
+            throttle.Failed("real-admin", "10.3.0." + i, now);
+        Assert.NotNull(throttle.LockedFor("real-admin", "10.0.0.2", now));
+        for (var i = 0; i < 6000; i++)
+            throttle.Failed("other" + i, "10.4." + i / 250 + "." + i % 250, now);
+        Assert.NotNull(throttle.LockedFor("real-admin", "10.0.0.2", now));
+    }
+
+    [Fact]
     public void Wrong_passwords_from_one_address_do_not_lock_the_account_for_others()
     {
         var throttle = new LoginThrottle();

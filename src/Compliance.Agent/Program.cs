@@ -40,6 +40,19 @@ public static class Program
                     Console.WriteLine($"已删除非管理员创建的数据目录 {data}");
                 return 0;
             }
+            if (Has("--uninstall-cleanup"))
+            {
+                // Run by the MSI as SYSTEM when the client is removed, after the service stopped and before the data
+                // directory goes: the browser rules this agent added would otherwise outlive it, owned by no one.
+                if (simulated || !OperatingSystem.IsWindows())
+                    return 0;
+                var problem = new BrowserBlocklist(
+                    new WindowsBlocklistStore(),
+                    Path.Combine(data, "browser-blocklist.json")
+                ).RemoveOwn();
+                Console.WriteLine(problem ?? "已移除本客户端添加的浏览器网址拦截规则");
+                return problem is null ? 0 : 1;
+            }
             var aclRepaired = !simulated && NativeDataDirectory.EnsureSecure(data);
             var server = Arg("--server");
             AgentConfiguration? config = AgentConfiguration.Exists(configPath)

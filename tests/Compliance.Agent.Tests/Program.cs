@@ -296,6 +296,20 @@ await Check(
                 pending.SequenceEqual([earlier.EventId, health.EventId, last.EventId]),
                 "expected the previous hour's snapshot, the other event and the newest snapshot"
             );
+
+            // Offline: a violation found and gone again within the hour keeps the snapshot that found it.
+            Evidence Running(int pid) =>
+                new("cursor", "Cursor", EvidenceKind.Process, "pid:" + pid, "进程", "Cursor 正在运行", "S-1-5-21-1");
+            var found = await q.EnqueueAsync("Snapshot", "device:a", At(52) with { Evidence = [Running(10)] }, null);
+            // The same finding again, under another process id, still replaces it.
+            var again = await q.EnqueueAsync("Snapshot", "device:a", At(54) with { Evidence = [Running(11)] }, null);
+            var clean = await q.EnqueueAsync("Snapshot", "device:a", At(56), null);
+            pending = (await q.PendingAsync(10)).Select(e => e.EventId).ToArray();
+            Assert(
+                pending.SequenceEqual([earlier.EventId, health.EventId, again.EventId, clean.EventId]),
+                "expected the violation and the clean snapshot after it: " + pending.Length
+            );
+            Assert(!pending.Contains(found.EventId), "the same finding twice is merged");
         }
         finally
         {
