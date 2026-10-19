@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Draws the tray and application icons (a shield with a check mark) into src/Compliance.Tray/Assets.
+"""Draws the tray and application icons (a screen with a check mark) into src/Compliance.Tray/Assets.
 
-Rerun after changing the design: python3 scripts/make_tray_icons.py (needs Pillow).
+The same design as ui/public/brand/logo.svg. Rerun after changing it: python3 scripts/make_tray_icons.py
+(needs Pillow).
 """
 from pathlib import Path
 
@@ -9,83 +10,74 @@ from PIL import Image, ImageDraw
 
 ASSETS = Path(__file__).resolve().parents[1] / "src" / "Compliance.Tray" / "Assets"
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-# The management UI's teal (#1f6f84) and danger red (#c2413b).
-TEAL_TOP, TEAL_BOTTOM = (52, 150, 170), (24, 94, 114)
-BADGE = (194, 65, 59)
-GRAY = ((168, 175, 186), (120, 128, 140))
+# The management UI's navy (#1f2a5a), check orange and danger red (#e5484d).
+NAVY = (31, 42, 90)
+CHECK = ((246, 195, 67), (239, 125, 26))
+BADGE = (229, 72, 77)
+GRAY = (128, 136, 150)
+GRAY_CHECK = ((236, 238, 242), (236, 238, 242))
 
 
-def shield(size: int, badge: bool, colors=(TEAL_TOP, TEAL_BOTTOM)) -> Image.Image:
+def tile(size: int, badge: bool, base=NAVY, check=CHECK) -> Image.Image:
     scale = 8  # draw large, then shrink for smooth edges
     s = size * scale
+    u = s / 64  # the SVG's 64-unit grid
+    small = size <= 24
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    # Shield outline: flat top with rounded shoulders, sides curving to a point.
-    m = s * 0.08
-    top, bottom = s * 0.06, s * 0.96
-    left, right = m, s - m
-    mid = s / 2
-    points = []
-    steps = 40
-    for i in range(steps + 1):  # right side from the shoulder down to the tip
-        t = i / steps
-        x = right - (right - mid) * t ** 2.2
-        y = top + s * 0.12 + (bottom - top - s * 0.12) * t
-        points.append((x, y))
-    for i in range(steps + 1):  # left side back up
-        t = 1 - i / steps
-        x = left + (mid - left) * t ** 2.2
-        y = top + s * 0.12 + (bottom - top - s * 0.12) * t
-        points.append((x, y))
-    # Top edge dips slightly in the middle like a crest.
-    points += [(left, top + s * 0.06), (mid, top), (right, top + s * 0.06)]
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle([2 * u, 2 * u, 62 * u, 62 * u], radius=14 * u, fill=base + (255,))
+    # Screen outline and stand; heavier at small sizes so they stay legible.
+    line = (5.5 if small else 4) * u
+    white = (255, 255, 255, 255)
+    if small:
+        draw.rounded_rectangle([10 * u, 13 * u, 54 * u, 44 * u], radius=4 * u, outline=white, width=int(line))
+        draw.line([(22 * u, 51 * u), (42 * u, 51 * u)], fill=white, width=int(line))
+    else:
+        draw.rounded_rectangle([12 * u, 15 * u, 52 * u, 42 * u], radius=4 * u, outline=white, width=int(line))
+        draw.line([(24 * u, 48 * u), (40 * u, 48 * u)], fill=white, width=int(line))
+    # Check mark with an orange gradient from bottom-left to top-right.
+    width = (7 if small else 5) * u
+    pts = [(22 * u, 28.5 * u), (29 * u, 35 * u), (43 * u, 21 * u)]
     mask = Image.new("L", (s, s), 0)
-    ImageDraw.Draw(mask).polygon(points, fill=255)
+    md = ImageDraw.Draw(mask)
+    md.line(pts, fill=255, width=int(width), joint="curve")
+    r = width / 2
+    for x, y in (pts[0], pts[-1]):
+        md.ellipse([x - r, y - r, x + r, y + r], fill=255)
     gradient = Image.new("RGBA", (s, s))
     gd = ImageDraw.Draw(gradient)
-    for y in range(s):
-        t = y / s
-        gd.line(
-            [(0, y), (s, y)],
-            fill=tuple(int(a + (b - a) * t) for a, b in zip(*colors)) + (255,),
-        )
+    for i in range(2 * s):
+        t = i / (2 * s)
+        color = tuple(int(a + (b - a) * t) for a, b in zip(*check)) + (255,)
+        gd.line([(i, s), (i - s, 0)], fill=color, width=2)
     img.paste(gradient, (0, 0), mask)
-    draw = ImageDraw.Draw(img)
-    # Check mark; thicker at small sizes so it stays legible.
-    width = s * (0.13 if size <= 24 else 0.10)
-    check = [(s * 0.29, s * 0.50), (s * 0.44, s * 0.66), (s * 0.72, s * 0.36)]
-    draw.line(check, fill=(255, 255, 255, 255), width=int(width), joint="curve")
-    r = width / 2
-    for x, y in (check[0], check[-1]):
-        draw.ellipse([x - r, y - r, x + r, y + r], fill=(255, 255, 255, 255))
     if badge:
         br = s * 0.22
         cx, cy = s - br - s * 0.01, br + s * 0.01
         ring = s * 0.05
-        draw.ellipse([cx - br - ring, cy - br - ring, cx + br + ring, cy + br + ring], fill=(0, 0, 0, 0))
-        # Clear a ring around the badge so it reads against the shield.
+        # Clear a ring around the badge so it reads against the tile.
         clear = Image.new("L", (s, s), 0)
         ImageDraw.Draw(clear).ellipse([cx - br - ring, cy - br - ring, cx + br + ring, cy + br + ring], fill=255)
         img.paste((0, 0, 0, 0), (0, 0), clear)
-        draw = ImageDraw.Draw(img)
-        draw.ellipse([cx - br, cy - br, cx + br, cy + br], fill=BADGE + (255,))
+        ImageDraw.Draw(img).ellipse([cx - br, cy - br, cx + br, cy + br], fill=BADGE + (255,))
     return img.resize((size, size), Image.LANCZOS)
 
 
-def save(name: str, badge: bool, colors=(TEAL_TOP, TEAL_BOTTOM)) -> None:
-    images = [shield(size, badge, colors) for size in SIZES]
+def save(name: str, badge: bool, **colors) -> None:
+    images = [tile(size, badge, **colors) for size in SIZES]
     images[-1].save(ASSETS / name, format="ICO", sizes=[(i.width, i.height) for i in images], append_images=images[:-1])
 
 
 ASSETS.mkdir(parents=True, exist_ok=True)
 save("app.ico", badge=False)
 save("tray-alert.ico", badge=True)
-save("tray-offline.ico", badge=False, colors=GRAY)
+save("tray-offline.ico", badge=False, base=GRAY, check=GRAY_CHECK)
 # Preview sheet for reviewing the design.
 sheet = Image.new("RGBA", (600, 140), (255, 255, 255, 255))
 x = 10
-for badge, colors in ((False, (TEAL_TOP, TEAL_BOTTOM)), (True, (TEAL_TOP, TEAL_BOTTOM)), (False, GRAY)):
+for badge, colors in ((False, {}), (True, {}), (False, {"base": GRAY, "check": GRAY_CHECK})):
     for size in (16, 24, 32, 48):
-        icon = shield(size, badge, colors)
+        icon = tile(size, badge, **colors)
         sheet.paste(icon, (x, 70 - size // 2), icon)
         x += size + 14
     x += 20

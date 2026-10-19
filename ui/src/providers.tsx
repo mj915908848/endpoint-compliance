@@ -4,38 +4,44 @@ import { App as AntApp, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { createQueryClient } from "./useResource";
 
-// One accent throughout: links and info notices take the primary teal instead of Ant Design's default blue.
-const primary = "#1f6f84";
+// Blue primary and navy navigation, after the gateway consoles administrators already use.
+const primary = "#2457e6";
 const theme = {
   token: {
     colorPrimary: primary,
     colorInfo: primary,
     colorLink: primary,
-    colorSuccess: "#2f8f5b",
-    colorError: "#c2413b",
-    colorWarning: "#c98316",
-    colorBgLayout: "#f3f6f8",
-    colorBorderSecondary: "#e8edf0",
-    borderRadius: 8,
+    colorSuccess: "#1f9d55",
+    colorError: "#e5484d",
+    colorWarning: "#e8890c",
+    colorBgLayout: "#eef1f6",
+    colorBorderSecondary: "#e6e9f0",
+    colorText: "#1f2633",
+    borderRadius: 4,
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
-    Card: { headerHeight: 52, headerFontSize: 15 },
+    Card: { headerHeight: 48, headerFontSize: 15 },
     Table: {
-      headerBg: "#f7f9fa",
-      headerColor: "rgba(0, 0, 0, 0.55)",
-      headerSplitColor: "transparent",
+      headerBg: "#f2f4f8",
+      headerColor: "#1f2633",
+      headerSplitColor: "#e1e5ee",
+      cellPaddingBlock: 10,
+      rowHoverBg: "#f5f8ff",
     },
+    Tabs: { titleFontSize: 14 },
     Menu: {
       darkItemBg: "transparent",
       darkSubMenuItemBg: "transparent",
-      darkItemSelectedBg: "rgba(88, 216, 203, 0.14)",
+      darkItemSelectedBg: primary,
       darkItemSelectedColor: "#ffffff",
-      darkItemColor: "rgba(255, 255, 255, 0.68)",
-      darkItemHoverBg: "rgba(255, 255, 255, 0.06)",
-      itemHeight: 40,
-      itemMarginInline: 10,
+      darkItemColor: "rgba(255, 255, 255, 0.78)",
+      darkItemHoverBg: "rgba(255, 255, 255, 0.08)",
+      itemHeight: 46,
+      itemMarginInline: 0,
+      itemBorderRadius: 0,
+      itemMarginBlock: 0,
     },
   },
 };

@@ -190,37 +190,39 @@ export function DeviceDetailPage({
         {d && (
           <Space orientation="vertical" size={16} style={{ width: "100%" }}>
             <DeviceGuide device={d}>
-              <div className="device-facts">
-                <Fact label="在线状态">
-                  <OnlineState device={d} />
-                </Fact>
-                <Fact label="IP / MAC">
-                  {d.network?.length ? (
-                    <NetworkList adapters={d.network} />
-                  ) : d.network ? (
-                    "未发现已连接的物理网卡"
-                  ) : (
-                    "客户端 0.2.22 起上报"
-                  )}
-                </Fact>
-                {d.sourceAddress && (
-                  <Fact label="上报来源 IP">
-                    <span className="mono">{d.sourceAddress}</span>
-                  </Fact>
+              <Fact label="在线状态">
+                <OnlineState device={d} />
+              </Fact>
+              <Fact label="IP / MAC">
+                {d.network?.length ? (
+                  <NetworkList adapters={d.network} />
+                ) : d.network ? (
+                  "未发现已连接的物理网卡"
+                ) : (
+                  "客户端 0.2.22 起上报"
                 )}
-                <Fact label="最近检查">{time(d.lastScan)}</Fact>
-                <Fact label="最近心跳">{time(d.lastHeartbeat)}</Fact>
-                <Fact label="客户端版本">
-                  <AgentVersion device={d} />
+              </Fact>
+              {d.sourceAddress && (
+                <Fact label="上报来源 IP">
+                  <span className="mono">{d.sourceAddress}</span>
                 </Fact>
-                <Fact label="策略">
-                  {d.policyName && `${d.policyName} `}v{d.targetPolicyVersion}
-                  {!d.policyApplied && "（终端尚未应用，下次联系管理端时更新）"}
-                  {d.protectionStatus && ` · ${d.protectionStatus}`}
+              )}
+              <Fact label="最近检查">{time(d.lastScan)}</Fact>
+              <Fact label="最近心跳">{time(d.lastHeartbeat)}</Fact>
+              <Fact label="客户端版本">
+                <AgentVersion device={d} />
+              </Fact>
+              <Fact label="策略" wide>
+                {d.policyName && `${d.policyName} `}v{d.targetPolicyVersion}
+                {!d.policyApplied && "（终端尚未应用，下次联系管理端时更新）"}
+                {d.protectionStatus && ` · ${d.protectionStatus}`}
+              </Fact>
+              {pending > 0 && <Fact label="待执行的检查请求">{pending}</Fact>}
+              {d.simulated && (
+                <Fact label="数据来源">
+                  <Tag color="purple">模拟终端，不能作为实机验收依据</Tag>
                 </Fact>
-                {pending > 0 && <Fact label="待执行的检查请求">{pending}</Fact>}
-                {d.simulated && <Tag color="purple">模拟终端，不能作为实机验收依据</Tag>}
-              </div>
+              )}
             </DeviceGuide>
             <div className="panel tabs-panel">
               <Tabs
@@ -301,12 +303,12 @@ export function DeviceDetailPage({
   );
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+function Fact({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) {
   return (
-    <span className="device-fact">
-      <span className="muted">{label}</span>
-      {children}
-    </span>
+    <div className={wide ? "status-fact status-fact-wide" : "status-fact"}>
+      <div className="status-fact-label">{label}</div>
+      <div className="status-fact-value">{children}</div>
+    </div>
   );
 }
 

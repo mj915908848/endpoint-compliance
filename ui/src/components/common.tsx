@@ -13,7 +13,12 @@ import {
   Tooltip,
   Typography,
 } from "antd";
-import { SafetyCertificateOutlined } from "@ant-design/icons";
+import {
+  CheckCircleFilled,
+  ClockCircleFilled,
+  CloseCircleFilled,
+  ExclamationCircleFilled,
+} from "@ant-design/icons";
 import type { Alert, DeviceSummary, ModuleResult, Verdict } from "../types";
 import { alertTypeLabel, onlineLabel, verdictLabels } from "./labels";
 
@@ -214,66 +219,57 @@ export function OverviewGuide({ devices }: { devices: DeviceSummary[] }) {
 }
 
 /** The device's verdict in plain language; `children` adds facts such as heartbeat times below it. */
+/** The verdict, what to do about it, and the facts it rests on (children), in one card. */
 export function DeviceGuide({ device, children }: { device: DeviceSummary; children?: ReactNode }) {
-  if (device.onlineState !== "Online")
-    return (
-      <Notice
-        type="warning"
-        showIcon
-        aria-label="设备结果说明"
-        title="暂无法判断：终端未在线"
-        description={
-          <>
-            {`该终端最近没有上报心跳。${
-              device.lastVerdict === "FAIL"
-                ? "上次检查未通过，已发现的违规仍需处理。"
-                : "上次检查结果仅供参考。"
-            }${RERUN_HINT}`}
-            {children}
-          </>
+  const state =
+    device.onlineState !== "Online"
+      ? {
+          tone: "warning",
+          icon: <ClockCircleFilled />,
+          title: "终端未在线",
+          hint: `${
+            device.lastVerdict === "FAIL"
+              ? "上次检查未通过，已发现的违规仍需处理。"
+              : "上次检查结果仅供参考。"
+          }${RERUN_HINT}`,
         }
-      />
-    );
-  if (device.currentVerdict === "FAIL")
-    return (
-      <Notice
-        type="error"
-        showIcon
-        aria-label="设备结果说明"
-        title={`检查未通过：发现 ${device.violationCount} 个违规对象`}
-        description={
-          <>
-            按照当前策略，禁用软件只要安装即视为违规，无论是否运行。请根据下方证据卸载相关软件、扩展或清除代理配置，然后重新检查。部分检查项读取失败不会抵消已确认的违规。
-            {children}
-          </>
-        }
-      />
-    );
-  if (device.currentVerdict === "UNKNOWN")
-    return (
-      <Notice
-        type="warning"
-        showIcon
-        aria-label="设备结果说明"
-        title="暂无法判断"
-        description={
-          <>缺少完整且有效的检查数据。请查看“检查覆盖”中未完成的项目，处理后重新检查。{children}</>
-        }
-      />
-    );
+      : device.currentVerdict === "FAIL"
+        ? {
+            tone: "danger",
+            icon: <CloseCircleFilled />,
+            title: "检查未通过",
+            count: device.violationCount,
+            hint: "禁用软件只要安装即视为违规，无论是否运行。卸载相关软件、扩展或清除代理配置后，请重新检查。",
+          }
+        : device.currentVerdict === "UNKNOWN"
+          ? {
+              tone: "warning",
+              icon: <ExclamationCircleFilled />,
+              title: "暂无法判断",
+              hint: "缺少完整且有效的检查数据。处理“检查覆盖”中未完成的项目后重新检查。",
+            }
+          : {
+              tone: "good",
+              icon: <CheckCircleFilled />,
+              title: "检查通过",
+              hint: "本次检查范围内未发现禁用项。结论仅适用于已覆盖的检查项。",
+            };
   return (
-    <Notice
-      type="success"
-      showIcon
-      aria-label="设备结果说明"
-      title="检查通过"
-      description={
-        <>
-          在本次检查范围内未发现禁用项。结论仅适用于已覆盖的检查项，请同时关注检查覆盖与防护状态。
-          {children}
-        </>
-      }
-    />
+    <section className={`status-card status-${state.tone}`} aria-label="设备结果说明">
+      <div className="status-head">
+        <span className="status-icon">{state.icon}</span>
+        <div>
+          <div className="status-title">
+            {state.title}
+            {state.count !== undefined && (
+              <span className="status-pill">{state.count} 个违规对象</span>
+            )}
+          </div>
+          <p className="status-hint">{state.hint}</p>
+        </div>
+      </div>
+      {children && <div className="status-facts">{children}</div>}
+    </section>
   );
 }
 
@@ -320,47 +316,59 @@ export function Login({
     }
   }
   return (
-    <Flex className="login-screen" align="center" justify="center">
-      <Card className="login-card">
-        <Space orientation="vertical" size={4} style={{ marginBottom: 24 }}>
-          <SafetyCertificateOutlined className="login-mark" />
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            终端合规管理中心
-          </Typography.Title>
-          <Typography.Text type="secondary">请使用管理员分配的账号登录。</Typography.Text>
-        </Space>
-        {notice && !error && (
-          <Notice type="info" showIcon title={notice} style={{ marginBottom: 16 }} />
-        )}
-        <Form form={form} layout="vertical" requiredMark={false} onFinish={submit}>
-          <Form.Item
-            label="管理员账号"
-            name="username"
-            rules={[{ required: true, message: "请输入账号" }]}
-          >
-            <Input autoComplete="username" />
-          </Form.Item>
-          <Form.Item
-            label="密码"
-            name="password"
-            rules={[{ required: true, message: "请输入密码" }]}
-          >
-            <Input.Password autoComplete="current-password" visibilityToggle={false} />
-          </Form.Item>
-          {error && (
-            <Form.Item>
-              <ErrorNotice error={error} title="登录失败" />
-            </Form.Item>
+    <div className="login-screen">
+      <section className="login-hero" aria-hidden="true">
+        <div className="login-hero-text">
+          <h1>终端合规管控平台</h1>
+          <p>
+            检查内网电脑上的代理工具与 AI
+            软件，留存证据、集中告警，按策略只检查或强制拦截。全部数据只在本单位内网流转。
+          </p>
+        </div>
+      </section>
+      <section className="login-side">
+        <div className="login-card">
+          <div className="login-head">
+            <img src="/brand/logo.svg" alt="" className="login-logo" />
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              终端合规管控平台
+            </Typography.Title>
+            <span className="login-sub">管理中心</span>
+          </div>
+          {notice && !error && (
+            <Notice type="info" showIcon title={notice} style={{ marginBottom: 16 }} />
           )}
-          <Button type="primary" htmlType="submit" block loading={busy}>
-            登录
-          </Button>
-        </Form>
-        <Typography.Paragraph type="secondary" style={{ marginTop: 16, fontSize: 12 }}>
-          系统不提供默认账号。仅连接本单位内网管理端，不依赖任何公网资源。
-        </Typography.Paragraph>
-      </Card>
-    </Flex>
+          <Form form={form} layout="vertical" requiredMark={false} onFinish={submit}>
+            <Form.Item
+              label="管理员账号"
+              name="username"
+              rules={[{ required: true, message: "请输入账号" }]}
+            >
+              <Input autoComplete="username" />
+            </Form.Item>
+            <Form.Item
+              label="密码"
+              name="password"
+              rules={[{ required: true, message: "请输入密码" }]}
+            >
+              <Input.Password autoComplete="current-password" visibilityToggle={false} />
+            </Form.Item>
+            {error && (
+              <Form.Item>
+                <ErrorNotice error={error} title="登录失败" />
+              </Form.Item>
+            )}
+            <Button type="primary" htmlType="submit" block loading={busy}>
+              登录
+            </Button>
+          </Form>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 16, fontSize: 12 }}>
+            系统不提供默认账号。仅连接本单位内网管理端，不依赖任何公网资源。
+          </Typography.Paragraph>
+        </div>
+        <footer className="login-foot">© 恺域科技</footer>
+      </section>
+    </div>
   );
 }
 

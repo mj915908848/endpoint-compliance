@@ -28,7 +28,8 @@ const device: DeviceSummary = {
 describe("plain-language result explanation", () => {
   it("shows the confirmed failures before technical details", () => {
     render(<DeviceGuide device={device} />);
-    expect(screen.getByText(/检查未通过：发现 3 个违规对象/)).toBeTruthy();
+    expect(screen.getByText("检查未通过")).toBeTruthy();
+    expect(screen.getByText("3 个违规对象")).toBeTruthy();
     expect(screen.getByText(/只要安装即视为违规/)).toBeTruthy();
   });
 
