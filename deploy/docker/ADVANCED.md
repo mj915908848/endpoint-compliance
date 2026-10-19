@@ -24,7 +24,7 @@ PFX 格式的证书：按 `.env` 里的说明改证书那两行。
 所有设置都写在 `.env` 里，改完执行 `docker compose up -d` 生效。`compose.yml` 不要改，升级时可以直接换成新版。
 
 - 对外端口不是 443：改 `HTTPS_PORT`，如 `HTTPS_PORT=8443`。
-- 固定版本：在 `.env` 末尾加 `COMPLIANCE_VERSION=0.2.26`，删掉后恢复跟随最新版。
+- 固定版本：把 `compose.yml` 里 `image: ghcr.io/mj915908848/compliance-server:latest` 的 `latest` 改成版本号，如 `0.2.26`；改回 `latest` 恢复跟随最新版。
 - 拉不下镜像：给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`），或用打包好的镜像（见下）。
 - 下文提到的管理端设置（如 `Compliance__TrustedProxies__0`、`HTTPS_PROXY`、保留天数）都按 `名字=值` 一行一个加到 `.env` 末尾。
 
@@ -39,7 +39,7 @@ docker load -i compliance-server-0.2.26.tar.gz   # 载入 ghcr.io/mj915908848/co
 docker compose up -d
 ```
 
-`.env` 不用改：默认用的 `latest` 就是最后载入的那个包。固定过版本（`COMPLIANCE_VERSION`）的，改成包的版本。升级时载入新版本的包再 `docker compose up -d`。用这种方式时不要运行 `docker compose pull`（服务器连不上镜像仓库）。
+`.env` 不用改：默认用的 `latest` 就是最后载入的那个包。在 `compose.yml` 里固定过版本的，改成包的版本。升级时载入新版本的包再 `docker compose up -d`。用这种方式时不要运行 `docker compose pull`（服务器连不上镜像仓库）。
 
 想用自己构建的镜像时，在能联网的机器上构建并打包（在源码仓库根目录运行，版本号按实际填）：
 
@@ -201,10 +201,10 @@ docker compose up -d
 **从“设置写在 compose.yml 里”的部署迁移**（目录里没有 `.env`、密码写在 `compose.yml` 里的）：
 
 1. 在原部署目录运行 `./backup.sh`，把旧的 `compose.yml` 改名为 `compose.yml.old` 留作对照，再按 README 第 1 步下载新的部署文件。
-2. `cp .env.example .env && chmod 600 .env`，从 `compose.yml.old` 抄过来：`DB_PASSWORD` 填 `x-db-password` 那行的密码（必须相同），`ADMIN_PASSWORD` 填管理员密码，端口改过的填 `HTTPS_PORT`，固定过版本的填 `COMPLIANCE_VERSION`；在 `environment` 里加过的其他设置按 `名字=值` 加到 `.env` 末尾。
+2. `cp .env.example .env && chmod 600 .env`，从 `compose.yml.old` 抄过来：`DB_PASSWORD` 填 `x-db-password` 那行的密码（必须相同），`ADMIN_PASSWORD` 填管理员密码，端口改过的填 `HTTPS_PORT`；固定过版本的，在新 `compose.yml` 的 `image` 行改标签；在 `environment` 里加过的其他设置按 `名字=值` 加到 `.env` 末尾。
 3. `docker compose up -d`。数据卷名不变，终端、策略和密钥都保留。确认能登录后可以删掉 `compose.yml.old`。
 
-0.2.24 及以前用 `.env` 部署的，原来的 `.env` 可以直接沿用：下载新的 `compose.yml` 覆盖旧文件后照常升级。`.env` 里的 `COMPLIANCE_IMAGE` 已不再使用，可以删掉；之前把它改成自己镜像名的，按上文“镜像来源”重新打包载入。
+0.2.24 及以前用 `.env` 部署的，原来的 `.env` 可以直接沿用：下载新的 `compose.yml` 覆盖旧文件后照常升级。`.env` 里的 `COMPLIANCE_IMAGE` 和 `COMPLIANCE_VERSION` 已不再使用，可以删掉：用它们固定过版本的，改在 `compose.yml` 里固定；改成自己镜像名的，按上文“镜像来源”重新打包载入。
 
 **数据保留**：管理端每小时自动清理一次：检查结果的上报记录保留 1 天（每台设备最新的检查结果另存，不受影响），告警、违规等其他上报记录保留 90 天，已恢复的告警保留 180 天（未恢复的一直保留），过期的登录会话和检查请求也一并删除。保留天数可在 `.env` 里调整，例如加 `Compliance__EventRetentionDays=180`、`Compliance__AlertRetentionDays=365`。管理页面 30 分钟未操作会自动退出（页面自动刷新不算操作），可用 `Compliance__SessionIdleMinutes` 调整，设为 `0` 关闭；无论是否操作，登录 8 小时后都需重新登录。告警中心默认列出未恢复的告警和最近 30 天恢复的，更早的在“已恢复”筛选下点“加载 30 天前恢复的告警”查看。
 

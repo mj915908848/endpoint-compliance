@@ -1,6 +1,6 @@
 # Docker 部署管理端
 
-需要一台装了 Docker 的 Linux 服务器。设置都写在 `.env` 里，`compose.yml` 不用改。
+需要一台装了 Docker 的 Linux 服务器。设置都写在 `.env` 里，`compose.yml` 不用改（只有固定版本时改它的 `image` 行，见 ADVANCED.md）。
 
 ## 部署
 
