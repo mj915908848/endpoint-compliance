@@ -9,7 +9,7 @@ import {
   useParams,
 } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu, Typography } from "antd";
+import { Alert, Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu } from "antd";
 import {
   AlertOutlined,
   AuditOutlined,
@@ -21,8 +21,8 @@ import {
   LockOutlined,
   LogoutOutlined,
   MenuOutlined,
-  SafetyCertificateOutlined,
   UpOutlined,
+  DownOutlined,
 } from "@ant-design/icons";
 import { HttpError, idleMs, markUse, onSessionLost, request } from "./api";
 import {
@@ -209,28 +209,38 @@ export function App() {
       }))}
     />
   );
-  // The account's actions stay out of sight until the name is clicked.
-  const account = (
-    <Dropdown
-      trigger={["click"]}
-      placement="topLeft"
-      menu={{
-        items: [
-          { key: "password", icon: <LockOutlined />, label: "修改密码" },
-          { key: "logout", icon: <LogoutOutlined />, label: "退出", disabled: logoutBusy },
-        ],
-        onClick: ({ key }) => {
-          setNavOpen(false);
-          if (key === "password") setPasswordOpen(true);
-          else void logout();
-        },
-      }}
-    >
+  const accountMenu = {
+    items: [
+      { key: "password", icon: <LockOutlined />, label: "修改密码" },
+      { key: "logout", icon: <LogoutOutlined />, label: "退出", disabled: logoutBusy },
+    ],
+    onClick: ({ key }: { key: string }) => {
+      setNavOpen(false);
+      if (key === "password") setPasswordOpen(true);
+      else void logout();
+    },
+  };
+  const avatar = (
+    <Avatar size={28} className="avatar">
+      {session.username.slice(0, 1).toUpperCase()}
+    </Avatar>
+  );
+  // In the top bar on wide screens, at the foot of the navigation drawer on narrow ones.
+  const topAccount = (
+    <Dropdown trigger={["click"]} placement="bottomRight" menu={accountMenu}>
+      <button type="button" className="top-account" aria-label={`账号 ${session.username}`}>
+        {avatar}
+        <span className="top-account-name">{session.username}</span>
+        <span className="top-account-role">{accountRole(session.roles)}</span>
+        <DownOutlined className="top-account-caret" />
+      </button>
+    </Dropdown>
+  );
+  const drawerAccount = (
+    <Dropdown trigger={["click"]} placement="topLeft" menu={accountMenu}>
       <button type="button" className="sidebar-account" aria-label={`账号 ${session.username}`}>
         <Flex align="center" gap={10}>
-          <Avatar size={32} className="avatar">
-            {session.username.slice(0, 1).toUpperCase()}
-          </Avatar>
+          {avatar}
           <div className="sidebar-account-name">
             <strong>{session.username}</strong>
             <span>{accountRole(session.roles)}</span>
@@ -241,23 +251,26 @@ export function App() {
     </Dropdown>
   );
   const brand = (
-    <Flex className="sidebar-brand" align="center" gap={10}>
-      <SafetyCertificateOutlined className="brand-icon" />
-      <div>
-        <strong>终端合规</strong>
-        <span>内网管理中心</span>
-      </div>
-    </Flex>
+    <NavLink to="/" className="brand" aria-label="终端合规管控 首页">
+      <img src="/brand/lockup.svg" alt="恺域科技" className="brand-lockup" />
+      <span className="brand-divider" />
+      <span className="brand-name">终端合规管控</span>
+    </NavLink>
   );
   return (
     <Layout className="app-shell">
-      <Layout.Sider width={224} className="sidebar">
-        <Flex vertical style={{ height: "100%" }}>
-          {brand}
-          <div className="sidebar-nav">{nav}</div>
-          {account}
-        </Flex>
-      </Layout.Sider>
+      <header className="topbar">
+        <Button
+          type="text"
+          className="topbar-menu"
+          aria-label="打开导航"
+          icon={<MenuOutlined />}
+          onClick={() => setNavOpen(true)}
+        />
+        {brand}
+        <span className="topbar-page">{page?.label ?? "终端合规"}</span>
+        <div className="topbar-end">{topAccount}</div>
+      </header>
       <Drawer
         placement="left"
         size={248}
@@ -268,9 +281,12 @@ export function App() {
         styles={{ body: { padding: 0 } }}
       >
         <Flex vertical style={{ height: "100%" }}>
-          {brand}
+          <div className="drawer-brand">
+            <img src="/brand/lockup-light.svg" alt="恺域科技" />
+            <span>终端合规管控</span>
+          </div>
           <div className="sidebar-nav">{nav}</div>
-          {account}
+          {drawerAccount}
         </Flex>
       </Drawer>
       <PasswordDialog
@@ -278,55 +294,53 @@ export function App() {
         open={passwordOpen}
         onClose={() => setPasswordOpen(false)}
       />
-      <Layout className="main">
-        <Flex className="mobile-bar" align="center" gap={8}>
-          <Button
-            type="text"
-            aria-label="打开导航"
-            icon={<MenuOutlined />}
-            onClick={() => setNavOpen(true)}
-          />
-          <Typography.Text strong>{page?.label ?? "终端合规"}</Typography.Text>
-        </Flex>
-        <Layout.Content className="content">
-          <ErrorNotice error={authError} />
-          {idleWarning && (
-            <Alert
-              type="warning"
-              showIcon
-              title={`${idleMinutes} 分钟未操作将自动退出，移动鼠标或按任意键继续使用。`}
-              style={{ marginBottom: 16 }}
-            />
-          )}
-          <ErrorBoundary key={location.pathname}>
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  <Overview
-                    openDevice={(id) => navigate(devicePath(id))}
-                    openDevices={(filter) => navigate(`/devices?filter=${filter}`)}
-                    openAlerts={() => navigate("/alerts")}
-                  />
-                }
+      <Layout className="below-top">
+        <Layout.Sider width={208} className="sidebar">
+          <div className="sidebar-nav">{nav}</div>
+        </Layout.Sider>
+        <Layout className="main">
+          <Layout.Content className="content">
+            <ErrorNotice error={authError} />
+            {idleWarning && (
+              <Alert
+                type="warning"
+                showIcon
+                title={`${idleMinutes} 分钟未操作将自动退出，移动鼠标或按任意键继续使用。`}
+                style={{ marginBottom: 16 }}
               />
-              <Route
-                path="/devices"
-                element={<Devices openDevice={(id) => navigate(devicePath(id))} />}
-              />
-              <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
-              <Route
-                path="/alerts"
-                element={<Alerts session={session} openDevice={(id) => navigate(devicePath(id))} />}
-              />
-              <Route path="/policies" element={<Policies session={session} />} />
-              <Route path="/registration" element={<Registration session={session} />} />
-              <Route path="/audit" element={<AuditPage />} />
-              <Route path="/system" element={<SystemPage session={session} />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </ErrorBoundary>
-        </Layout.Content>
+            )}
+            <ErrorBoundary key={location.pathname}>
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    <Overview
+                      openDevice={(id) => navigate(devicePath(id))}
+                      openDevices={(filter) => navigate(`/devices?filter=${filter}`)}
+                      openAlerts={() => navigate("/alerts")}
+                    />
+                  }
+                />
+                <Route
+                  path="/devices"
+                  element={<Devices openDevice={(id) => navigate(devicePath(id))} />}
+                />
+                <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
+                <Route
+                  path="/alerts"
+                  element={
+                    <Alerts session={session} openDevice={(id) => navigate(devicePath(id))} />
+                  }
+                />
+                <Route path="/policies" element={<Policies session={session} />} />
+                <Route path="/registration" element={<Registration session={session} />} />
+                <Route path="/audit" element={<AuditPage />} />
+                <Route path="/system" element={<SystemPage session={session} />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </ErrorBoundary>
+          </Layout.Content>
+        </Layout>
       </Layout>
     </Layout>
   );

@@ -248,7 +248,7 @@ describe("device detail", () => {
     });
     renderAt("/devices/dev-1");
     expect(await screen.findByText("Cursor 已安装")).toBeTruthy();
-    expect(screen.getAllByText(/发现 1 个违规对象/)).toHaveLength(1);
+    expect(screen.getAllByText("1 个违规对象")).toHaveLength(1);
     expect(screen.getByText("违规对象").parentElement?.textContent).toBe("违规对象1");
     expect(screen.getByText("软件安装与运行")).toBeTruthy();
     expect(screen.getByText("1 条")).toBeTruthy();
