@@ -2632,6 +2632,36 @@ if (OperatingSystem.IsWindows())
                         Assert(key?.GetValue("1") is "chatgpt.com", "Chrome value 1 missing");
                     blocklist.Apply(policy with { Mode = "Audit" });
                     Assert(store.Browsers.All(b => store.Read(b).SequenceEqual(saved[b])), "entries not removed");
+                    // Another admin's numbering may have gaps; nothing past the gap may be lost.
+                    using (
+                        var key = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(
+                            @"SOFTWARE\Policies\Google\Chrome\URLBlocklist",
+                            writable: true
+                        )
+                    )
+                    {
+                        foreach (var name in key.GetValueNames())
+                            key.DeleteValue(name, false);
+                        key.SetValue("1", "a.example");
+                        key.SetValue("2", "b.example");
+                        key.SetValue("4", "d.example");
+                        key.SetValue("10", "j.example");
+                    }
+                    Assert(
+                        store.Read("Chrome").SequenceEqual(["a.example", "b.example", "d.example", "j.example"]),
+                        "entries after a numbering gap not read"
+                    );
+                    blocklist.Apply(policy);
+                    var chrome = store.Read("Chrome");
+                    Assert(
+                        new[] { "a.example", "b.example", "d.example", "j.example" }.All(chrome.Contains),
+                        "others' entries after a gap lost on apply"
+                    );
+                    blocklist.Apply(policy with { Mode = "Audit" });
+                    Assert(
+                        store.Read("Chrome").SequenceEqual(["a.example", "b.example", "d.example", "j.example"]),
+                        "others' entries changed on removal"
+                    );
                 }
                 finally
                 {
