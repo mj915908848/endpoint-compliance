@@ -24,13 +24,13 @@
    cp .env.example .env && chmod 600 .env && vi .env
    ```
 
-   镜像来源在 `.env` 里选：
+   镜像来源：
 
-   | 来源 | `.env` 里怎么写 |
+   | 来源 | 怎么做 |
    | --- | --- |
-   | 镜像仓库 `ghcr.io`（默认） | 不用改 |
-   | 打包好的镜像（Releases 页的 `compliance-server-<版本>.tar.gz`，服务器不能访问 `ghcr.io` 时用） | 不用改，先 `docker load -i compliance-server-<版本>.tar.gz` |
-   | 从源码构建 | 去掉 `COMPOSE_FILE=compose.yml:compose.build.yml` 前面的 `#` |
+   | 镜像仓库 `ghcr.io`（默认） | 什么都不用做 |
+   | 打包好的镜像（Releases 页的 `compliance-server-<版本>.tar.gz`，服务器不能访问 `ghcr.io` 时用） | 先 `docker load -i compliance-server-<版本>.tar.gz` |
+   | 从源码构建 | 在 `.env` 里去掉 `COMPOSE_FILE=compose.yml:compose.build.yml` 前面的 `#` |
 
 3. 在旁边建 `certs` 目录，放入证书 `cert.pem`（含中间证书）和私钥 `key.pem`：
 

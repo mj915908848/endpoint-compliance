@@ -321,7 +321,7 @@ jobs:
           loaded=$(docker load -i compliance-server-0.0.0-ci.tar.gz)
           echo "$loaded" | grep -q 'Loaded image: ghcr.io/mj915908848/compliance-server:latest'
           sed -i 's/^COMPOSE_FILE=/# COMPOSE_FILE=/' .env
-          grep -q '^COMPLIANCE_VERSION=latest$' .env
+          ! grep -q '^COMPLIANCE_VERSION=' .env
           config=$(docker compose config)
           echo "$config" | grep -q 'image: ghcr.io/mj915908848/compliance-server:latest' && ! echo "$config" | grep -q 'build:' || exit 1
           docker compose up -d --wait --wait-timeout 180
