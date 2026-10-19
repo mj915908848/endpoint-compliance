@@ -545,10 +545,17 @@ public sealed class WindowsBlocklistStore : IBlocklistStore
     public List<string> Read(string browser)
     {
         using var key = Registry.LocalMachine.OpenSubKey(KeyOf(browser));
-        var values = new List<string>();
-        for (var i = 1; key?.GetValue(i.ToString()) is string value; i++)
-            values.Add(value);
-        return values;
+        if (key is null)
+            return [];
+        // Browsers read every numbered value, gaps included (another admin may have set 1, 2 and 4),
+        // and Write renumbers from what is read here, so stopping at the first gap would drop entries.
+        return key.GetValueNames()
+            .Select(name => (Name: name, Index: int.TryParse(name, out var i) ? i : 0))
+            .Where(v => v.Index > 0)
+            .OrderBy(v => v.Index)
+            .Select(v => key.GetValue(v.Name))
+            .OfType<string>()
+            .ToList();
     }
 
     public void Write(string browser, IReadOnlyList<string> values)
