@@ -39,6 +39,7 @@
     <!-- The enrollment's command line holds the code. -->
     <Property Id="EnrollAgent" Hidden="yes" />
 
+    <StandardDirectory Id="ProgramMenuFolder" />
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="ComplianceAgent" />
     </StandardDirectory>
@@ -79,6 +80,30 @@
           Name="ComplianceTray"
           Type="string"
           Value="&quot;[INSTALLFOLDER]Compliance.Tray.exe&quot;"
+          KeyPath="yes"
+        />
+      </Component>
+
+      <!-- Windows names and draws the tray's notifications after the Start menu shortcut carrying its
+           AppUserModelID (TrayApp.AppUserModelId); without one they read "NotifyIconGeneratedAumid_...". -->
+      <Component Id="TrayShortcut">
+        <Shortcut
+          Id="TrayShortcut"
+          Directory="ProgramMenuFolder"
+          Name="终端合规客户端"
+          Description="终端合规客户端通知中心"
+          Target="[INSTALLFOLDER]Compliance.Tray.exe"
+          Arguments="--notices"
+          WorkingDirectory="INSTALLFOLDER"
+        >
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="ComplianceAgent.Tray" />
+        </Shortcut>
+        <RegistryValue
+          Root="HKLM"
+          Key="SOFTWARE\Classes\AppUserModelId\ComplianceAgent.Tray"
+          Name="DisplayName"
+          Type="string"
+          Value="终端合规客户端"
           KeyPath="yes"
         />
       </Component>

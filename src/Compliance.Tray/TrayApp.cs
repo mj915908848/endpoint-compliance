@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using Compliance.Core;
 using Timer = System.Windows.Forms.Timer;
 
@@ -9,6 +10,8 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Notifications then carry the name and icon of the MSI's Start menu shortcut with this id.
+        SetCurrentProcessExplicitAppUserModelID(TrayApp.AppUserModelId);
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -45,12 +48,18 @@ public static class Program
             );
         }
     }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 }
 
 /// <summary>The notification-area icon: polls the service for notices, shows new ones as balloons and opens the notification center.</summary>
 public sealed class TrayApp : ApplicationContext
 {
     public const string MutexName = @"Local\ComplianceAgent.Tray";
+
+    /// <summary>The tray's AppUserModelID, also set on the MSI's Start menu shortcut (Package.wxs).</summary>
+    public const string AppUserModelId = "ComplianceAgent.Tray";
     public const string ShowEventName = @"Local\ComplianceAgent.Tray.Show";
 
     private readonly NotifyIcon icon;

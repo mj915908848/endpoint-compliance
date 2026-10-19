@@ -484,12 +484,24 @@ try:
                 assert time.monotonic() < deadline, "The MSI-installed service did not report"
                 time.sleep(2)
 
+        # The Start menu shortcut gives the tray's notifications their name and icon through its AppUserModelID.
+        shortcut = pathlib.Path(os.environ["ProgramData"]) / r"Microsoft\Windows\Start Menu\Programs\终端合规客户端.lnk"
+
+        def notification_identity():
+            assert shortcut.exists(), f"The MSI did not add {shortcut}"
+            script = f"$s = (New-Object -ComObject Shell.Application).NameSpace('{shortcut.parent}').ParseName('{shortcut.name}'); $s.ExtendedProperty('System.AppUserModel.ID')"
+            aumid = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
+            assert aumid == "ComplianceAgent.Tray", f"The Start menu shortcut's AppUserModelID is {aumid!r}"
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Classes\AppUserModelId\ComplianceAgent.Tray") as key:
+                assert winreg.QueryValueEx(key, "DisplayName")[0] == "终端合规客户端"
+
         def removed():
             assert subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True).returncode != 0, \
                 "Uninstalling the MSI left the service"
             assert not program.exists(), \
                 f"Uninstalling the MSI left {program}: {[str(p) for p in program.rglob('*')][:20]}"
             assert not agent_data.exists(), f"Uninstalling the MSI left {agent_data}"
+            assert not shortcut.exists(), f"Uninstalling the MSI left {shortcut}"
 
         def pipe(request_line):
             with open(r"\\.\pipe\ComplianceAgent.Notifications.v1", "r+b", buffering=0) as p:
@@ -514,7 +526,8 @@ try:
         assert "--config" in config and str(program).lower() in config.lower(), f"Service not the MSI's: {config}"
         failure = subprocess.run(["sc.exe", "qfailure", "ComplianceAgent"], capture_output=True, text=True, errors="replace").stdout
         assert failure.count("RESTART") >= 3, f"Service restarts on failure not configured: {failure}"
-        print(f"PASS the MSI takes over a script install and keeps its enrollment ({taken['hostName']})")
+        notification_identity()
+        print(f"PASS the MSI takes over a script install and keeps its enrollment ({taken['hostName']}); its shortcut names the tray's notifications")
         # Browser rules the client added go with it; someone else's stay. Planted with the service stopped, so
         # only the uninstall can remove them.
         subprocess.run(["sc.exe", "stop", "ComplianceAgent"], capture_output=True)
