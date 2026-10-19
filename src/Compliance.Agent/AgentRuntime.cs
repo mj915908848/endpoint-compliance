@@ -70,6 +70,14 @@ public static class PolicyKeys
             }
             : config;
 
+    /// <summary>
+    /// The server now signs with the next key: completing the rotation re-signed the release this client holds, which
+    /// has to be fetched again for the next key to become current. A key the client never learned of is not a reason
+    /// to fetch, since no policy signed with it could verify.
+    /// </summary>
+    public static bool Resigned(AgentConfiguration config, string? signingKeyId) =>
+        signingKeyId is not null && signingKeyId == config.NextPolicyKeyId;
+
     /// <summary>The key ids reported in heartbeats, so the server can tell when every client knows the next key.</summary>
     public static string[] Ids(AgentConfiguration config) =>
         new[] { config.PolicyKeyId, config.NextPolicyKeyId }.OfType<string>().ToArray();
@@ -795,6 +803,7 @@ public sealed class AgentRuntime(
     {
         string? policyIssue = null;
         long? assignedSerial = null;
+        string? signingKeyId = null;
         // Health goes first when connectivity resumes, then historical events.
         try
         {
@@ -830,6 +839,12 @@ public sealed class AgentRuntime(
                 && serial.TryGetInt64(out var assigned)
             )
                 assignedSerial = assigned;
+            if (
+                reply.ValueKind == JsonValueKind.Object
+                && reply.TryGetProperty("policyKeyId", out var signing)
+                && signing.ValueKind == JsonValueKind.String
+            )
+                signingKeyId = signing.GetString();
             // While the server rotates its policy key it announces the next one, signed with the current key. The
             // next key is kept until a policy signed with it arrives, even when a reply stops announcing it: the
             // rotation may have completed between two heartbeats.
@@ -891,8 +906,13 @@ public sealed class AgentRuntime(
         {
             Console.Error.WriteLine("Heartbeat pending: " + e.GetType().Name);
         }
-        // The same release comes back unchanged, so it is fetched (up to 4 MB) only when another one is assigned.
-        var held = signedPolicy is not null && policy is not null && assignedSerial == policy.Serial;
+        // The same release comes back unchanged, so it is fetched (up to 4 MB) only when another one is assigned, or when
+        // a completed key rotation re-signed it with the next key, which only a policy signed with it makes current.
+        var held =
+            signedPolicy is not null
+            && policy is not null
+            && assignedSerial == policy.Serial
+            && !PolicyKeys.Resigned(config, signingKeyId);
         if (!held)
             try
             {

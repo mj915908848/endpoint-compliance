@@ -1954,6 +1954,7 @@ export interface components {
       keyRotation: null | components["schemas"]["SignedKeyRotation"];
       /** Format: int64 */
       policySerial: null | number;
+      policyKeyId: null | string;
     };
     HeartbeatRequest: {
       hostName: string;

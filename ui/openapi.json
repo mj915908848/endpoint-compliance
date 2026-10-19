@@ -2112,7 +2112,8 @@
           "serverVersion",
           "minimumAgentVersion",
           "keyRotation",
-          "policySerial"
+          "policySerial",
+          "policyKeyId"
         ],
         "type": "object",
         "properties": {
@@ -2148,6 +2149,12 @@
               "integer"
             ],
             "format": "int64"
+          },
+          "policyKeyId": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

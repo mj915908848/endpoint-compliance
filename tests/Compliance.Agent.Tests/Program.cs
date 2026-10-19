@@ -2402,6 +2402,14 @@ await Check(
         var rotating = PolicyKeys.Accept(config, announced);
         Assert(PolicyKeys.Ids(rotating).SequenceEqual(["current", "next"]), "both keys reported");
         Assert(PolicyKeys.Accept(rotating, announced) == rotating, "the same announcement changes nothing");
+        // Completing re-signs the held release under the same serial; only the signing key id says to fetch it.
+        Assert(
+            PolicyKeys.Resigned(rotating, "next")
+                && !PolicyKeys.Resigned(rotating, "current")
+                && !PolicyKeys.Resigned(rotating, null)
+                && !PolicyKeys.Resigned(config, "next"),
+            "a held release is fetched again only once the server signs with the known next key"
+        );
         Assert(
             PolicyKeys.PublicKeyFor(rotating, "current") == config.PolicyPublicKeyPem
                 && PolicyKeys.PublicKeyFor(rotating, "next") == rotation.NewPublicKeyPem,

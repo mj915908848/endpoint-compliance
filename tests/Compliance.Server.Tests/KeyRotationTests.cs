@@ -77,6 +77,7 @@ public class KeyRotationTests
 
         // Policies stay signed with the current key until the rotation completes.
         Assert.Equal(first.PolicyKeyId, (await Policy(f)).KeyId);
+        Assert.Equal(first.PolicyKeyId, (await Heartbeat(f, first.PolicyKeyId)).GetProperty("policyKeyId").GetString());
         var waiting = await f.Client.PostAsJsonAsync("/api/settings/signing-key/rotation/complete", new { });
         Assert.Equal(HttpStatusCode.Conflict, waiting.StatusCode);
 
@@ -89,6 +90,10 @@ public class KeyRotationTests
 
         var resigned = await Policy(f);
         Assert.Equal(rotation.NewKeyId, resigned.KeyId);
+        // The release keeps its serial, so heartbeats name the new key for clients to fetch it again.
+        var after = await Heartbeat(f, first.PolicyKeyId, rotation.NewKeyId);
+        Assert.Equal(rotation.NewKeyId, after.GetProperty("policyKeyId").GetString());
+        Assert.Equal(Wire.Read<PolicyDocument>(resigned.Payload).Serial, after.GetProperty("policySerial").GetInt64());
         PolicyCrypto.Verify(resigned, rotation.NewPublicKeyPem, f.Device, 0, f.Clock.Now);
         Assert.ThrowsAny<CryptographicException>(() =>
             PolicyCrypto.Verify(resigned, first.PolicyPublicKeyPem, f.Device, 0, f.Clock.Now)
