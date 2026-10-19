@@ -32,19 +32,22 @@ PFX 格式的证书：按 `.env` 里的说明改证书那两行。
 
 **镜像仓库**（默认）：`ghcr.io/mj915908848/compliance-server`，标签为版本号和 `latest`，服务器要能访问 `ghcr.io`。
 
-**打包好的镜像**：服务器上不能访问 `ghcr.io` 或想用自己构建的镜像时，在能联网的机器上打包，再拷到服务器。
+**打包好的镜像**：服务器上不能访问 `ghcr.io` 时用。每个版本的 Releases 页都附带 `compliance-server-<版本>.tar.gz`（x86-64），就是镜像仓库里同一版本的镜像。下载后拷到服务器：
 
 ```bash
-# 从源码构建并打包（在源码仓库根目录运行，版本号按实际填）
-docker build -f deploy/docker/Dockerfile --build-arg VERSION=0.2.25 -t compliance-server:0.2.25 .
-docker save compliance-server:0.2.25 | gzip > compliance-server-0.2.25.tar.gz
-
-# 或者把镜像仓库里的版本打包
-docker pull ghcr.io/mj915908848/compliance-server:0.2.25
-docker save ghcr.io/mj915908848/compliance-server:0.2.25 | gzip > compliance-server-0.2.25.tar.gz
+docker load -i compliance-server-0.2.26.tar.gz   # 显示 Loaded image: ghcr.io/mj915908848/compliance-server:0.2.26
 ```
 
-服务器上 `docker load -i compliance-server-0.2.25.tar.gz`，最后一行显示 `Loaded image: 名字:版本`，把名字和版本分别填进 `.env` 的 `COMPLIANCE_IMAGE` 和 `COMPLIANCE_VERSION`。用这种方式时不要运行 `docker compose pull`（会去网上找这个名字的镜像）。服务器的架构要与打包的机器相同（一般都是 x86-64）。
+`.env` 里 `COMPLIANCE_IMAGE` 不用改，`COMPLIANCE_VERSION=0.2.26`，然后 `docker compose up -d`。用这种方式时不要运行 `docker compose pull`（服务器连不上镜像仓库）。
+
+想用自己构建的镜像时，在能联网的机器上构建并打包（在源码仓库根目录运行，版本号按实际填）：
+
+```bash
+docker build -f deploy/docker/Dockerfile --build-arg VERSION=0.2.26 -t compliance-server:0.2.26 .
+docker save compliance-server:0.2.26 | gzip > compliance-server-0.2.26.tar.gz
+```
+
+服务器上 `docker load` 后，把 `.env` 的 `COMPLIANCE_IMAGE` 改成 `compliance-server`、`COMPLIANCE_VERSION` 改成 `0.2.26`。服务器的架构要与打包的机器相同（一般都是 x86-64）。
 
 **从源码构建**：部署目录是源码仓库里的 `deploy/docker`，`.env` 里写 `COMPOSE_FILE=compose.yml:compose.build.yml`。每次 `docker compose up -d` 都按当前源码重新构建（需要几分钟，以及访问 Docker Hub、npm、NuGet）。升级用 `git pull && docker compose up -d`。
 
@@ -179,7 +182,7 @@ docker compose up -d
 积累一批改动后手动发布一个版本（Releases 页，版本号从 `0.2.0` 起每次加一）：
 
 - 管理端镜像推到 `ghcr.io/mj915908848/compliance-server`，标签为版本号和 `latest`；
-- Releases 页附带 `compliance-client-<版本>-windows-x64.msi`：Windows 客户端安装包。
+- Releases 页附带 `compliance-client-<版本>-windows-x64.msi`（Windows 客户端安装包）和 `compliance-server-<版本>.tar.gz`（管理端镜像，用于不能访问 `ghcr.io` 的服务器）。
 
 管理端当前版本显示在“系统”页。
 

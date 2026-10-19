@@ -42,7 +42,7 @@ python3 integration/e2e.py
 
 格式化：`dotnet csharpier format src tests`，`cd ui && npm run format`。
 
-发版：手动运行 [Release 流程](.github/workflows/release.yml)，产出客户端 MSI 和管理端镜像 `ghcr.io/mj915908848/compliance-server`。
+发版：手动运行 [Release 流程](.github/workflows/release.yml)，产出客户端 MSI、管理端镜像 `ghcr.io/mj915908848/compliance-server`，以及同一镜像的离线包 `compliance-server-<版本>.tar.gz`。
 
 ## 目前不支持
 

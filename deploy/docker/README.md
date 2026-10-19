@@ -29,7 +29,7 @@
    | 来源 | `.env` 里怎么写 |
    | --- | --- |
    | 镜像仓库 `ghcr.io`（默认） | 不用改 |
-   | 打包好的镜像 | 先 `docker load -i compliance-server-<版本>.tar.gz`，再把 `COMPLIANCE_IMAGE`、`COMPLIANCE_VERSION` 改成它显示的名字和版本 |
+   | 打包好的镜像（Releases 页的 `compliance-server-<版本>.tar.gz`，服务器不能访问 `ghcr.io` 时用） | 先 `docker load -i compliance-server-<版本>.tar.gz`，再把 `COMPLIANCE_VERSION` 改成这个版本，如 `0.2.26` |
    | 从源码构建 | 去掉 `COMPOSE_FILE=compose.yml:compose.build.yml` 前面的 `#` |
 
 3. 在旁边建 `certs` 目录，放入证书 `cert.pem`（含中间证书）和私钥 `key.pem`：
@@ -54,7 +54,7 @@
 先备份 `./backup.sh`，然后按镜像来源：
 
 - 镜像仓库：`docker compose pull && docker compose up -d`
-- 打包好的镜像：`docker load -i` 新的包，改 `.env` 里的 `COMPLIANCE_VERSION`，`docker compose up -d`
+- 打包好的镜像：`docker load -i` 新版本的 `compliance-server-<版本>.tar.gz`，把 `.env` 里的 `COMPLIANCE_VERSION` 改成新版本，`docker compose up -d`
 - 从源码构建：`git pull && docker compose up -d`
 
 ## 备份
