@@ -105,12 +105,8 @@
     <Property Id="REMEMBEREDINSTALLFOLDER">
       <RegistrySearch Root="HKLM" Key="SOFTWARE\ComplianceAgent" Name="InstallFolder" Type="raw" Bitness="always64" />
     </Property>
-    <SetProperty
-      Id="AGENTDATAFOLDER"
-      Value="[CommonAppDataFolder]ComplianceAgent\"
-      Before="WixRemoveFoldersEx"
-      Sequence="execute"
-    />
+    <!-- RemoveFolderEx expands the variable itself; directory properties are not resolved yet when it runs. -->
+    <Property Id="AGENTDATAFOLDER" Value="%ProgramData%\ComplianceAgent\" />
 
     <Feature Id="Main" Title="终端合规客户端">
       <ComponentGroupRef Id="Client" />
