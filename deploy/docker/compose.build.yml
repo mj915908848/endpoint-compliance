@@ -1,7 +1,9 @@
-# Builds the server image from this repository instead of pulling it:
-#   docker compose -f compose.yml -f compose.build.yml up -d --build
+# Builds the server image from this repository instead of pulling it. Turned on by COMPOSE_FILE=compose.yml:compose.build.yml in .env.
 services:
   server:
+    image: compliance-server:source
+    # Every `docker compose up` rebuilds from the checked-out source, so upgrading is git pull + up.
+    pull_policy: build
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile

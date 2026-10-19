@@ -1,9 +1,7 @@
-# 终端合规管理端。第一次启动前改掉两处【改】。
+# 终端合规管理端：PostgreSQL + 管理端。设置都在同目录的 .env 里（从 .env.example 复制），这个文件不用改。
 name: compliance
 
-# 数据库密码，只用字母和数字。【改】
-x-db-password: &db-password 改成数据库密码
-
+# Container output is kept in rotated files: 3 × 10 MB per container, instead of one file that grows until the disk is full.
 x-logging: &logging
   driver: json-file
   options:
@@ -18,7 +16,7 @@ services:
     environment:
       POSTGRES_DB: compliance
       POSTGRES_USER: compliance
-      POSTGRES_PASSWORD: *db-password
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?在 .env 中设置 DB_PASSWORD}
     volumes:
       - db:/var/lib/postgresql
     healthcheck:
@@ -28,21 +26,21 @@ services:
       retries: 20
 
   server:
-    image: ghcr.io/mj915908848/compliance-server:latest
+    # COMPLIANCE_IMAGE and COMPLIANCE_VERSION in .env pick the registry image (default), a loaded image, or (with compose.build.yml) a source build.
+    image: ${COMPLIANCE_IMAGE:-ghcr.io/mj915908848/compliance-server}:${COMPLIANCE_VERSION:-latest}
     restart: unless-stopped
     logging: *logging
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "443:8443"
+      - "${HTTPS_PORT:-443}:8443"
+    # Certificate settings and any other server setting (proxy, retention, trusted gateway) come from .env.
+    env_file: .env
     environment:
       Compliance__Database: Host=db;Database=compliance;Username=compliance
-      PGPASSWORD: *db-password
-      # 管理员 admin 的初始密码，至少 16 位，不含 " 和 \ 。【改】
-      Compliance__BootstrapUsers: '[{"username":"admin","password":"改成管理员密码","roles":["Reader","Operator","Publisher"]}]'
-      Kestrel__Certificates__Default__Path: /certs/cert.pem
-      Kestrel__Certificates__Default__KeyPath: /certs/key.pem
+      PGPASSWORD: ${DB_PASSWORD}
+      Compliance__BootstrapUsers: '[{"username":"${ADMIN_USER:-admin}","password":"${ADMIN_PASSWORD:?在 .env 中设置 ADMIN_PASSWORD}","roles":["Reader","Operator","Publisher"]}]'
       TZ: Asia/Shanghai
     volumes:
       - ./certs:/certs:ro
