@@ -44,11 +44,12 @@ docker compose up -d
 想用自己构建的镜像时，在能联网的机器上构建并打包（在源码仓库根目录运行，版本号按实际填）：
 
 ```bash
-docker build -f deploy/docker/Dockerfile --build-arg VERSION=0.2.26 -t compliance-server:0.2.26 .
-docker save compliance-server:0.2.26 | gzip > compliance-server-0.2.26.tar.gz
+i=ghcr.io/mj915908848/compliance-server
+docker build -f deploy/docker/Dockerfile --build-arg VERSION=0.2.26 -t $i:0.2.26 -t $i:latest .
+docker save $i:0.2.26 $i:latest | gzip > compliance-server-0.2.26.tar.gz
 ```
 
-服务器上 `docker load` 后，把 `.env` 的 `COMPLIANCE_IMAGE` 改成 `compliance-server`、`COMPLIANCE_VERSION` 改成 `0.2.26`。服务器的架构要与打包的机器相同（一般都是 x86-64）。
+服务器上同样 `docker load` 后 `docker compose up -d`。服务器的架构要与打包的机器相同（一般都是 x86-64）。
 
 **从源码构建**：部署目录是源码仓库里的 `deploy/docker`，`.env` 里写 `COMPOSE_FILE=compose.yml:compose.build.yml`。每次 `docker compose up -d` 都按当前源码重新构建（需要几分钟，以及访问 Docker Hub、npm、NuGet）。升级用 `git pull && docker compose up -d`。
 
@@ -203,7 +204,7 @@ docker compose up -d
 2. `cp .env.example .env && chmod 600 .env`，从 `compose.yml.old` 抄过来：`DB_PASSWORD` 填 `x-db-password` 那行的密码（必须相同），`ADMIN_PASSWORD` 填管理员密码，端口改过的填 `HTTPS_PORT`，固定过版本的填 `COMPLIANCE_VERSION`；在 `environment` 里加过的其他设置按 `名字=值` 加到 `.env` 末尾。
 3. `docker compose up -d`。数据卷名不变，终端、策略和密钥都保留。确认能登录后可以删掉 `compose.yml.old`。
 
-0.2.24 及以前用 `.env` 部署的，原来的 `.env` 可以直接沿用：下载新的 `compose.yml` 覆盖旧文件后照常升级。
+0.2.24 及以前用 `.env` 部署的，原来的 `.env` 可以直接沿用：下载新的 `compose.yml` 覆盖旧文件后照常升级。`.env` 里的 `COMPLIANCE_IMAGE` 已不再使用，可以删掉；之前把它改成自己镜像名的，按上文“镜像来源”重新打包载入。
 
 **数据保留**：管理端每小时自动清理一次：检查结果的上报记录保留 1 天（每台设备最新的检查结果另存，不受影响），告警、违规等其他上报记录保留 90 天，已恢复的告警保留 180 天（未恢复的一直保留），过期的登录会话和检查请求也一并删除。保留天数可在 `.env` 里调整，例如加 `Compliance__EventRetentionDays=180`、`Compliance__AlertRetentionDays=365`。管理页面 30 分钟未操作会自动退出（页面自动刷新不算操作），可用 `Compliance__SessionIdleMinutes` 调整，设为 `0` 关闭；无论是否操作，登录 8 小时后都需重新登录。告警中心默认列出未恢复的告警和最近 30 天恢复的，更早的在“已恢复”筛选下点“加载 30 天前恢复的告警”查看。
 
