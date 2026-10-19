@@ -15,17 +15,38 @@ sudo chown -R 1654:1654 certs && sudo chmod 600 certs/*
 
 证书要用客户信任的泛域名证书（如 `*.example.com`），并给服务器加内网 DNS 记录。客户端必须用证书覆盖的域名访问，不能用 IP。容器内以 uid 1654（非 root）运行，所以私钥要 `chown 1654:1654`。
 
-PFX 格式的证书：在 `compose.yml` 里把 `Kestrel__Certificates__Default__KeyPath` 一行换成 `Kestrel__Certificates__Default__Password: 证书密码`，`Path` 改为 `/certs/cert.pfx`。
+PFX 格式的证书：按 `.env` 里的说明改证书那两行。
 
 更换证书：替换 `certs` 里的文件后 `docker compose restart server`。
 
-## 改端口、固定版本
+## 改端口、固定版本、其他设置
 
-- 对外端口不是 443：把 `ports` 里的 `"443:8443"` 改成如 `"8443:8443"`。
-- 固定版本：把 `compliance-server:latest` 改成如 `compliance-server:0.2.24`，改回 `latest` 恢复跟随最新版。
-- 拉不下镜像：给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`）。
-- `compose.yml` 里有密码，可以 `chmod 600 compose.yml`。
-- 改了 `compose.yml` 后执行 `docker compose up -d` 生效。
+所有设置都写在 `.env` 里，改完执行 `docker compose up -d` 生效。`compose.yml` 不要改，升级时可以直接换成新版。
+
+- 对外端口不是 443：改 `HTTPS_PORT`，如 `HTTPS_PORT=8443`。
+- 固定版本：`COMPLIANCE_VERSION=0.2.25`，改回 `latest` 恢复跟随最新版。
+- 拉不下镜像：给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`），或用打包好的镜像（见下）。
+- 下文提到的管理端设置（如 `Compliance__TrustedProxies__0`、`HTTPS_PROXY`、保留天数）都按 `名字=值` 一行一个加到 `.env` 末尾。
+
+## 镜像来源
+
+**镜像仓库**（默认）：`ghcr.io/mj915908848/compliance-server`，标签为版本号和 `latest`，服务器要能访问 `ghcr.io`。
+
+**打包好的镜像**：服务器上不能访问 `ghcr.io` 或想用自己构建的镜像时，在能联网的机器上打包，再拷到服务器。
+
+```bash
+# 从源码构建并打包（在源码仓库根目录运行，版本号按实际填）
+docker build -f deploy/docker/Dockerfile --build-arg VERSION=0.2.25 -t compliance-server:0.2.25 .
+docker save compliance-server:0.2.25 | gzip > compliance-server-0.2.25.tar.gz
+
+# 或者把镜像仓库里的版本打包
+docker pull ghcr.io/mj915908848/compliance-server:0.2.25
+docker save ghcr.io/mj915908848/compliance-server:0.2.25 | gzip > compliance-server-0.2.25.tar.gz
+```
+
+服务器上 `docker load -i compliance-server-0.2.25.tar.gz`，最后一行显示 `Loaded image: 名字:版本`，把名字和版本分别填进 `.env` 的 `COMPLIANCE_IMAGE` 和 `COMPLIANCE_VERSION`。用这种方式时不要运行 `docker compose pull`（会去网上找这个名字的镜像）。服务器的架构要与打包的机器相同（一般都是 x86-64）。
+
+**从源码构建**：部署目录是源码仓库里的 `deploy/docker`，`.env` 里写 `COMPOSE_FILE=compose.yml:compose.build.yml`。每次 `docker compose up -d` 都按当前源码重新构建（需要几分钟，以及访问 Docker Hub、npm、NuGet）。升级用 `git pull && docker compose up -d`。
 
 ## 客户端安装细节
 
@@ -51,21 +72,21 @@ PFX 格式的证书：在 `compose.yml` 里把 `Kestrel__Certificates__Default__
 
 转发到管理端有两种方式：
 
-**方式一（推荐）：网关转发到 HTTPS。** 本目录配置不用改，网关的上游填 `https://服务器地址:对外端口`（`compose.yml` 里 `ports` 的前一个数字）。容器里也装着同一张泛域名证书；网关若校验上游证书，上游的主机名（SNI）要填证书覆盖的域名，或关闭上游证书校验。
+**方式一（推荐）：网关转发到 HTTPS。** 本目录配置不用改，网关的上游填 `https://服务器地址:对外端口`（`.env` 里的 `HTTPS_PORT`）。容器里也装着同一张泛域名证书；网关若校验上游证书，上游的主机名（SNI）要填证书覆盖的域名，或关闭上游证书校验。
 
-**方式二：网关转发到 HTTP。** 容器里不放证书（不用建 `certs` 目录）。在 `compose.yml` 的 `server` → `environment` 里删掉 `Kestrel__Certificates__...` 两行，并加上：
+**方式二：网关转发到 HTTP。** 容器里不放证书（不用建 `certs` 目录）。在 `.env` 里删掉 `Kestrel__Certificates__...` 两行，并加上：
 
-```yaml
-      ASPNETCORE_URLS: http://+:8443
-      Compliance__TrustedProxies__0: 网关的 IP
+```bash
+ASPNETCORE_URLS=http://+:8443
+Compliance__TrustedProxies__0=网关的 IP
 ```
 
 网关必须带上 `X-Forwarded-Proto: https` 和 `X-Forwarded-For`。管理端只接受来自 `TrustedProxies` 中 IP 的这两个头，其他来源的 HTTP 请求一律拒绝（返回 “HTTPS is required”）。网关到管理端这一段是明文，两台机器之间应是机房内网或同一 VLAN。
 
 对外端口只应让网关访问到：
 
-- 网关与管理端在同一台机器：`ports` 写成 `"127.0.0.1:8443:8443"`，`TrustedProxies` 填 Docker 网络的网关地址（启动后用 `docker network inspect compliance_default -f '{{(index .IPAM.Config 0).Gateway}}'` 查看，通常为 `172.18.0.1` 一类）。
-- 网关在另一台机器：`ports` 写成 `"8443:8443"`，`TrustedProxies` 填网关的内网 IP（中间有 NAT 时填 NAT 后的地址），并只允许网关访问 8443。Docker 映射的端口不受 ufw、firewalld 规则约束，要用 `DOCKER-USER` 链或云服务器安全组：
+- 网关与管理端在同一台机器：`.env` 里写 `HTTPS_PORT=127.0.0.1:8443`，`TrustedProxies` 填 Docker 网络的网关地址（启动后用 `docker network inspect compliance_default -f '{{(index .IPAM.Config 0).Gateway}}'` 查看，通常为 `172.18.0.1` 一类）。
+- 网关在另一台机器：`HTTPS_PORT=8443`，`TrustedProxies` 填网关的内网 IP（中间有 NAT 时填 NAT 后的地址），并只允许网关访问 8443。Docker 映射的端口不受 ufw、firewalld 规则约束，要用 `DOCKER-USER` 链或云服务器安全组：
 
   ```bash
   sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 8443 ! -s 网关的内网IP -j DROP
@@ -114,9 +135,9 @@ server {
 
 ## 管理员密码与系统设置
 
-**管理员密码**：`compose.yml` 里 `Compliance__BootstrapUsers` 的密码只在第一次启动时用来创建账号，之后再改不起作用。登录后点左下角的账号名，在弹出的菜单里选「修改密码」，修改后其他浏览器上的登录会退出。
+**管理员密码**：`.env` 里的 `ADMIN_PASSWORD` 只在第一次启动时用来创建账号，之后再改不起作用。登录后点左下角的账号名，在弹出的菜单里选「修改密码」，修改后其他浏览器上的登录会退出。
 
-忘记密码时，删掉账号和所有登录会话再重启，管理端会按 `compose.yml` 里 `Compliance__BootstrapUsers` 的账号和密码重新创建账号。终端、策略、告警和审计记录都不受影响。下面的 `admin` 换成实际的账号名：
+忘记密码时，删掉账号和所有登录会话再重启，管理端会按 `.env` 里 `ADMIN_USER`、`ADMIN_PASSWORD` 重新创建账号。终端、策略、告警和审计记录都不受影响。下面的 `admin` 换成实际的账号名：
 
 ```bash
 docker compose exec db psql -U compliance -d compliance -c "DELETE FROM sessions; DELETE FROM users WHERE username = 'admin'"
@@ -126,13 +147,13 @@ docker compose exec db psql -U compliance -d compliance -c "DELETE FROM sessions
 docker compose restart server
 ```
 
-**告警推送**：在「系统设置」里填企业微信、钉钉或飞书的群机器人地址，新告警约 30 秒内推送到群里。管理端需要能访问外网上对应的地址（`qyapi.weixin.qq.com`、`oapi.dingtalk.com` 或 `open.feishu.cn`）。服务器只能经代理上网时，在 `compose.yml` 的 `server` 环境变量里加 `HTTPS_PROXY: http://代理地址:端口`。
+**告警推送**：在「系统设置」里填企业微信、钉钉或飞书的群机器人地址，新告警约 30 秒内推送到群里。管理端需要能访问外网上对应的地址（`qyapi.weixin.qq.com`、`oapi.dingtalk.com` 或 `open.feishu.cn`）。服务器只能经代理上网时，在 `.env` 里加 `HTTPS_PROXY=http://代理地址:端口`。
 
 **审计记录**：默认永久保留，可在「系统设置」中改为保留 180 天到 3 年，超期的记录每小时清理一次。
 
 ## 备份与恢复
 
-备份用仓库里的 `backup.sh`，下载到 `compose.yml` 旁边：
+备份用部署目录里的 `backup.sh`（从源码构建时就在 `deploy/docker` 下；部署目录里没有时这样下载）：
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/mj915908848/endpoint-compliance/main/deploy/docker/backup.sh && chmod +x backup.sh
@@ -141,7 +162,7 @@ curl -fsSLO https://raw.githubusercontent.com/mj915908848/endpoint-compliance/ma
 
 在 `backups/<时间>/` 下生成数据库备份 `compliance.dump` 和管理端文件 `files.tar`（策略签名密钥、正在更换或已换下的密钥、上传的客户端安装包），请拷贝到别的机器保存。**签名密钥丢失后，所有已登记终端都会拒收新策略，只能逐台重新登记。** 用 `KEEP=14 ./backup.sh` 可只保留最近 14 份。
 
-恢复到新服务器：先按 README 的“部署”放好 `compose.yml` 和证书但不要启动（`compose.yml` 里的数据库密码要与原服务器相同），然后：
+恢复到新服务器：先按 README 的“部署”放好部署文件、`.env` 和证书但不要启动（`.env` 里的 `DB_PASSWORD` 要与原服务器相同），然后：
 
 ```bash
 docker compose up -d db
@@ -162,7 +183,7 @@ docker compose up -d
 
 管理端当前版本显示在“系统”页。
 
-**升级管理端**：在服务器的部署目录运行
+**升级管理端**：先 `./backup.sh`，再按 README 的“升级”换成新版本；数据库结构在启动时自动升级。镜像仓库方式的完整命令：
 
 ```bash
 ./backup.sh
@@ -170,13 +191,17 @@ docker compose pull
 docker compose up -d
 ```
 
-先备份，再拉取最新镜像并换成新版本；数据库结构在启动时自动升级。固定版本见上文“改端口、固定版本”。
+部署目录里的 `compose.yml` 不是最新版时（例如从旧版本迁移），先重新下载 `compose.yml` 和 `.env.example`（见 README 第 1 步）。
 
-0.2.24 及以前的部署用 `.env` 存配置：在原来的部署目录按 README 换上新的 `compose.yml`，把 `.env` 里的 `DB_PASSWORD`、管理员账号密码、端口和证书设置填进去（数据库密码必须与原来相同），改过 `compose.yml` 的把改动补回新文件，证书不动，再按上面三条命令升级；之后 `.env` 可以删掉。
+**从“设置写在 compose.yml 里”的部署迁移**（目录里没有 `.env`、密码写在 `compose.yml` 里的）：
 
-在源码仓库里从源码构建同样可用：更新源码后 `docker compose -f compose.yml -f compose.build.yml up -d --build`。
+1. 在原部署目录运行 `./backup.sh`，把旧的 `compose.yml` 改名为 `compose.yml.old` 留作对照，再按 README 第 1 步下载新的部署文件。
+2. `cp .env.example .env && chmod 600 .env`，从 `compose.yml.old` 抄过来：`DB_PASSWORD` 填 `x-db-password` 那行的密码（必须相同），`ADMIN_PASSWORD` 填管理员密码，端口改过的填 `HTTPS_PORT`，固定过版本的填 `COMPLIANCE_VERSION`；在 `environment` 里加过的其他设置按 `名字=值` 加到 `.env` 末尾。
+3. `docker compose up -d`。数据卷名不变，终端、策略和密钥都保留。确认能登录后可以删掉 `compose.yml.old`。
 
-**数据保留**：管理端每小时自动清理一次：检查结果的上报记录保留 1 天（每台设备最新的检查结果另存，不受影响），告警、违规等其他上报记录保留 90 天，已恢复的告警保留 180 天（未恢复的一直保留），过期的登录会话和检查请求也一并删除。保留天数可在 `compose.yml` 的 `server` 环境变量里调整，例如加 `Compliance__EventRetentionDays: "180"`、`Compliance__AlertRetentionDays: "365"`。管理页面 30 分钟未操作会自动退出（页面自动刷新不算操作），可用 `Compliance__SessionIdleMinutes` 调整，设为 `0` 关闭；无论是否操作，登录 8 小时后都需重新登录。告警中心默认列出未恢复的告警和最近 30 天恢复的，更早的在“已恢复”筛选下点“加载 30 天前恢复的告警”查看。
+0.2.24 及以前用 `.env` 部署的，原来的 `.env` 可以直接沿用：下载新的 `compose.yml` 覆盖旧文件后照常升级。
+
+**数据保留**：管理端每小时自动清理一次：检查结果的上报记录保留 1 天（每台设备最新的检查结果另存，不受影响），告警、违规等其他上报记录保留 90 天，已恢复的告警保留 180 天（未恢复的一直保留），过期的登录会话和检查请求也一并删除。保留天数可在 `.env` 里调整，例如加 `Compliance__EventRetentionDays=180`、`Compliance__AlertRetentionDays=365`。管理页面 30 分钟未操作会自动退出（页面自动刷新不算操作），可用 `Compliance__SessionIdleMinutes` 调整，设为 `0` 关闭；无论是否操作，登录 8 小时后都需重新登录。告警中心默认列出未恢复的告警和最近 30 天恢复的，更早的在“已恢复”筛选下点“加载 30 天前恢复的告警”查看。
 
 **容器日志**：管理端和数据库容器的输出各保留 3 个 10 MB 的文件，写满后滚动覆盖最旧的，不会占满磁盘。查看用 `docker compose logs --tail 200 server`。
 

@@ -1,69 +1,38 @@
 # Docker 部署管理端
 
-需要一台装了 Docker 的 Linux 服务器，能访问 `ghcr.io`。
+需要一台装了 Docker 的 Linux 服务器。设置都写在 `.env` 里，`compose.yml` 不用改。
 
 ## 部署
 
-1. 新建目录 `compliance`，把下面的内容存为 `compose.yml`，改掉两处【改】：
+1. 准备部署目录（二选一）：
 
-   <!-- compose.yml: 下面这段由 CI 与 deploy/docker/compose.yml 逐字比对 -->
-   ```yaml
-   # 终端合规管理端。第一次启动前改掉两处【改】。
-   name: compliance
+   - 用镜像仓库或打包好的镜像：新建目录 `compliance`，下载部署文件：
 
-   # 数据库密码，只用字母和数字。【改】
-   x-db-password: &db-password 改成数据库密码
+     ```bash
+     mkdir compliance && cd compliance
+     for f in compose.yml .env.example backup.sh; do
+       curl -fsSLO "https://raw.githubusercontent.com/mj915908848/endpoint-compliance/main/deploy/docker/$f"
+     done
+     chmod +x backup.sh
+     ```
 
-   x-logging: &logging
-     driver: json-file
-     options:
-       max-size: 10m
-       max-file: "3"
+   - 从源码构建：`git clone` 本仓库，部署目录就是 `deploy/docker`。
 
-   services:
-     db:
-       image: postgres:18
-       restart: unless-stopped
-       logging: *logging
-       environment:
-         POSTGRES_DB: compliance
-         POSTGRES_USER: compliance
-         POSTGRES_PASSWORD: *db-password
-       volumes:
-         - db:/var/lib/postgresql
-       healthcheck:
-         test: ["CMD-SHELL", "pg_isready -U compliance -d compliance"]
-         interval: 5s
-         timeout: 5s
-         retries: 20
+2. 写配置，填 `DB_PASSWORD` 和 `ADMIN_PASSWORD`：
 
-     server:
-       image: ghcr.io/mj915908848/compliance-server:latest
-       restart: unless-stopped
-       logging: *logging
-       depends_on:
-         db:
-           condition: service_healthy
-       ports:
-         - "443:8443"
-       environment:
-         Compliance__Database: Host=db;Database=compliance;Username=compliance
-         PGPASSWORD: *db-password
-         # 管理员 admin 的初始密码，至少 16 位，不含 " 和 \ 。【改】
-         Compliance__BootstrapUsers: '[{"username":"admin","password":"改成管理员密码","roles":["Reader","Operator","Publisher"]}]'
-         Kestrel__Certificates__Default__Path: /certs/cert.pem
-         Kestrel__Certificates__Default__KeyPath: /certs/key.pem
-         TZ: Asia/Shanghai
-       volumes:
-         - ./certs:/certs:ro
-         - keys:/var/lib/compliance
-
-   volumes:
-     db:
-     keys:
+   ```bash
+   cp .env.example .env && chmod 600 .env && vi .env
    ```
 
-2. 在旁边建 `certs` 目录，放入证书 `cert.pem`（含中间证书）和私钥 `key.pem`：
+   镜像来源在 `.env` 里选：
+
+   | 来源 | `.env` 里怎么写 |
+   | --- | --- |
+   | 镜像仓库 `ghcr.io`（默认） | 不用改 |
+   | 打包好的镜像 | 先 `docker load -i compliance-server-<版本>.tar.gz`，再把 `COMPLIANCE_IMAGE`、`COMPLIANCE_VERSION` 改成它显示的名字和版本 |
+   | 从源码构建 | 去掉 `COMPOSE_FILE=compose.yml:compose.build.yml` 前面的 `#` |
+
+3. 在旁边建 `certs` 目录，放入证书 `cert.pem`（含中间证书）和私钥 `key.pem`：
 
    ```bash
    mkdir certs
@@ -72,32 +41,25 @@
    sudo chown -R 1654:1654 certs && sudo chmod 600 certs/*
    ```
 
-3. 启动：
+4. 启动：
 
    ```bash
    docker compose up -d
    ```
 
-浏览器打开 `https://证书上的域名`，用 `admin` 和第 1 步设的密码登录。
+浏览器打开 `https://证书上的域名`，用 `admin` 和 `.env` 里的密码登录。
 
 ## 升级
 
-```bash
-./backup.sh
-docker compose pull
-docker compose up -d
-```
+先备份 `./backup.sh`，然后按镜像来源：
+
+- 镜像仓库：`docker compose pull && docker compose up -d`
+- 打包好的镜像：`docker load -i` 新的包，改 `.env` 里的 `COMPLIANCE_VERSION`，`docker compose up -d`
+- 从源码构建：`git pull && docker compose up -d`
 
 ## 备份
 
-第一次先下载备份脚本，以后每次运行 `./backup.sh`：
-
-```bash
-curl -fsSLO https://raw.githubusercontent.com/mj915908848/endpoint-compliance/main/deploy/docker/backup.sh && chmod +x backup.sh
-./backup.sh
-```
-
-备份在 `backups/` 下，请拷到别的机器保存。里面的签名密钥丢了，所有终端都要重新登记。
+运行 `./backup.sh`，备份在 `backups/` 下，请拷到别的机器保存。里面的签名密钥丢了，所有终端都要重新登记。
 
 ## 客户端
 
@@ -106,4 +68,4 @@ curl -fsSLO https://raw.githubusercontent.com/mj915908848/endpoint-compliance/ma
 
 ## 更多
 
-没有证书、经网关转发、改端口、忘记密码、恢复备份、批量静默安装等，见 [ADVANCED.md](ADVANCED.md)。
+没有证书、打包镜像、经网关转发、忘记密码、恢复备份、从旧版本迁移等，见 [ADVANCED.md](ADVANCED.md)。

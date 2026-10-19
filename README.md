@@ -15,7 +15,7 @@
 
 ## 部署
 
-1. **管理端**：在 Linux 服务器上用 Docker 部署，照 [deploy/docker/README.md](deploy/docker/README.md) 存一个 `compose.yml`，改两处密码，放证书，`docker compose up -d`。
+1. **管理端**：在 Linux 服务器上用 Docker 部署，照 [deploy/docker/README.md](deploy/docker/README.md) 下载部署文件，在 `.env` 里填密码、选镜像来源（镜像仓库、打包好的镜像或从源码构建），放证书，`docker compose up -d`。
 2. **客户端**：从 [Releases](https://github.com/mj915908848/endpoint-compliance/releases) 下载 MSI，在员工电脑上双击安装，填写管理端地址和登记码。见 [客户端安装说明](deploy/windows/客户端安装说明.md)。
 
 升级：服务器上 `./backup.sh && docker compose pull && docker compose up -d`；客户端装新版 MSI，或在管理页面「系统设置」上传 MSI 远程下发。

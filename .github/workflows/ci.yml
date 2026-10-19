@@ -277,31 +277,21 @@ jobs:
         working-directory: deploy/docker
     steps:
       - uses: actions/checkout@v5
-      # The compose.yml shown in README.md must be this directory's file, word for word.
-      - name: 部署说明里的 compose.yml 与本目录一致
-        run: |
-          python3 - <<'PY'
-          import pathlib, re, textwrap
-          readme = pathlib.Path("README.md").read_text()
-          block = re.search(r"<!-- compose.yml:.*?-->\n   ```yaml\n(.*?)\n   ```", readme, re.S).group(1)
-          shown = textwrap.dedent(block).strip()
-          actual = pathlib.Path("compose.yml").read_text().strip()
-          assert shown == actual, "README.md 里的 compose.yml 与 deploy/docker/compose.yml 不一致"
-          PY
-      # The documented steps (README.md, 部署): edit the passwords and port in compose.yml, a certificate in certs/, compose up.
-      - name: 部署
+      # The documented steps (README.md, 部署): settings in .env, a certificate in certs/, compose up; built from source first.
+      - name: 部署（从源码构建）
         run: |
           set -e
           ADMIN_PASSWORD=$(openssl rand -hex 12)
           echo "ADMIN_PASSWORD=$ADMIN_PASSWORD" >> "$GITHUB_ENV"
-          sed -i "s/改成数据库密码/$(openssl rand -hex 16)/; s/改成管理员密码/$ADMIN_PASSWORD/; s/\"443:8443\"/\"8443:8443\"/" compose.yml
-          grep -q '"8443:8443"' compose.yml && ! grep -q '改成' compose.yml
+          cp .env.example .env
+          sed -i "s/^DB_PASSWORD=$/DB_PASSWORD=$(openssl rand -hex 16)/; s/^ADMIN_PASSWORD=$/ADMIN_PASSWORD=$ADMIN_PASSWORD/; s/^HTTPS_PORT=443$/HTTPS_PORT=8443/; s/^# COMPOSE_FILE=/COMPOSE_FILE=/" .env
+          grep -q '^COMPOSE_FILE=compose.yml:compose.build.yml$' .env && grep -q '^HTTPS_PORT=8443$' .env
           mkdir certs
           openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=ci.example.test" \
             -addext "subjectAltName=DNS:ci.example.test" -keyout certs/key.pem -out certs/cert.pem 2> /dev/null
           sudo chown -R 1654:1654 certs && sudo chmod 600 certs/*
-          docker compose -f compose.yml -f compose.build.yml up -d --build --wait --wait-timeout 180
-      - name: 登录、读取策略、重启后签名密钥不变、备份
+          docker compose up -d --wait --wait-timeout 180
+      - name: 登录、读取策略、重启后签名密钥不变、备份、换成打包好的镜像
         run: |
           set -e
           url=https://ci.example.test:8443
@@ -318,8 +308,19 @@ jobs:
           docker compose restart server
           check
           ./backup.sh
-          docker compose -f compose.yml -f compose.build.yml up -d --build --wait --wait-timeout 180
+          docker compose up -d --wait --wait-timeout 180
           check
           test -s backups/*/compliance.dump && tar -xOf backups/*/files.tar ./signing.key | grep -q 'BEGIN EC PRIVATE KEY'
+          # The documented packaged-image path (ADVANCED.md, 镜像来源): docker load a saved image and name it in .env; data is kept.
+          docker save compliance-server:source | gzip > compliance-server-ci.tar.gz
+          docker compose down
+          docker rmi compliance-server:source
+          loaded=$(docker load -i compliance-server-ci.tar.gz)
+          echo "$loaded" | grep -q 'Loaded image: compliance-server:source'
+          sed -i 's#^COMPLIANCE_IMAGE=.*#COMPLIANCE_IMAGE=compliance-server#; s/^COMPLIANCE_VERSION=.*/COMPLIANCE_VERSION=source/; s/^COMPOSE_FILE=/# COMPOSE_FILE=/' .env
+          config=$(docker compose config)
+          echo "$config" | grep -q 'image: compliance-server:source' && ! echo "$config" | grep -q 'build:' || exit 1
+          docker compose up -d --wait --wait-timeout 180
+          check
       - if: failure()
         run: docker compose logs
