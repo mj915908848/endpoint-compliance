@@ -177,7 +177,8 @@
     />
 
     <!-- Removing the client (not upgrading it) first takes out the browser rules it added, while the program and its
-         record of those rules are still there and the service is stopped. A failure does not stop the removal. -->
+         record of those rules are still there and the service is stopped, then clears the data directory but the
+         enrollment (NativeDataDirectory.ClearForUninstall). A failure does not stop the removal. -->
     <SetProperty
       Id="RemoveBrowserRules"
       Value="&quot;[#AgentExe]&quot; --uninstall-cleanup"

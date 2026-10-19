@@ -5,6 +5,37 @@ namespace Compliance.Agent;
 
 public static class NativeDataDirectory
 {
+    /// <summary>The enrollment: configuration and device key, which an uninstall that rolls back must get back.</summary>
+    public static readonly string[] Enrollment = ["agent.json", "device.dpapi"];
+
+    /// <summary>
+    /// Run while the MSI removes the client, with the service stopped: deletes everything in the data directory but
+    /// the enrollment. The MSI lists the directory's files before it stops the service, so a file the service wrote
+    /// in between (its first scan's state, a log, a database journal) would keep the directory from being removed.
+    /// The enrollment existed before the uninstall began, so the MSI removes it, and puts it back on rollback; what is
+    /// deleted here is state the service rebuilds. Returns what could not be deleted.
+    /// </summary>
+    public static List<string> ClearForUninstall(string path)
+    {
+        var left = new List<string>();
+        var directory = new DirectoryInfo(path);
+        if (!directory.Exists)
+            return left;
+        foreach (var entry in directory.EnumerateFileSystemInfos())
+            try
+            {
+                if (entry is DirectoryInfo folder)
+                    folder.Delete(recursive: true);
+                else if (!Enrollment.Contains(entry.Name, StringComparer.OrdinalIgnoreCase))
+                    entry.Delete();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                left.Add($"{entry.FullName}: {e.Message}");
+            }
+        return left;
+    }
+
     /// <summary>
     /// Creates the data directory readable only by SYSTEM and Administrators, or checks an existing one. Access
     /// granted to anyone else (Explorer's "permanently get access" prompt adds the signed-in user) is removed and

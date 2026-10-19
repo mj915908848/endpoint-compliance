@@ -78,6 +78,43 @@ await Check(
     }
 );
 await Check(
+    "uninstall clears the data directory but the enrollment, which the MSI removes and restores on rollback",
+    () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "uninstall-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(path, "logs"));
+        Directory.CreateDirectory(Path.Combine(path, "updates"));
+        foreach (
+            var name in new[]
+            {
+                "agent.json",
+                "device.dpapi",
+                "sensitive-files.json",
+                "outbox.sqlite-wal",
+                "logs/agent.log",
+                "updates/x.msi",
+            }
+        )
+            File.WriteAllText(Path.Combine(path, name), "x");
+        try
+        {
+            var left = NativeDataDirectory.ClearForUninstall(path);
+            Assert(left.Count == 0, "left: " + string.Join("; ", left));
+            var names = Directory.EnumerateFileSystemEntries(path).Select(Path.GetFileName).Order().ToArray();
+            Assert(names.SequenceEqual(["agent.json", "device.dpapi"]), "kept " + string.Join(", ", names));
+            Assert(
+                NativeDataDirectory.ClearForUninstall(Path.Combine(path, "missing")).Count == 0,
+                "missing directory"
+            );
+        }
+        finally
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        return Task.CompletedTask;
+    }
+);
+await Check(
     "an enrollment failure is described in words the person enrolling can act on",
     () =>
     {
