@@ -454,6 +454,8 @@ try:
             raw = log.read_bytes() if log.exists() else b""
             text = raw.decode("utf-16", errors="replace") if raw[:2] == b"\xff\xfe" else raw.decode("mbcs", errors="replace")
             assert result.returncode == 0, f"msiexec {action} exited with {result.returncode}: {text[-3000:]}"
+            # No system restore point: where System Protection is on, creating one is slow (runners have it off).
+            assert re.search(r"Property\(S\): MSIFASTINSTALL = 1\r?$", text, re.M), "The MSI does not skip the restore point"
             print(f"TIME msiexec {action} ({name}) {took:.1f}s; slowest actions: {slowest_actions(text)}", flush=True)
             msi_installed = action == "/i"
             return text
