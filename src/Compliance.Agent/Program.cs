@@ -46,10 +46,12 @@ public static class Program
                 // directory goes: the browser rules this agent added would otherwise outlive it, owned by no one.
                 if (simulated || !OperatingSystem.IsWindows())
                     return 0;
-                var problem = new BrowserBlocklist(
-                    new WindowsBlocklistStore(),
-                    Path.Combine(data, "browser-blocklist.json")
-                ).RemoveOwn();
+                var state = Path.Combine(data, "browser-blocklist.json");
+                var problem = new BrowserBlocklist(new WindowsBlocklistStore(), state).RemoveOwn();
+                // The MSI listed the data directory's files before this ran; a file written now, such as the state
+                // file's backup, would keep the directory from being removed.
+                File.Delete(state);
+                File.Delete(DurableFile.BackupPath(state));
                 Console.WriteLine(problem ?? "已移除本客户端添加的浏览器网址拦截规则");
                 return problem is null ? 0 : 1;
             }
