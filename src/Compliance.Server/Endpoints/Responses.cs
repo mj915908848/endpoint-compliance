@@ -60,6 +60,10 @@ public record NotificationTested(bool Ok, string? Error);
 /// <param name="MinimumAgentVersion">Clients older than this should be upgraded (<see cref="ReleaseVersion.MinimumAgent"/>).</param>
 /// <param name="KeyRotation">While the signing key is being replaced: the next key, signed with the current one.</param>
 /// <param name="PolicySerial">The serial of the policy release assigned to the device; releases never change.</param>
+/// <param name="PolicyKeyId">
+/// The key policies are signed with now. Completing a key rotation re-signs every release without changing its serial,
+/// so a client holding the release signed with the old key fetches it again.
+/// </param>
 public record HeartbeatReply(
     bool Ok,
     bool GzipUploads,
@@ -67,5 +71,6 @@ public record HeartbeatReply(
     string ServerVersion,
     string MinimumAgentVersion,
     SignedKeyRotation? KeyRotation = null,
-    long? PolicySerial = null
+    long? PolicySerial = null,
+    string? PolicyKeyId = null
 );

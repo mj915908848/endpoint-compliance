@@ -141,7 +141,8 @@ static partial class Endpoints
                             ComplianceService.Version,
                             ReleaseVersion.MinimumAgent,
                             s.Policies.Rotation,
-                            device.TargetPolicyVersion
+                            device.TargetPolicyVersion,
+                            s.Policies.KeyId
                         );
                     });
                 }

@@ -129,7 +129,8 @@ internal sealed class InstallPathsCollector : ICollector
 [SupportedOSPlatform("windows")]
 internal sealed class ProgramFilesCollector : ICollector
 {
-    private const int Limit = 50;
+    // Version information is read for at most this many files; a drive with more is reported as incomplete.
+    private const int Limit = 500;
 
     public string Module => "programs";
     public TimeSpan Timeout => TimeSpan.FromMinutes(2);
@@ -173,7 +174,8 @@ internal sealed class ProgramFilesCollector : ICollector
         var found = new List<Evidence>();
         // Version information is read from disk: behind what the user is doing.
         using var background = BackgroundIo.Enter();
-        foreach (var path in WindowsCollector.FindProgramFiles(index, names, Limit, ct))
+        var paths = WindowsCollector.FindProgramFiles(index, names, Limit + 1, ct);
+        foreach (var path in paths.Take(Limit))
         {
             ct.ThrowIfCancellationRequested();
             string? product = null,
@@ -194,6 +196,9 @@ internal sealed class ProgramFilesCollector : ICollector
             );
         }
         evidence.AddRange(found.DistinctBy(e => e.ProductId + "\n" + e.ObjectKey));
+        // The files left out could be the ones that matter, so the drive must not count as checked.
+        if (paths.Count > Limit)
+            throw new InvalidDataException($"同名程序文件超过 {Limit} 个，只核对了前 {Limit} 个");
         return Task.CompletedTask;
     }
 }

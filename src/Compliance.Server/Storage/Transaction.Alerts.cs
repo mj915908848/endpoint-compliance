@@ -82,7 +82,9 @@ public sealed partial class Transaction
     }
 
     /// <summary>
-    /// An alert that becomes active, newly or again, waits to be pushed (see <see cref="PendingNotifications"/>).
+    /// An alert that becomes active, newly or again, waits to be pushed (see <see cref="PendingNotifications"/>). Each
+    /// time it becomes active again counts as another activation, so a push still under way for an earlier one does
+    /// not mark this one as pushed.
     /// </summary>
     public Task UpsertAlert(AlertSummary a) =>
         WriteAlert(
@@ -91,6 +93,8 @@ public sealed partial class Transaction
             , notified) VALUES(@id, @device, @host, @type, @key, @summary, @state, @sequence, @first, @last, @ack, @notified)
             ON CONFLICT(id) DO UPDATE SET
                 notified = CASE WHEN excluded.state = 'Active' AND alerts.state <> 'Active' THEN 0 ELSE alerts.notified END,
+                activations = alerts.activations
+                    + CASE WHEN excluded.state = 'Active' AND alerts.state <> 'Active' THEN 1 ELSE 0 END,
             """,
             ("notified", a.State != "Active")
         );
@@ -130,23 +134,29 @@ public sealed partial class Transaction
             ]
         );
 
-    /// <summary>Active alerts not pushed yet, oldest first, with the note of their device.</summary>
-    public Task<List<(AlertSummary Alert, string Note)>> PendingNotifications(int limit) =>
+    /// <summary>Active alerts not pushed yet, oldest first, with the note of their device and their activation.</summary>
+    public Task<List<(AlertSummary Alert, string Note, long Activation)>> PendingNotifications(int limit) =>
         Query(
             $"""
-            SELECT {string.Join(", ", AlertColumns.Split(", ").Select(c => "a." + c))}, COALESCE(d.note, '')
+            SELECT {string.Join(", ", AlertColumns.Split(", ").Select(c => "a." + c))}, COALESCE(d.note, ''),
+                a.activations
             FROM alerts a LEFT JOIN devices d ON d.id = a.device_id
             WHERE a.notified = 0 AND a.state = 'Active'
             ORDER BY a.first_seen, a.id LIMIT @limit
             """,
-            r => (ReadAlert(r), r.GetString(11)),
+            r => (ReadAlert(r), r.GetString(11), r.GetInt64(12)),
             ("limit", (long)limit)
         );
 
-    public async Task MarkNotified(IEnumerable<string> ids)
+    /// <summary>Marks alerts pushed, unless one became active again since its activation was read.</summary>
+    public async Task MarkNotified(IEnumerable<(string Id, long Activation)> alerts)
     {
-        foreach (var id in ids)
-            await Execute("UPDATE alerts SET notified = 1 WHERE id = @id", ("id", id));
+        foreach (var (id, activation) in alerts)
+            await Execute(
+                "UPDATE alerts SET notified = 1 WHERE id = @id AND activations = @activation",
+                ("id", id),
+                ("activation", activation)
+            );
     }
 
     public Task AcknowledgeAlert(string id) => Execute("UPDATE alerts SET acknowledged = 1 WHERE id = @id", ("id", id));

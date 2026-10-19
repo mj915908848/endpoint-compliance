@@ -1018,6 +1018,21 @@ public class ApiTests
     }
 
     [Fact]
+    public void Many_names_tried_once_do_not_stop_the_count_of_an_account_being_guessed()
+    {
+        var throttle = new LoginThrottle();
+        var now = DateTimeOffset.UtcNow;
+        for (var i = 0; i < 6000; i++)
+            throttle.Failed("user" + i, "10.2." + i / 250 + "." + i % 250, now);
+        for (var i = 0; i < LoginThrottle.MaxAccountFailures; i++)
+            throttle.Failed("real-admin", "10.3.0." + i, now);
+        Assert.NotNull(throttle.LockedFor("real-admin", "10.0.0.2", now));
+        for (var i = 0; i < 6000; i++)
+            throttle.Failed("other" + i, "10.4." + i / 250 + "." + i % 250, now);
+        Assert.NotNull(throttle.LockedFor("real-admin", "10.0.0.2", now));
+    }
+
+    [Fact]
     public void Wrong_passwords_from_one_address_do_not_lock_the_account_for_others()
     {
         var throttle = new LoginThrottle();
@@ -1040,6 +1055,24 @@ public class ApiTests
         var health = await f.Client.GetAsync("/healthz");
         Assert.Equal(HttpStatusCode.OK, health.StatusCode);
         Assert.Equal("ok", await health.Content.ReadAsStringAsync());
+
+        // A database that does not answer is reported, not waited for: the container's check would end the server.
+        // SQLite runs one transaction at a time, so an open one keeps the check's from starting.
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("COMPLIANCE_TEST_POSTGRES")))
+            return;
+        var release = new TaskCompletionSource();
+        var held = f
+            .Services.GetRequiredService<ComplianceService>()
+            .Tx(async _ =>
+            {
+                await release.Task;
+                return true;
+            });
+        var blocked = await f.Client.GetAsync("/healthz");
+        release.SetResult();
+        await held;
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, blocked.StatusCode);
+        Assert.Contains("TimeoutException", await blocked.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -1472,6 +1505,66 @@ public class ApiTests
             "POST",
             "/api/agent/events",
             new EventBatch([new("stale", 4, snap.CollectedAt, "Snapshot", "scan", snap)])
+        );
+        Assert.Equal(
+            "Resolved",
+            Assert.Single((await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!).State
+        );
+    }
+
+    [Fact]
+    public async Task A_store_app_alert_recovers_when_only_the_store_app_check_runs()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        var sid = "S-1-5-21-1-2-3-1001";
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (
+                await f.Publish(PolicySeed.Create() with { RequiredModules = ["appx", "users"], RequiredControls = [] })
+            ).StatusCode
+        );
+        var current = await f.Client.GetFromJsonAsync<SignedPolicy>("/api/policies/current", Wire.Json);
+        var serial = Wire.Read<PolicyDocument>(current!.Payload).Serial;
+        var snap = new ScanSnapshot
+        {
+            DeviceId = f.Device,
+            HostName = "host",
+            PolicyVersion = serial,
+            CollectedAt = f.Clock.Now,
+            Modules =
+            [
+                new("users", "machine", "Complete", f.Clock.Now),
+                new("users", sid, "Complete", f.Clock.Now),
+                new("appx", sid, "Complete", f.Clock.Now),
+            ],
+            Evidence =
+            [
+                new(
+                    "cursor",
+                    "Cursor",
+                    EvidenceKind.Installation,
+                    "appx:" + sid + ":Anysphere.Cursor",
+                    "应用商店应用（按用户）",
+                    "Store app",
+                    sid
+                ),
+            ],
+        };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("found", 1, f.Clock.Now, "Snapshot", "scan", snap)])
+        );
+        Assert.Equal(
+            "Active",
+            Assert.Single((await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!).State
+        );
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("removed", 2, f.Clock.Now, "Snapshot", "scan", snap with { Evidence = [] })])
         );
         Assert.Equal(
             "Resolved",
@@ -1936,9 +2029,17 @@ public sealed class WebhookStub : HttpMessageHandler
     public readonly List<(Uri Url, string Body)> Requests = [];
     public string Reply = """{"errcode":0,"errmsg":"ok"}""";
 
+    /// <summary>Runs once while the next message is being sent.</summary>
+    public Func<Task>? WhileSending;
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         Requests.Add((request.RequestUri!, await request.Content!.ReadAsStringAsync(ct)));
+        if (WhileSending is { } during)
+        {
+            WhileSending = null;
+            await during();
+        }
         return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Reply) };
     }
 

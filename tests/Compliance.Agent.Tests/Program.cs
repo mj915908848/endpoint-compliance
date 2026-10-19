@@ -296,6 +296,20 @@ await Check(
                 pending.SequenceEqual([earlier.EventId, health.EventId, last.EventId]),
                 "expected the previous hour's snapshot, the other event and the newest snapshot"
             );
+
+            // Offline: a violation found and gone again within the hour keeps the snapshot that found it.
+            Evidence Running(int pid) =>
+                new("cursor", "Cursor", EvidenceKind.Process, "pid:" + pid, "进程", "Cursor 正在运行", "S-1-5-21-1");
+            var found = await q.EnqueueAsync("Snapshot", "device:a", At(52) with { Evidence = [Running(10)] }, null);
+            // The same finding again, under another process id, still replaces it.
+            var again = await q.EnqueueAsync("Snapshot", "device:a", At(54) with { Evidence = [Running(11)] }, null);
+            var clean = await q.EnqueueAsync("Snapshot", "device:a", At(56), null);
+            pending = (await q.PendingAsync(10)).Select(e => e.EventId).ToArray();
+            Assert(
+                pending.SequenceEqual([earlier.EventId, health.EventId, again.EventId, clean.EventId]),
+                "expected the violation and the clean snapshot after it: " + pending.Length
+            );
+            Assert(!pending.Contains(found.EventId), "the same finding twice is merged");
         }
         finally
         {
@@ -2288,6 +2302,21 @@ await Check(
             Assert(store.Values["Edge"].SequenceEqual(["gpo.example.com"]), "Edge back to the group policy entry");
             Assert(store.Values["Chrome"].SequenceEqual(["other.example.com"]), "Chrome back to the other entry");
             Assert(!File.Exists(state) || File.ReadAllText(state).Trim() == "{}", "nothing left owned");
+
+            // Edge written, Chrome refused: Edge's rules stay this agent's, so turning enforcement off removes them.
+            store.Failing = "Chrome";
+            blocklist = new BrowserBlocklist(store, state);
+            blocklist.Apply(enforce);
+            Assert(blocklist.State(enforce).State == "Error", "a refused write is reported");
+            store.Failing = null;
+            blocklist.Apply(enforce);
+            Assert(store.Values["Chrome"].SequenceEqual(["other.example.com", .. wanted]), "Chrome written on retry");
+            new BrowserBlocklist(store, state).Apply(policy);
+            Assert(
+                store.Values["Edge"].SequenceEqual(["gpo.example.com"]),
+                "Edge's rules removed after a partial write: " + string.Join(",", store.Values["Edge"])
+            );
+            Assert(store.Values["Chrome"].SequenceEqual(["other.example.com"]), "Chrome's rules removed too");
         }
         finally
         {
@@ -2402,6 +2431,14 @@ await Check(
         var rotating = PolicyKeys.Accept(config, announced);
         Assert(PolicyKeys.Ids(rotating).SequenceEqual(["current", "next"]), "both keys reported");
         Assert(PolicyKeys.Accept(rotating, announced) == rotating, "the same announcement changes nothing");
+        // Completing re-signs the held release under the same serial; only the signing key id says to fetch it.
+        Assert(
+            PolicyKeys.Resigned(rotating, "next")
+                && !PolicyKeys.Resigned(rotating, "current")
+                && !PolicyKeys.Resigned(rotating, null)
+                && !PolicyKeys.Resigned(config, "next"),
+            "a held release is fetched again only once the server signs with the known next key"
+        );
         Assert(
             PolicyKeys.PublicKeyFor(rotating, "current") == config.PolicyPublicKeyPem
                 && PolicyKeys.PublicKeyFor(rotating, "next") == rotation.NewPublicKeyPem,
@@ -2904,8 +2941,12 @@ sealed class FakeBlocklist : IBlocklistStore
 
     public List<string> Read(string browser) => [.. Values[browser]];
 
+    public string? Failing { get; set; }
+
     public void Write(string browser, IReadOnlyList<string> values)
     {
+        if (browser == Failing)
+            throw new UnauthorizedAccessException(browser + " refused");
         Writes++;
         Values[browser] = [.. values];
     }

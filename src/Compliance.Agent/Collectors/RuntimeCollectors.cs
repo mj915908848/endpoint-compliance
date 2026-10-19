@@ -18,6 +18,9 @@ internal sealed class ProcessesCollector : ICollector
         foreach (var p in new WindowsProcessTable().Running())
         {
             var confirmed = ProcessEnforcer.Confirmed(p, context.Policy);
+            // The user running it, so a program installed and running for one user is one finding of that user;
+            // system accounts count as the machine.
+            string? Owner() => p.UserSid() is { } sid && WindowsCollector.IsUserSid(sid) ? sid : null;
             if (confirmed is not null)
             {
                 evidence.Add(
@@ -28,7 +31,7 @@ internal sealed class ProcessesCollector : ICollector
                         "pid:" + p.Pid,
                         "运行进程",
                         $"产品信息已核实，进程号 {p.Pid}",
-                        null,
+                        Owner(),
                         true
                     )
                 );
@@ -47,7 +50,7 @@ internal sealed class ProcessesCollector : ICollector
                         "pid:" + p.Pid,
                         "运行进程",
                         $"仅文件名匹配，进程号 {p.Pid}",
-                        null,
+                        Owner(),
                         false
                     )
                 );

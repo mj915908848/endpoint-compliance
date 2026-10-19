@@ -35,6 +35,8 @@ public sealed record AgentConfiguration(
 /// </summary>
 public static class PolicyKeys
 {
+    public const string KeyChanged = "Policy key ID changed";
+
     /// <summary>The public key a signature by <paramref name="keyId"/> must verify with.</summary>
     public static string PublicKeyFor(AgentConfiguration config, string keyId)
     {
@@ -43,7 +45,7 @@ public static class PolicyKeys
         // Configurations written before enrollment returned a key id accept the pinned key for any id.
         if (config.PolicyKeyId is null || keyId == config.PolicyKeyId)
             return config.PolicyPublicKeyPem ?? throw new CryptographicException("No policy key");
-        throw new CryptographicException("Policy key ID changed");
+        throw new CryptographicException(KeyChanged);
     }
 
     /// <summary>
@@ -69,6 +71,14 @@ public static class PolicyKeys
                 NextPolicyKeyId = null,
             }
             : config;
+
+    /// <summary>
+    /// The server now signs with the next key: completing the rotation re-signed the release this client holds, which
+    /// has to be fetched again for the next key to become current. A key the client never learned of is not a reason
+    /// to fetch, since no policy signed with it could verify.
+    /// </summary>
+    public static bool Resigned(AgentConfiguration config, string? signingKeyId) =>
+        signingKeyId is not null && signingKeyId == config.NextPolicyKeyId;
 
     /// <summary>The key ids reported in heartbeats, so the server can tell when every client knows the next key.</summary>
     public static string[] Ids(AgentConfiguration config) =>
@@ -795,6 +805,7 @@ public sealed class AgentRuntime(
     {
         string? policyIssue = null;
         long? assignedSerial = null;
+        string? signingKeyId = null;
         // Health goes first when connectivity resumes, then historical events.
         try
         {
@@ -830,6 +841,12 @@ public sealed class AgentRuntime(
                 && serial.TryGetInt64(out var assigned)
             )
                 assignedSerial = assigned;
+            if (
+                reply.ValueKind == JsonValueKind.Object
+                && reply.TryGetProperty("policyKeyId", out var signing)
+                && signing.ValueKind == JsonValueKind.String
+            )
+                signingKeyId = signing.GetString();
             // While the server rotates its policy key it announces the next one, signed with the current key. The
             // next key is kept until a policy signed with it arrives, even when a reply stops announcing it: the
             // rotation may have completed between two heartbeats.
@@ -891,8 +908,13 @@ public sealed class AgentRuntime(
         {
             Console.Error.WriteLine("Heartbeat pending: " + e.GetType().Name);
         }
-        // The same release comes back unchanged, so it is fetched (up to 4 MB) only when another one is assigned.
-        var held = signedPolicy is not null && policy is not null && assignedSerial == policy.Serial;
+        // The same release comes back unchanged, so it is fetched (up to 4 MB) only when another one is assigned, or when
+        // a completed key rotation re-signed it with the next key, which only a policy signed with it makes current.
+        var held =
+            signedPolicy is not null
+            && policy is not null
+            && assignedSerial == policy.Serial
+            && !PolicyKeys.Resigned(config, signingKeyId);
         if (!held)
             try
             {
@@ -950,6 +972,14 @@ public sealed class AgentRuntime(
                         ? null
                         : "Policy refresh failed: " + e.GetType().Name;
                 Console.Error.WriteLine("Policy refresh failed; retained last signed policy: " + e.GetType().Name);
+                // The server completed a key rotation this device never heard of: only enrolling again helps.
+                if (e is CryptographicException { Message: PolicyKeys.KeyChanged })
+                    await notices.AddAsync(
+                        "policy-key-changed",
+                        null,
+                        "管理端已更换策略签名密钥，本机没有收到新密钥，无法再接收策略。请联系管理员在终端列表删除本机，再用登记码重新登记。",
+                        ct
+                    );
             }
         if (policy is null)
         {

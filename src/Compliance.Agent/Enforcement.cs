@@ -225,9 +225,20 @@ public sealed class BrowserBlocklist(IBlocklistStore store, string statePath)
     }
 
     /// <summary>Writes the rules when the policy enforces this measure, otherwise removes the ones this agent added.</summary>
-    public void Apply(PolicyDocument policy)
+    public void Apply(PolicyDocument policy) =>
+        Keep(Controls.Enforced(policy, Controls.Browser) ? EdgePolicyCompiler.Compile(policy.BlockDomains) : []);
+
+    /// <summary>
+    /// Removes the rules this agent added, for the MSI to run when the client is uninstalled; null when that worked.
+    /// </summary>
+    public string? RemoveOwn()
     {
-        var wanted = Controls.Enforced(policy, Controls.Browser) ? EdgePolicyCompiler.Compile(policy.BlockDomains) : [];
+        Keep([]);
+        return lastError;
+    }
+
+    private void Keep(string[] wanted)
+    {
         var owned = Owned();
         if (wanted.Length == 0 && owned.Count == 0)
             return;
@@ -244,7 +255,13 @@ public sealed class BrowserBlocklist(IBlocklistStore store, string statePath)
                 if (values.Count > 1000)
                     throw new InvalidOperationException($"{browser} 的网址拦截规则超过 1000 条");
                 if (!values.SequenceEqual(current))
+                {
+                    // Claimed before writing: if this or the next browser's write fails, the rules already written
+                    // must not look like someone else's on the next attempt, or turning enforcement off would keep them.
+                    owned[browser] = ours.Union(added, StringComparer.OrdinalIgnoreCase).ToArray();
+                    Save(owned.Where(o => o.Value.Length > 0).ToDictionary());
                     store.Write(browser, values);
+                }
                 owned[browser] = added;
             }
             Save(owned.Where(o => o.Value.Length > 0).ToDictionary());

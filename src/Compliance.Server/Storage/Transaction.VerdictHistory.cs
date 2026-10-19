@@ -44,12 +44,15 @@ public sealed partial class Transaction
             ("since", since)
         );
 
-    /// <summary>Each enrolled device's last change before <paramref name="before"/>: its verdict at that moment.</summary>
+    /// <summary>
+    /// Each enrolled device's last change before <paramref name="before"/>: its verdict at that moment. Found per
+    /// device in the (device_id, at) index rather than by checking every change.
+    /// </summary>
     public Task<List<VerdictChange>> VerdictsBefore(DateTimeOffset before) =>
         Query(
             $"""
-            SELECT {VerdictChangeSelect} FROM verdict_history h JOIN devices d ON d.id = h.device_id
-            WHERE h.at = (SELECT MAX(x.at) FROM verdict_history x WHERE x.device_id = h.device_id AND x.at < @before)
+            SELECT {VerdictChangeSelect} FROM devices d JOIN verdict_history h ON h.device_id = d.id
+                AND h.at = (SELECT MAX(x.at) FROM verdict_history x WHERE x.device_id = d.id AND x.at < @before)
             """,
             ReadVerdictChange,
             ("before", before)

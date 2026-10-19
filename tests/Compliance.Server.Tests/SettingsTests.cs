@@ -78,19 +78,41 @@ public class SettingsTests
         await Event(f, 6, "Violation", "clash", "Clash 又装上了");
         await notifier.Run();
         Assert.Equal(2, f.Webhook.Requests.Count);
+        // Resolved and raised again while the push of the earlier activation is under way: pushed once more.
+        await Event(f, 8, "Recovered", "clash", "已卸载");
+        await Event(f, 9, "Violation", "clash", "Clash 第三次");
+        f.Webhook.WhileSending = async () =>
+        {
+            await Event(f, 10, "Recovered", "clash", "已卸载");
+            await Event(f, 11, "Violation", "clash", "Clash 第四次");
+        };
+        await notifier.Run();
+        Assert.Equal(3, f.Webhook.Requests.Count);
+        await notifier.Run();
+        Assert.Equal(4, f.Webhook.Requests.Count);
+        Assert.Contains(
+            "Clash 第四次",
+            JsonDocument
+                .Parse(f.Webhook.Requests[^1].Body)
+                .RootElement.GetProperty("text")
+                .GetProperty("content")
+                .GetString()
+        );
+        await notifier.Run();
+        Assert.Equal(4, f.Webhook.Requests.Count);
 
         // A refused message is retried on the next run.
         f.Webhook.Reply = """{"errcode":93000,"errmsg":"invalid webhook url"}""";
-        await Event(f, 7, "Violation", "v2rayn", "v2rayN 已安装");
+        await Event(f, 12, "Violation", "v2rayn", "v2rayN 已安装");
         await notifier.Run();
         Assert.False(notifier.Last!.Ok);
         Assert.Contains("93000", notifier.Last.Error);
         f.Webhook.Reply = """{"errcode":0,"errmsg":"ok"}""";
         await notifier.Run();
-        Assert.Equal(4, f.Webhook.Requests.Count);
+        Assert.Equal(6, f.Webhook.Requests.Count);
         Assert.True(notifier.Last.Ok);
         await notifier.Run();
-        Assert.Equal(4, f.Webhook.Requests.Count);
+        Assert.Equal(6, f.Webhook.Requests.Count);
 
         var test = await f.Client.PostAsJsonAsync("/api/settings/notifications/test", new { });
         Assert.True((await test.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("ok").GetBoolean());

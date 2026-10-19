@@ -497,9 +497,25 @@ try:
         failure = subprocess.run(["sc.exe", "qfailure", "ComplianceAgent"], capture_output=True, text=True, errors="replace").stdout
         assert failure.count("RESTART") >= 3, f"Service restarts on failure not configured: {failure}"
         print(f"PASS the MSI takes over a script install and keeps its enrollment ({taken['hostName']})")
+        # Browser rules the client added go with it; someone else's stay. Planted with the service stopped, so
+        # only the uninstall can remove them.
+        subprocess.run(["sc.exe", "stop", "ComplianceAgent"], capture_output=True)
+        deadline = time.monotonic() + 60
+        while "STOPPED" not in subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True, text=True).stdout:
+            assert time.monotonic() < deadline, "The service did not stop"
+            time.sleep(1)
+        edge = r"SOFTWARE\Policies\Microsoft\Edge\URLBlocklist"
+        with winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, edge, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, "1", 0, winreg.REG_SZ, "external.example.com")
+            winreg.SetValueEx(key, "2", 0, winreg.REG_SZ, "owned.example.com")
+        (agent_data / "browser-blocklist.json").write_text(json.dumps({"Edge": ["owned.example.com"]}), encoding="utf-8")
         msiexec("/x", "msi-uninstall.log")
         removed()
-        print("PASS uninstalling the MSI removes the service, the program folder and the data directory")
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, edge) as key:
+            left = [winreg.QueryValueEx(key, str(i))[0] for i in range(1, winreg.QueryInfoKey(key)[1] + 1)]
+        assert left == ["external.example.com"], f"Uninstalling left these Edge rules: {left}"
+        winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE, edge)
+        print("PASS uninstalling the MSI removes the service, the program folder, the data directory and its browser rules")
 
         # A data directory a standard user created is removed; a silent install enrolls with SERVERURL and CODE.
         agent_data.mkdir()

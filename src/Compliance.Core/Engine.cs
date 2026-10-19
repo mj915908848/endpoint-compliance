@@ -66,7 +66,17 @@ public static class ReportEngine
                     gaps.Add($"{Labels.Module(module)}（{Labels.Scope(entry.Scope, names)}）：数据已过期或时间异常");
             }
         }
-        foreach (var m in snapshot.Modules.Where(m => m.Status != "Complete" && m.Module != SensitiveFiles.Module))
+        // Modules the policy leaves out do not count. User accounts are always read; when they are not listed, only a
+        // failure to list them counts, since every per-user check then has no one to check. An account whose registry
+        // is not loaded is reported by the per-user modules that need it.
+        foreach (
+            var m in snapshot.Modules.Where(m =>
+                m.Status != "Complete"
+                && m.Module == "users"
+                && m.Scope == "machine"
+                && !policy.RequiredModules.Contains("users")
+            )
+        )
             gaps.Add(ModuleGap(m, names));
         // Sensitive file scans only limit the verdict when a rule can make the device fail; otherwise their
         // problems are notes for the administrator.

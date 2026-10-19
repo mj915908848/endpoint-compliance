@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { focusManager } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuditPage } from "../src/pages/Audit";
@@ -37,5 +38,32 @@ describe("audit page", () => {
     expect(earlier).toContain(`before=${encodeURIComponent(record(499).at)}`);
     expect(earlier).toContain("beforeId=a0499");
     await waitFor(() => expect(urls.filter((u) => u.includes("before=")).length).toBe(1));
+  });
+
+  it("keeps the records a refresh pushes out of the newest page once earlier ones are shown", async () => {
+    let added = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      const page = url.includes("before=")
+        ? Array.from({ length: 3 }, (_, i) => record(500 + i))
+        : Array.from({ length: 500 }, (_, i) => record(i - added));
+      return new Response(JSON.stringify(page), {
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    render(
+      <Providers>
+        <AuditPage />
+      </Providers>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: /已显示最近 500 条/ }));
+    expect(await screen.findByText("已显示全部 503 条审计记录")).toBeTruthy();
+    // 100 new records: the newest page now ends 100 records earlier than before.
+    added = 100;
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    expect(await screen.findByText("已显示全部 603 条审计记录")).toBeTruthy();
+    focusManager.setFocused(undefined);
   });
 });

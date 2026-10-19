@@ -43,7 +43,11 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
     /// <summary>Names the default policy had in earlier versions; renamed to "Default" at startup.</summary>
     static readonly string[] LegacyDefaultNames = ["customer-no-foreign-ai", "endpoint-compliance"];
 
-    /// <summary>Loads the signing key, creating it on first start.</summary>
+    /// <summary>
+    /// Loads the signing key, creating it on first start. A rotation's completion, or its undo, stopped between its two
+    /// moves leaves no key, the new one pending and the old one retired; the old key goes back, since the transaction
+    /// re-signing the releases never committed.
+    /// </summary>
     public async Task LoadSigningKey()
     {
         if (string.IsNullOrWhiteSpace(settings.SigningKeyPath))
@@ -51,21 +55,41 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
 
         Directory.CreateDirectory(Path.GetDirectoryName(KeyPath)!);
         if (!File.Exists(KeyPath))
-            CreateKeyFile(KeyPath);
+        {
+            if (File.Exists(NextKeyPath) && NewestRetired() is { } retired)
+                File.Move(retired, KeyPath);
+            else
+                CreateKeyFile(KeyPath);
+        }
         Replace(await File.ReadAllTextAsync(KeyPath));
         await LoadNextKey();
     }
 
-    /// <summary>A new P-256 private key in a file only this account can read.</summary>
+    /// <summary>
+    /// A new P-256 private key in a file only this account can read. Written beside it and flushed to disk before it
+    /// takes the name, so a crash leaves no key or a whole one, never a truncated file startup cannot read.
+    /// </summary>
     static void CreateKeyFile(string path)
     {
         using var created = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
         if (!OperatingSystem.IsWindows())
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        using var stream = new FileStream(path, options);
-        using var writer = new StreamWriter(stream);
-        writer.Write(created.ExportECPrivateKeyPem());
+        var temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var stream = new FileStream(temporary, options))
+            {
+                using (var writer = new StreamWriter(stream, leaveOpen: true))
+                    writer.Write(created.ExportECPrivateKeyPem());
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temporary, path);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
     }
 
     /// <summary>

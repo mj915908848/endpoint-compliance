@@ -10,14 +10,18 @@ dir="backups/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$dir"
 # 中途失败时删掉不完整的备份，免得以后误用。
 trap 'rm -rf "$dir"; echo "备份失败，未生成备份" >&2' EXIT
-key() { docker compose exec -T server sha256sum /var/lib/compliance/signing.key; }
-# 导出期间若刚好完成更换密钥，数据库与密钥会对不上：前后密钥不同就重来。
+# 密钥文件的内容和其余文件（安装包）的名字与大小；上传到一半的临时文件不算。
+state() {
+  docker compose exec -T server sh -c 'cd /var/lib/compliance && sha256sum signing.key* && find . -type f ! -name "signing.key*" ! -name "upload-*.tmp" -printf "%p %s\n" | sort'
+}
+# 先导出数据库再打包文件：安装包总是先写入文件再记入数据库、先从数据库删除再删文件，所以导出时数据库里有的安装包，
+# 打包时文件都还在，除非中途被删除。导出期间若完成了更换密钥、上传或删除了安装包，前后文件不同，就重来。
 for attempt in 1 2 3; do
-  before=$(key)
-  docker compose exec -T server tar -C /var/lib/compliance -cf - . > "$dir/files.tar"
+  before=$(state)
   docker compose exec -T db pg_dump -U compliance -d compliance -Fc > "$dir/compliance.dump"
-  [ "$(key)" = "$before" ] && break
-  [ "$attempt" = 3 ] && { echo "签名密钥一直在变化，请稍后再备份" >&2; exit 1; }
+  docker compose exec -T server tar -C /var/lib/compliance -cf - . > "$dir/files.tar"
+  [ "$(state)" = "$before" ] && break
+  [ "$attempt" = 3 ] && { echo "签名密钥或客户端安装包一直在变化，请稍后再备份" >&2; exit 1; }
 done
 trap - EXIT
 echo "已备份到 $dir"

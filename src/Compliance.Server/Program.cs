@@ -180,14 +180,16 @@ public partial class Program
             }
         );
 
-        // For the container's health check: answers without signing in, and says whether the database does.
+        // For the container's health check: answers without signing in, and says whether the database does. A database
+        // that does not answer in time is reported as unavailable: the server itself still answers, and the check
+        // ends only a server that does not (see HealthCheck.cs).
         app.MapGet(
                 "/healthz",
                 async () =>
                 {
                     try
                     {
-                        await service.Tx(async tx => await tx.GetSetting("health"));
+                        await service.Tx(async tx => await tx.GetSetting("health")).WaitAsync(TimeSpan.FromSeconds(5));
                         return Results.Text("ok");
                     }
                     catch (Exception e) when (e is not OperationCanceledException)

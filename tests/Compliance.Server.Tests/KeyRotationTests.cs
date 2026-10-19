@@ -77,6 +77,7 @@ public class KeyRotationTests
 
         // Policies stay signed with the current key until the rotation completes.
         Assert.Equal(first.PolicyKeyId, (await Policy(f)).KeyId);
+        Assert.Equal(first.PolicyKeyId, (await Heartbeat(f, first.PolicyKeyId)).GetProperty("policyKeyId").GetString());
         var waiting = await f.Client.PostAsJsonAsync("/api/settings/signing-key/rotation/complete", new { });
         Assert.Equal(HttpStatusCode.Conflict, waiting.StatusCode);
 
@@ -89,6 +90,10 @@ public class KeyRotationTests
 
         var resigned = await Policy(f);
         Assert.Equal(rotation.NewKeyId, resigned.KeyId);
+        // The release keeps its serial, so heartbeats name the new key for clients to fetch it again.
+        var after = await Heartbeat(f, first.PolicyKeyId, rotation.NewKeyId);
+        Assert.Equal(rotation.NewKeyId, after.GetProperty("policyKeyId").GetString());
+        Assert.Equal(Wire.Read<PolicyDocument>(resigned.Payload).Serial, after.GetProperty("policySerial").GetInt64());
         PolicyCrypto.Verify(resigned, rotation.NewPublicKeyPem, f.Device, 0, f.Clock.Now);
         Assert.ThrowsAny<CryptographicException>(() =>
             PolicyCrypto.Verify(resigned, first.PolicyPublicKeyPem, f.Device, 0, f.Clock.Now)
@@ -100,6 +105,12 @@ public class KeyRotationTests
         )!;
         Assert.Equal(rotation.NewKeyId, signedPackage.KeyId);
         PackageCrypto.Verify(signedPackage, rotation.NewPublicKeyPem);
+
+        // A device that missed the rotation is deleted, then enrolls again with its own key and pins the new one.
+        Assert.Equal(HttpStatusCode.OK, (await f.Client.DeleteAsync($"/api/devices/{f.Device}")).StatusCode);
+        var again = await f.Enroll(await f.Code());
+        Assert.Equal(rotation.NewKeyId, again.PolicyKeyId);
+        f.Device = again.DeviceId;
 
         // New devices pin the new key.
         f.Key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -141,6 +152,12 @@ public class KeyRotationTests
     [Fact]
     public async Task A_completion_that_never_committed_is_undone_at_startup()
     {
+        await Undone_at_startup(halfway: false);
+        await Undone_at_startup(halfway: true);
+    }
+
+    static async Task Undone_at_startup(bool halfway)
+    {
         await using var f = new Fixture();
         await f.Login();
         var enrolled = await f.Enroll(await f.Code());
@@ -151,8 +168,10 @@ public class KeyRotationTests
 
         // The key files as a completion leaves them, with the releases still signed by the old key.
         var key = Path.Combine(f.Directory, "policy.pem");
+        // Halfway: stopped between the two moves, with no key in place.
         File.Move(key, key + ".retired-20260101000000");
-        File.Move(key + ".next", key);
+        if (!halfway)
+            File.Move(key + ".next", key);
 
         await using var restart = new Fixture(f.Directory, f.Clock);
         restart.Key = f.Key;
