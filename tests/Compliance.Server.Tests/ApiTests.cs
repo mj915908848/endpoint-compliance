@@ -1040,6 +1040,24 @@ public class ApiTests
         var health = await f.Client.GetAsync("/healthz");
         Assert.Equal(HttpStatusCode.OK, health.StatusCode);
         Assert.Equal("ok", await health.Content.ReadAsStringAsync());
+
+        // A database that does not answer is reported, not waited for: the container's check would end the server.
+        // SQLite runs one transaction at a time, so an open one keeps the check's from starting.
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("COMPLIANCE_TEST_POSTGRES")))
+            return;
+        var release = new TaskCompletionSource();
+        var held = f
+            .Services.GetRequiredService<ComplianceService>()
+            .Tx(async _ =>
+            {
+                await release.Task;
+                return true;
+            });
+        var blocked = await f.Client.GetAsync("/healthz");
+        release.SetResult();
+        await held;
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, blocked.StatusCode);
+        Assert.Contains("TimeoutException", await blocked.Content.ReadAsStringAsync());
     }
 
     [Fact]

@@ -168,6 +168,9 @@ public sealed class VolumeCatalog(Func<string, IVolumeIndex?> open, TimeProvider
             {
                 var (changes, next) = index.ChangesSince(cursor, ct);
                 Apply(held, changes, keep);
+                // Folders created since the read count against the same limit as the read itself.
+                if (held.Folders.Count > MaxFolders)
+                    return TooMany(held, index, now);
                 held.Cursor = next;
                 return true;
             }
@@ -209,14 +212,7 @@ public sealed class VolumeCatalog(Func<string, IVolumeIndex?> open, TimeProvider
                 if (entry.IsDirectory)
                 {
                     if (held.Folders.Count >= MaxFolders)
-                    {
-                        held.Clear();
-                        Console.WriteLine(
-                            $"文件索引：{index.Root} 的文件夹超过 {MaxFolders} 个，不常驻内存，扫描时直接读取文件表"
-                        );
-                        held.DirectUntil = now + Reread;
-                        return false;
-                    }
+                        return TooMany(held, index, now);
                     held.Folders[entry.Id] = Shared(entry, names);
                 }
                 else if (keep(entry.Name))
@@ -231,6 +227,14 @@ public sealed class VolumeCatalog(Func<string, IVolumeIndex?> open, TimeProvider
             $"文件索引：读取 {index.Root} 文件表 {count} 条，保留 {held.Folders.Count} 个文件夹、{held.Files.Count} 个文件，用时 {started.Elapsed.TotalSeconds:F1} 秒"
         );
         return true;
+    }
+
+    private static bool TooMany(Held held, IVolumeIndex index, DateTimeOffset now)
+    {
+        held.Clear();
+        Console.WriteLine($"文件索引：{index.Root} 的文件夹超过 {MaxFolders} 个，不常驻内存，扫描时直接读取文件表");
+        held.DirectUntil = now + Reread;
+        return false;
     }
 
     /// <summary>Folder names repeat (src, node_modules, Debug); one copy of each is kept.</summary>

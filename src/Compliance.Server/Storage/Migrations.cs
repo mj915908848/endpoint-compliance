@@ -39,6 +39,12 @@ public static class Migrations
             "alert activations",
             tx => tx.Execute("ALTER TABLE alerts ADD COLUMN activations BIGINT NOT NULL DEFAULT 0")
         ),
+        new(
+            15,
+            "newest release per policy",
+            tx =>
+                tx.Execute("CREATE INDEX IF NOT EXISTS policy_releases_policy ON policy_releases(policy_key, version)")
+        ),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
