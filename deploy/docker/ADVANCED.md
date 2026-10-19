@@ -24,7 +24,7 @@ PFX 格式的证书：按 `.env` 里的说明改证书那两行。
 所有设置都写在 `.env` 里，改完执行 `docker compose up -d` 生效。`compose.yml` 不要改，升级时可以直接换成新版。
 
 - 对外端口不是 443：改 `HTTPS_PORT`，如 `HTTPS_PORT=8443`。
-- 固定版本：把 `compose.yml` 里 `image: ghcr.io/mj915908848/compliance-server:latest` 的 `latest` 改成版本号，如 `0.2.26`；改回 `latest` 恢复跟随最新版。
+- 固定版本：把 `compose.yml` 里 `image: ghcr.io/mj915908848/compliance-server:latest` 的 `latest` 改成版本号，如 `0.2.26`；改回 `latest` 恢复跟随最新版。重新下载 `compose.yml` 后要重新改。
 - 拉不下镜像：给 Docker 配代理（`systemctl edit docker` 加 `HTTPS_PROXY`），或用打包好的镜像（见下）。
 - 下文提到的管理端设置（如 `Compliance__TrustedProxies__0`、`HTTPS_PROXY`、保留天数）都按 `名字=值` 一行一个加到 `.env` 末尾。
 
