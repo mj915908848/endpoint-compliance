@@ -26,6 +26,7 @@ const device: DeviceSummary = {
   network: null,
   sourceAddress: "",
   agentUnsupported: false,
+  archivedAt: null,
 };
 
 function stubApi(roles: string[]) {
@@ -47,6 +48,8 @@ function stubApi(roles: string[]) {
     if (url === "/api/devices/dev-1" && !deleted)
       return json(200, { device, snapshot: null, controls: [], pendingCommands: 0 });
     if (url === "/api/alerts") return json(200, []);
+    if (url === "/api/devices?archived=true") return json(200, []);
+    if (url === "/api/devices/archive") return json(200, { done: 1 });
     return json(404, { error: "Device not found" });
   });
   return calls;
@@ -121,6 +124,30 @@ describe("account menu", () => {
     expect(await screen.findByRole("menuitem", { name: /退出/ })).toBeTruthy();
     await userEvent.click(screen.getByRole("menuitem", { name: /修改密码/ }));
     expect(await screen.findByLabelText("当前密码")).toBeTruthy();
+  });
+});
+
+describe("archiving devices", () => {
+  it("archives the devices ticked in the list after confirmation", async () => {
+    const calls = stubApi(["Reader", "Operator"]);
+    renderAt("/devices");
+    const row = (await screen.findAllByText("OLD-PC", {}, { timeout: 10_000 }))[0].closest("tr")!;
+    await userEvent.click(within(row).getByRole("checkbox"));
+    expect(await screen.findByText("已选 1 台")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "归档" }));
+    expect((await screen.findAllByText("归档所选的 1 台终端？")).length).toBeGreaterThan(0);
+    const dialog = screen.getAllByRole("dialog").at(-1)!;
+    await userEvent.click(within(dialog).getByRole("button", { name: "归档" }));
+    await waitFor(() => expect(calls).toContain("POST /api/devices/archive"));
+  });
+
+  it("does not offer ticking devices to read-only accounts", async () => {
+    stubApi(["Reader"]);
+    renderAt("/devices");
+    expect((await screen.findAllByText("OLD-PC", {}, { timeout: 10_000 })).length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
   });
 });
 

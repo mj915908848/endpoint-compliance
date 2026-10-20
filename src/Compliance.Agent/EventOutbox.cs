@@ -403,6 +403,43 @@ public sealed class EventOutbox : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Events waiting, when the oldest of them was recorded, and how many the server refused in the last day, for
+    /// the client health each heartbeat reports.
+    /// </summary>
+    public async Task<(int Queued, DateTimeOffset? OldestQueued, int Refused)> StatsAsync(
+        CancellationToken ct = default
+    )
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            using var cmd = db.CreateCommand();
+            cmd.CommandText =
+                "SELECT (SELECT COUNT(*) FROM events), "
+                + "(SELECT json_extract(json,'$.sourceTime') FROM events ORDER BY seq LIMIT 1), "
+                + "(SELECT COUNT(*) FROM quarantine WHERE at >= $since)";
+            cmd.Parameters.AddWithValue("$since", DateTimeOffset.UtcNow.AddDays(-1).ToString("O"));
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            await reader.ReadAsync(ct);
+            DateTimeOffset? oldest =
+                !reader.IsDBNull(1)
+                && DateTimeOffset.TryParse(
+                    reader.GetString(1),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None,
+                    out var at
+                )
+                    ? at
+                    : null;
+            return (reader.GetInt32(0), oldest, reader.GetInt32(2));
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public int OversizedInLastBatch { get; private set; }
 
     public async Task<AgentEvent[]> PendingBatchAsync(int max, int maxWireBytes, CancellationToken ct = default)

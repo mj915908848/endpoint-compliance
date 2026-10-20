@@ -88,6 +88,14 @@ export const auditActionLabel = lookup({
   SetAuditRetention: "修改审计记录保留期限",
   PruneAudit: "清理过期审计记录",
   ExportDevices: "导出终端列表",
+  ArchiveDevice: "归档终端",
+  RestoreDevice: "取消归档终端",
+  SetArchiveDays: "修改自动归档期限",
+  RequestUpgrade: "请求升级客户端",
+  RolloutUpgrade: "批量升级客户端",
+  UpgradeReply: "终端回复升级请求",
+  UpgradeSucceeded: "客户端升级成功",
+  UpgradeFailed: "客户端升级失败",
 });
 
 export const categoryLabel = lookup({

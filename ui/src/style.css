@@ -907,3 +907,11 @@ body {
     padding: 14px 16px;
   }
 }
+
+/* Actions on the devices ticked in the device list. */
+.selection-bar {
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: #eef3fe;
+}

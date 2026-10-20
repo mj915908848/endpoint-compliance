@@ -290,6 +290,66 @@ function NotificationPanel({
   );
 }
 
+const archiveChoices = [
+  { value: 0, label: "不自动归档" },
+  { value: 30, label: "30 天未上线" },
+  { value: 60, label: "60 天未上线" },
+  { value: 90, label: "90 天未上线" },
+  { value: 180, label: "180 天未上线" },
+];
+
+/** When devices nobody switches on any more (replaced or retired PCs) leave the lists by themselves. */
+function ArchivePanel({ session, days }: { session: Session; days: number }) {
+  const canEdit = role(session, "Operator");
+  const { message } = App.useApp();
+  const refresh = useRefresh();
+  const [value, setValue] = useState(days),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await request("/api/settings/archive-days", {
+        method: "PUT",
+        body: { days: value },
+        csrfToken: session.csrfToken,
+      });
+      void message.success("已保存");
+      refresh();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel title="长期未上线的终端">
+      <Space wrap>
+        <Select
+          aria-label="自动归档期限"
+          value={value}
+          onChange={setValue}
+          options={archiveChoices}
+          style={{ width: 160 }}
+          disabled={!canEdit}
+        />
+        {canEdit && (
+          <Button type="primary" onClick={save} loading={busy} disabled={value === days}>
+            保存
+          </Button>
+        )}
+      </Space>
+      <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
+        归档的终端不再出现在终端列表、总览统计、客户端升级和签名密钥更换中，它的告警自动恢复，也不再产生失联告警。终端重新上线时自动取消归档。在终端列表的「已归档」里可以查看或删除。
+      </Typography.Paragraph>
+      <ErrorNotice error={error} />
+    </Panel>
+  );
+}
+
 function RetentionPanel({ session, days }: { session: Session; days: number }) {
   // Audit records also hold operators to account, so only publishers may change how long they are kept.
   const canEdit = role(session, "Publisher");
@@ -351,7 +411,7 @@ function SettingsPanel({
   part,
 }: {
   session: Session;
-  part: "notifications" | "retention";
+  part: "notifications" | "retention" | "archive";
 }) {
   const settings = useResource<AppSettings>("/api/settings");
   const [initial, setInitial] = useState<AppSettings | null>(null);
@@ -360,13 +420,23 @@ function SettingsPanel({
   }, [settings.data, initial]);
   if (!initial)
     return (
-      <Panel title={part === "notifications" ? "告警推送" : "审计记录保留"}>
+      <Panel
+        title={
+          part === "notifications"
+            ? "告警推送"
+            : part === "archive"
+              ? "长期未上线的终端"
+              : "审计记录保留"
+        }
+      >
         <Fresh error={settings.error} loading={settings.loading}>
           {null}
         </Fresh>
       </Panel>
     );
   const current = settings.data ?? initial;
+  if (part === "archive")
+    return <ArchivePanel key={current.archiveDays} session={session} days={current.archiveDays} />;
   return part === "notifications" ? (
     <NotificationPanel session={session} initial={initial} live={current} />
   ) : (
@@ -454,6 +524,7 @@ export function SystemPage({ session }: { session: Session }) {
       children: (
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
           {publisher && <SigningKeyPanel session={session} />}
+          {operator && <SettingsPanel session={session} part="archive" />}
           {operator && <SettingsPanel session={session} part="retention" />}
         </Space>
       ),

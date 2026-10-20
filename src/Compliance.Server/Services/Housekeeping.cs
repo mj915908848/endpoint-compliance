@@ -49,6 +49,7 @@ public sealed class Housekeeping(Store store, Settings settings, TimeProvider cl
         await Tx(tx => tx.PruneNonces(Now));
         total += await Tx(tx => tx.PruneCommands(Now - ExpiredCommandRetention));
         await Repeat(tx => tx.PruneVerdictHistory(Now - VerdictService.VerdictHistoryRetention, PruneBatch));
+        await ArchiveSilent(ct);
         var days = await Tx(AuditRetentionDays);
         if (days > 0)
         {
@@ -68,6 +69,63 @@ public sealed class Housekeeping(Store store, Settings settings, TimeProvider cl
                 });
         }
         return total;
+    }
+
+    public const string ArchiveDaysKey = "device-archive-days";
+
+    /// <summary>Days without a heartbeat before a device is archived; 0 never archives devices by itself.</summary>
+    public static readonly int[] ArchiveChoices = [0, 30, 60, 90, 180];
+
+    public const int DefaultArchiveDays = 30;
+
+    public static async Task<int> ArchiveDays(Transaction tx) =>
+        int.TryParse(await tx.GetSetting(ArchiveDaysKey), out var days) ? days : DefaultArchiveDays;
+
+    /// <summary>
+    /// Archives devices: they leave the device list, the counts, upgrades and key rotation, and their alerts are
+    /// resolved. A device that reports again is taken out of the archive. Returns the devices archived.
+    /// </summary>
+    public static async Task<int> Archive(
+        Transaction tx,
+        IEnumerable<string> ids,
+        string actor,
+        string why,
+        DateTimeOffset now
+    )
+    {
+        var archived = 0;
+        foreach (var id in ids.Distinct().Order(StringComparer.Ordinal))
+        {
+            await tx.Lock(ComplianceService.DeviceLock(id));
+            foreach (var (_, host) in await tx.ArchiveDevices([id], now))
+            {
+                await tx.ResolveDeviceAlerts(id, now);
+                await tx.Audit(actor, "ArchiveDevice", $"{host}（{id}）{why}", now);
+                archived++;
+            }
+        }
+        return archived;
+    }
+
+    /// <summary>Archives devices silent for the chosen number of days, a batch per transaction.</summary>
+    async Task ArchiveSilent(CancellationToken ct)
+    {
+        var days = await Tx(ArchiveDays);
+        if (days <= 0)
+            return;
+        int found;
+        do
+        {
+            ct.ThrowIfCancellationRequested();
+            found = await Tx(async tx =>
+            {
+                // Offline alerts are opened under this lock; taken first, as UpdateOffline does.
+                await tx.Lock("offline");
+                var ids = await tx.DevicesSilentSince(Now - TimeSpan.FromDays(days), 200);
+                await Archive(tx, ids, "system", $"{days} 天未上线", Now);
+                return ids.Count;
+            });
+        } while (found == 200);
     }
 
     public const string AuditRetentionKey = "audit-retention-days";

@@ -33,19 +33,19 @@ public sealed partial class Transaction
             ("since", since)
         );
 
-    /// <summary>Changes of every enrolled device at or after <paramref name="since"/>, oldest first.</summary>
+    /// <summary>Changes of every device in use at or after <paramref name="since"/>, oldest first.</summary>
     public Task<List<VerdictChange>> VerdictChangesSince(DateTimeOffset since) =>
         Query(
             $"""
             SELECT {VerdictChangeSelect} FROM verdict_history h JOIN devices d ON d.id = h.device_id
-            WHERE h.at >= @since ORDER BY h.at
+            WHERE h.at >= @since AND d.archived_at IS NULL ORDER BY h.at
             """,
             ReadVerdictChange,
             ("since", since)
         );
 
     /// <summary>
-    /// Each enrolled device's last change before <paramref name="before"/>: its verdict at that moment. Found per
+    /// The last change before <paramref name="before"/> of each device in use: its verdict at that moment. Found per
     /// device in the (device_id, at) index rather than by checking every change.
     /// </summary>
     public Task<List<VerdictChange>> VerdictsBefore(DateTimeOffset before) =>
@@ -53,6 +53,7 @@ public sealed partial class Transaction
             $"""
             SELECT {VerdictChangeSelect} FROM devices d JOIN verdict_history h ON h.device_id = d.id
                 AND h.at = (SELECT MAX(x.at) FROM verdict_history x WHERE x.device_id = d.id AND x.at < @before)
+            WHERE d.archived_at IS NULL
             """,
             ReadVerdictChange,
             ("before", before)

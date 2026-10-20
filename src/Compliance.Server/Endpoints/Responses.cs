@@ -24,9 +24,38 @@ public record SessionInfo(string Username, string[] Roles, string CsrfToken, dou
 /// <param name="SignedOut">Other sessions of the account that were ended.</param>
 public record PasswordChanged(int SignedOut, bool Ok = true);
 
-public record DeviceDetail(DeviceSummary Device, ScanSnapshot? Snapshot, ControlState[] Controls, int PendingCommands);
+/// <param name="Health">What the client last said about itself; null for clients that do not report it.</param>
+/// <param name="HealthProblems">The problems that health shows, as the client health alert names them.</param>
+public record DeviceDetail(
+    DeviceSummary Device,
+    ScanSnapshot? Snapshot,
+    ControlState[] Controls,
+    int PendingCommands,
+    ClientHealth? Health = null,
+    string[]? HealthProblems = null
+);
 
 public record DeviceDeleted(string Deleted);
+
+/// <param name="Done">The devices the action changed; devices already in that state or no longer enrolled are left out.</param>
+public record DevicesChanged(int Done);
+
+/// <summary>Where each device sent an upgrade to one version stands.</summary>
+/// <param name="Remaining">Devices in use still older than the version that have not been sent it.</param>
+public record UpgradeProgress(string Version, UpgradeProgressItem[] Devices, int Remaining);
+
+/// <param name="State">Waiting, Installing, Succeeded, Failed, NotApplied or Expired.</param>
+/// <param name="SentAt">When the upgrade was sent.</param>
+public record UpgradeProgressItem(
+    string DeviceId,
+    string HostName,
+    string Note,
+    string OnlineState,
+    string AgentVersion,
+    string State,
+    string Detail,
+    DateTimeOffset SentAt
+);
 
 /// <summary>A new enrollment code; the code itself is shown only this once.</summary>
 public record NewEnrollmentCode(string Code, string Id, string Label, DateTimeOffset ExpiresAt, int MaxUses);
@@ -35,7 +64,13 @@ public record CodeRevoked(string Revoked);
 
 /// <param name="LastNotification">The last push attempt since the server started.</param>
 /// <param name="AuditRetentionDays">0 keeps audit records forever.</param>
-public record AppSettings(NotificationView Notifications, NotificationResult? LastNotification, int AuditRetentionDays);
+/// <param name="ArchiveDays">Devices silent this many days are archived; 0 never archives them.</param>
+public record AppSettings(
+    NotificationView Notifications,
+    NotificationResult? LastNotification,
+    int AuditRetentionDays,
+    int ArchiveDays
+);
 
 /// <summary><see cref="NotificationSettings"/> with the secret left out.</summary>
 /// <param name="Version">Changes with every save; sent back so a save over someone else's is refused.</param>

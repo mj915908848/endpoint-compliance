@@ -24,6 +24,7 @@ const deviceFixture: DeviceSummary = {
   network: null,
   sourceAddress: "",
   agentUnsupported: false,
+  archivedAt: null,
 };
 const alertFixture = {
   id: "fixture-alert",

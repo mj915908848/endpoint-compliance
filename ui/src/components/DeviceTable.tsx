@@ -9,12 +9,17 @@ export function DeviceTable({
   onSelect,
   pageSize = 20,
   compact = false,
+  selected,
+  onSelectedChange,
 }: {
   devices: DeviceSummary[];
   onSelect: (id: string) => void;
   pageSize?: number | false;
   /** Narrow layout for dashboards: host, state and last scan only. */
   compact?: boolean;
+  /** Checkboxes for acting on several devices at once, when given. */
+  selected?: string[];
+  onSelectedChange?: (ids: string[]) => void;
 }) {
   const columns: TableColumnsType<DeviceSummary> = [
     {
@@ -115,6 +120,15 @@ export function DeviceTable({
           <Empty title="暂无终端">使用一次性登记码登记终端，终端首次上报后将显示在此处。</Empty>
         ),
       }}
+      rowSelection={
+        selected && onSelectedChange
+          ? {
+              selectedRowKeys: selected,
+              onChange: (keys) => onSelectedChange(keys.map(String)),
+              preserveSelectedRowKeys: false,
+            }
+          : undefined
+      }
       rowClassName={(d) => (d.onlineState === "Online" ? "" : "device-away")}
       onRow={(d) => ({ onClick: () => onSelect(d.id), style: { cursor: "pointer" } })}
       columns={columns.filter((c) => !hidden.includes(String(c.key)))}

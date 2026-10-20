@@ -25,6 +25,7 @@ const settings: AppSettings = {
   },
   lastNotification: null,
   auditRetentionDays: 0,
+  archiveDays: 30,
 };
 
 type Call = { url: string; method?: string; body?: unknown };

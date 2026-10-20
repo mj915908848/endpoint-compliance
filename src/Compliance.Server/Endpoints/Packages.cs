@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Http.Features;
 
 namespace Compliance.Server;
 
-/// <param name="Outdated">Enrolled devices whose client is older than this version.</param>
+/// <param name="Outdated">Devices in use whose client is older than this version.</param>
 public sealed record ClientPackageItem(
     string Version,
     string Sha256,
@@ -30,7 +30,7 @@ static partial class Endpoints
                 return await s.Tx(async tx =>
                 {
                     // Devices by client version: a few distinct versions to compare with each package, not every device.
-                    var versions = (await tx.AllDeviceHeads())
+                    var versions = (await tx.DeviceHeads())
                         .GroupBy(d => d.AgentVersion)
                         .Select(g => (Version: g.Key, Count: g.Count()))
                         .ToArray();
@@ -114,27 +114,90 @@ static partial class Endpoints
             }
         );
 
+        // Sends the upgrade to every outdated device in use, or with ?count= to that many first, online and most
+        // recently seen ones before others, so a bad package reaches a few devices before all of them.
         group.MapPost(
             "/{version}/rollout",
-            async (HttpContext c, string version) =>
+            async (HttpContext c, string version, int? count) =>
             {
                 var u = Require(c, "Operator");
+                if (count is < 1)
+                    throw new ApiError(400, "台数至少为 1");
                 return await s.Tx(async tx =>
                 {
                     // Two operators starting it at once would queue two upgrades per device.
                     await tx.Lock("rollout");
                     var package = await NewestPackage(tx, version);
                     var upgrading = (await tx.DevicesUpgrading(s.Now)).ToHashSet();
-                    var queued = 0;
-                    foreach (var d in await tx.AllDeviceHeads())
-                    {
-                        if (upgrading.Contains(d.Id) || !ReleaseVersion.Older(d.AgentVersion, version))
-                            continue;
+                    // Devices installing it now would be sent it again; failed and expired ones are sent it again.
+                    upgrading.UnionWith(
+                        (await tx.UpgradeCommands(version))
+                            .Where(x =>
+                                x.Reply is { Success: true }
+                                && x.Outcome is null
+                                && x.RepliedAt is { } at
+                                && s.Now - at < ClientStatus.InstallTimeout
+                            )
+                            .Select(x => x.DeviceId)
+                    );
+                    var targets = (await tx.DeviceHeads())
+                        .Where(d => !upgrading.Contains(d.Id) && ReleaseVersion.Older(d.AgentVersion, version))
+                        .OrderByDescending(d => DeviceStatus.Online(d, s.Now) == "Online")
+                        .ThenByDescending(d => d.LastHeartbeat)
+                        .ThenBy(d => d.Id, StringComparer.Ordinal)
+                        .Take(count ?? int.MaxValue)
+                        .ToList();
+                    foreach (var d in targets)
                         await tx.InsertCommand(new CommandRecord(d.Id, s.Packages.UpgradeCommand(d, package.Package)));
-                        queued++;
-                    }
-                    await tx.Audit(u.Username, "RolloutUpgrade", $"{version}，{queued} 台", s.Now);
-                    return new UpgradeRollout(queued);
+                    await tx.Audit(
+                        u.Username,
+                        "RolloutUpgrade",
+                        $"{version}，{targets.Count} 台" + (count is null ? "" : "（分批）"),
+                        s.Now
+                    );
+                    return new UpgradeRollout(targets.Count);
+                });
+            }
+        );
+
+        // Where each device sent this version stands: the latest upgrade to it per device.
+        group.MapGet(
+            "/{version}/rollout",
+            async (HttpContext c, string version) =>
+            {
+                Require(c, "Reader");
+                return await s.Tx(async tx =>
+                {
+                    await NewestPackage(tx, version);
+                    var devices = (await tx.AllDeviceHeads()).ToDictionary(d => d.Id);
+                    var sent = (await tx.UpgradeCommands(version))
+                        .Where(x => devices.ContainsKey(x.DeviceId))
+                        .GroupBy(x => x.DeviceId)
+                        .Select(g => g.Last())
+                        .ToList();
+                    var items = sent.Select(x =>
+                        {
+                            var d = devices[x.DeviceId];
+                            var (state, detail) = ClientStatus.Upgrade(x, d, version, s.Now);
+                            return new UpgradeProgressItem(
+                                d.Id,
+                                d.HostName,
+                                d.Note,
+                                DeviceStatus.Online(d, s.Now),
+                                d.AgentVersion,
+                                state,
+                                detail,
+                                x.Command.ExpiresAt - PackageService.UpgradeExpiry
+                            );
+                        })
+                        .OrderByDescending(i => i.SentAt)
+                        .ThenBy(i => i.HostName, StringComparer.CurrentCultureIgnoreCase)
+                        .ToArray();
+                    var reached = sent.Select(x => x.DeviceId).ToHashSet();
+                    var remaining = devices.Values.Count(d =>
+                        d.ArchivedAt == null && !reached.Contains(d.Id) && ReleaseVersion.Older(d.AgentVersion, version)
+                    );
+                    return new UpgradeProgress(version, items, remaining);
                 });
             }
         );

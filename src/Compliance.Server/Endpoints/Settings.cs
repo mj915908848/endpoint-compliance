@@ -4,7 +4,10 @@ using Compliance.Core;
 
 namespace Compliance.Server;
 
-/// <summary>Settings changed in the management UI: alert notifications and how long audit records are kept.</summary>
+/// <summary>
+/// Settings changed in the management UI: alert notifications, how long audit records are kept and when silent
+/// devices are archived.
+/// </summary>
 static partial class Endpoints
 {
     sealed record NotificationRequest(
@@ -62,7 +65,8 @@ static partial class Endpoints
                             await NotificationsVersion(tx)
                         ),
                         notifier.Last,
-                        await Housekeeping.AuditRetentionDays(tx)
+                        await Housekeeping.AuditRetentionDays(tx),
+                        await Housekeeping.ArchiveDays(tx)
                     );
                 });
             }
@@ -187,5 +191,29 @@ static partial class Endpoints
                 }
             )
             .Accepts<AuditRetentionRequest>(JsonBody);
+
+        group
+            .MapPut(
+                "/archive-days",
+                async (HttpContext c) =>
+                {
+                    var u = Require(c, "Operator");
+                    var r = await Body<ArchiveDaysRequest>(c);
+                    if (!Housekeeping.ArchiveChoices.Contains(r.Days))
+                        throw new ApiError(400, "归档期限无效");
+                    return await s.Tx(async tx =>
+                    {
+                        await tx.PutSetting(Housekeeping.ArchiveDaysKey, r.Days.ToString());
+                        await tx.Audit(
+                            u.Username,
+                            "SetArchiveDays",
+                            r.Days == 0 ? "不自动归档" : $"{r.Days} 天未上线",
+                            s.Now
+                        );
+                        return new Done();
+                    });
+                }
+            )
+            .Accepts<ArchiveDaysRequest>(JsonBody);
     }
 }

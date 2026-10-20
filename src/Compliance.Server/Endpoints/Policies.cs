@@ -19,7 +19,7 @@ static partial class Endpoints
     {
         var group = routes.MapGroup("/api/policies");
 
-        // Default first, then by name; Devices counts the devices each policy currently applies to.
+        // Default first, then by name; Devices counts the devices in use each policy currently applies to.
         group.MapGet(
             "",
             async (HttpContext c) =>
@@ -28,7 +28,7 @@ static partial class Endpoints
                 return await s.Tx(async tx =>
                 {
                     var policies = await s.Policies.All(tx);
-                    var devices = await tx.AllDeviceHeads();
+                    var devices = await tx.DeviceHeads();
                     return policies
                         .Select(p => new PolicyListItem(
                             p.Key,
@@ -139,7 +139,7 @@ static partial class Endpoints
                 s.Now
             );
             var policies = await s.Policies.All(tx);
-            var devices = await tx.AllDeviceHeads();
+            var devices = await tx.DeviceHeads();
             var state = policies.First(p => p.Key == published);
             return new PolicyListItem(
                 published,

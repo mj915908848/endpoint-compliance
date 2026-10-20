@@ -11,14 +11,84 @@ static partial class Endpoints
     {
         var group = routes.MapGroup("/api/devices");
 
+        // Devices in use, or with ?archived=true the archived ones.
         group.MapGet(
             "",
-            async (HttpContext c) =>
+            async (HttpContext c, bool? archived) =>
             {
                 Require(c, "Reader");
-                return await s.Tx(async tx => (await s.Verdicts.Summaries(tx)).OrderBy(d => d.HostName).ToArray());
+                return await s.Tx(async tx =>
+                    (await s.Verdicts.Summaries(tx, archived == true)).OrderBy(d => d.HostName).ToArray()
+                );
             }
         );
+
+        // Several devices at once from the device list: archive, take out of the archive, or delete.
+        group
+            .MapPost(
+                "/archive",
+                async (HttpContext c) =>
+                {
+                    var u = Require(c, "Operator");
+                    var ids = await DeviceIds(c);
+                    return await s.Tx(async tx =>
+                    {
+                        await tx.Lock("offline");
+                        return new DevicesChanged(await Housekeeping.Archive(tx, ids, u.Username, "", s.Now));
+                    });
+                }
+            )
+            .Accepts<DeviceIdsRequest>(JsonBody);
+
+        group
+            .MapPost(
+                "/restore",
+                async (HttpContext c) =>
+                {
+                    var u = Require(c, "Operator");
+                    var ids = await DeviceIds(c);
+                    return await s.Tx(async tx =>
+                    {
+                        var restored = 0;
+                        foreach (var id in ids)
+                        {
+                            await tx.Lock(ComplianceService.DeviceLock(id));
+                            if (await tx.GetDeviceHead(id) is { } d && await tx.RestoreDevice(id))
+                            {
+                                await tx.Audit(u.Username, "RestoreDevice", $"{d.HostName}（{id}）", s.Now);
+                                restored++;
+                            }
+                        }
+                        return new DevicesChanged(restored);
+                    });
+                }
+            )
+            .Accepts<DeviceIdsRequest>(JsonBody);
+
+        group
+            .MapPost(
+                "/delete",
+                async (HttpContext c) =>
+                {
+                    var u = Require(c, "Operator");
+                    var ids = await DeviceIds(c);
+                    return await s.Tx(async tx =>
+                    {
+                        var deleted = 0;
+                        foreach (var id in ids)
+                        {
+                            await tx.Lock(ComplianceService.DeviceLock(id));
+                            if (await tx.GetDeviceHead(id) is not { } d)
+                                continue;
+                            await tx.DeleteDevice(id);
+                            await tx.Audit(u.Username, "DeleteDevice", $"{d.HostName}（{id}）", s.Now);
+                            deleted++;
+                        }
+                        return new DevicesChanged(deleted);
+                    });
+                }
+            )
+            .Accepts<DeviceIdsRequest>(JsonBody);
 
         group.MapGet(
             "/export.csv",
@@ -47,7 +117,9 @@ static partial class Endpoints
                         await s.Verdicts.Summary(tx, d),
                         d.Snapshot,
                         d.Controls ?? [],
-                        (await tx.PendingCommands(id, s.Now)).Count
+                        (await tx.PendingCommands(id, s.Now)).Count,
+                        d.Health,
+                        ClientStatus.Problems(d.Health, s.Now)
                     );
                 });
             }
@@ -180,6 +252,17 @@ static partial class Endpoints
                 }
             )
             .Accepts<CommandRequest>(JsonBody);
+    }
+
+    const int MaxDevicesPerAction = 1000;
+
+    /// <summary>The devices a list action names, sorted so that their locks are always taken in the same order.</summary>
+    static async Task<string[]> DeviceIds(HttpContext c)
+    {
+        var ids = (await Body<DeviceIdsRequest>(c)).Ids ?? [];
+        if (ids.Length == 0 || ids.Length > MaxDevicesPerAction || ids.Any(id => id is not { Length: > 0 and <= 64 }))
+            throw new ApiError(400, $"请选择 1 到 {MaxDevicesPerAction} 台终端");
+        return ids.Distinct().Order(StringComparer.Ordinal).ToArray();
     }
 
     /// <summary>

@@ -2866,6 +2866,86 @@ if (OperatingSystem.IsWindows())
 else
     Console.WriteLine("SKIP native Windows checks (not running on Windows)");
 
+await Check(
+    "the outbox reports what waits, since when, and what the server refused in the last day",
+    async () =>
+    {
+        var path = Path.Combine(Path.GetTempPath(), "compliance-outbox-" + Guid.NewGuid() + ".sqlite");
+        try
+        {
+            await using var q = new EventOutbox(path);
+            var empty = await q.StatsAsync();
+            Assert(empty == (0, null, 0), "an empty queue reports nothing waiting");
+            var first = await q.EnqueueAsync("Health", "test:one", null, "first");
+            await q.EnqueueAsync("Health", "test:two", null, "second");
+            var refused = await q.EnqueueAsync("Health", "test:three", null, "third");
+            await q.RetryAsync([refused.EventId], TimeSpan.Zero, "400", true);
+            var (queued, oldest, refusedCount) = await q.StatsAsync();
+            Assert(queued == 2, $"two events wait, not {queued}");
+            Assert(oldest == first.SourceTime, "the oldest waiting event is the first queued");
+            Assert(refusedCount == 1, "the refused event is counted");
+        }
+        finally
+        {
+            DeleteDatabase(path);
+        }
+    }
+);
+
+await Check(
+    "an upgrade reports success by version and failure from the installer's log",
+    () =>
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "upgrade-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var log = Path.Combine(dir, "x.log");
+            var started = DateTimeOffset.UtcNow;
+            var pending = new PendingUpgrade("c-1", "0.2.30", log, started);
+            pending.Save(dir);
+            Assert(PendingUpgrade.Read(dir) == pending, "the record is read back");
+
+            Assert(pending.Outcome("0.2.29", started) is null, "no log yet: the installer may still be running");
+            var done = pending.Outcome("0.2.30", started);
+            Assert(done is { Succeeded: true, CommandId: "c-1" }, "running the new version is success");
+            Assert(pending.Outcome("0.2.31-dev", started) is { Succeeded: true }, "a newer build is success too");
+
+            // Verbose installer logs are UTF-16 with a byte order mark.
+            File.WriteAllText(
+                log,
+                "MSI (s) (A0:B4) [10:00:01:000]: Product: x -- Installation operation failed.\r\n"
+                    + "MSI (s) (A0:B4) [10:00:01:000]: Windows Installer installed the product. Product Name: x. "
+                    + "Product Version: 0.2.30. Installation success or error status: 1603.\r\n"
+                    + "MSI (s) (A0:B4) [10:00:01:000]: MainEngineThread is returning 1603\r\n",
+                System.Text.Encoding.Unicode
+            );
+            var failed = pending.Outcome("0.2.29", started);
+            Assert(
+                failed is { Succeeded: false } && failed.Detail.Contains("1603"),
+                "the installer's status is reported"
+            );
+
+            File.WriteAllText(log, "MSI (s): MainEngineThread is returning 0\r\n", System.Text.Encoding.Unicode);
+            Assert(pending.Outcome("0.2.29", started.AddMinutes(5)) is null, "status 0 waits for the new version");
+            var late = pending.Outcome("0.2.29", started + PendingUpgrade.Timeout);
+            Assert(
+                late is { Succeeded: false } && late.Detail.Contains("一小时"),
+                "an installer that never ends times out"
+            );
+
+            File.WriteAllText(Path.Combine(dir, PendingUpgrade.FileName), "{");
+            Assert(PendingUpgrade.Read(dir) is null, "a damaged record is dropped");
+            Assert(!File.Exists(Path.Combine(dir, PendingUpgrade.FileName)), "and removed");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+        return Task.CompletedTask;
+    }
+);
+
 foreach (var error in failures)
     Console.Error.WriteLine(error);
 return failures.Count == 0 ? 0 : 1;

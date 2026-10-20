@@ -104,20 +104,21 @@ public sealed class VerdictService(Store store, PolicyService policies, TimeProv
             ReleaseVersion.Older(d.AgentVersion, ComplianceService.Version),
             d.Network,
             d.SourceAddress,
-            ReleaseVersion.Unsupported(d.AgentVersion)
+            ReleaseVersion.Unsupported(d.AgentVersion),
+            d.ArchivedAt
         );
     }
 
     public async Task<DeviceSummary> Summary(Transaction tx, DeviceRecord d) => Summary(d, await CurrentVerdict(tx, d));
 
     /// <summary>
-    /// Every device from its stored verdict. The few whose stored verdict no longer holds (a new snapshot or policy the
+    /// Every device in use (or every archived one) from its stored verdict. The few whose stored verdict no longer holds (a new snapshot or policy the
     /// background refresh has not reached yet, or data that just went stale) are evaluated here, a few hundred
     /// snapshots per query, without storing anything: administrators' pages poll this and must not write.
     /// </summary>
-    public async Task<List<DeviceSummary>> Summaries(Transaction tx)
+    public async Task<List<DeviceSummary>> Summaries(Transaction tx, bool archived = false)
     {
-        var heads = await tx.AllDeviceHeads();
+        var heads = await tx.DeviceHeads(archived);
         var now = Now;
         var evaluated = new Dictionary<string, DeviceSummary>();
         foreach (
@@ -176,12 +177,12 @@ public sealed class VerdictService(Store store, PolicyService policies, TimeProv
         return total;
     }
 
-    /// <summary>Every device evaluated now, with the reasons behind its verdict, for the exported device list.</summary>
+    /// <summary>Every device in use evaluated now, with the reasons behind its verdict, for the exported device list.</summary>
     public async Task<List<(DeviceSummary Device, string[] Reasons)>> Export(Transaction tx)
     {
         var rows = new List<(DeviceSummary, string[])>();
         // A few hundred snapshots at a time keeps memory bounded without a query per device.
-        foreach (var chunk in (await tx.AllDeviceHeads()).Select(h => h.Id).Chunk(200))
+        foreach (var chunk in (await tx.DeviceHeads()).Select(h => h.Id).Chunk(200))
         foreach (var d in await tx.GetDevices(chunk))
         {
             var (v, report) = await Evaluate(tx, d);

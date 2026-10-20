@@ -12,12 +12,13 @@ public sealed partial class Transaction
     // can still insert.
     const string DeviceColumns =
         "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, controls, snapshot, snapshot_sequence, target_policy_version";
-    const string DeviceSelect = DeviceColumns + ", note, agent_version, network, source_address, verdict_detail";
+    const string DeviceSelect =
+        DeviceColumns + ", note, agent_version, network, source_address, verdict_detail, archived_at, health";
 
     // The same columns with controls and snapshot left out: most requests need neither, and parsing the snapshot of
     // every device is the bulk of reading one.
     const string DeviceHeadSelect =
-        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version, network, source_address, verdict_detail";
+        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version, network, source_address, verdict_detail, archived_at, health";
 
     static DeviceRecord ReadDevice(DbDataReader r) =>
         new(
@@ -34,7 +35,9 @@ public sealed partial class Transaction
             r.GetString(10),
             r.GetString(11) is { Length: > 0 } network ? Wire.Read<NetworkAdapter[]>(network) : null,
             r.GetString(12),
-            r.IsDBNull(13) ? null : Wire.Read<StoredVerdict>(r.GetString(13))
+            r.IsDBNull(13) ? null : Wire.Read<StoredVerdict>(r.GetString(13)),
+            OptionalTime(r, 14),
+            r.GetString(15) is { Length: > 0 } health ? Wire.Read<ClientHealth>(health) : null
         );
 
     public Task<DeviceRecord?> GetDevice(string id) =>
@@ -60,6 +63,55 @@ public sealed partial class Transaction
 
     /// <summary>Every device without its controls and snapshot.</summary>
     public Task<List<DeviceRecord>> AllDeviceHeads() => Query($"SELECT {DeviceHeadSelect} FROM devices", ReadDevice);
+
+    /// <summary>
+    /// The devices in use (or, with <paramref name="archived"/>, the archived ones) without their controls and
+    /// snapshot. Lists, counts and upgrades leave archived devices out; policy assignment keeps them, as they may be
+    /// switched on again.
+    /// </summary>
+    public Task<List<DeviceRecord>> DeviceHeads(bool archived = false) =>
+        Query(
+            $"SELECT {DeviceHeadSelect} FROM devices WHERE archived_at IS {(archived ? "NOT NULL" : "NULL")}",
+            ReadDevice
+        );
+
+    /// <summary>Archives the devices <paramref name="ids"/> not archived yet; returns those it archived.</summary>
+    public async Task<List<(string Id, string HostName)>> ArchiveDevices(IEnumerable<string> ids, DateTimeOffset at)
+    {
+        var archived = new List<(string, string)>();
+        foreach (var id in ids)
+            if (
+                await Single(
+                    "UPDATE devices SET archived_at = @at WHERE id = @id AND archived_at IS NULL RETURNING host_name",
+                    r => r.GetString(0),
+                    ("at", at),
+                    ("id", id)
+                ) is
+                { } host
+            )
+                archived.Add((id, host));
+        return archived;
+    }
+
+    /// <summary>Takes a device out of the archive; returns whether it was archived.</summary>
+    public async Task<bool> RestoreDevice(string id) =>
+        await Execute("UPDATE devices SET archived_at = NULL WHERE id = @id AND archived_at IS NOT NULL", ("id", id))
+        > 0;
+
+    /// <summary>Devices in use whose last heartbeat is before <paramref name="cutoff"/>, oldest first.</summary>
+    public Task<List<string>> DevicesSilentSince(DateTimeOffset cutoff, int limit) =>
+        Query(
+            $"""
+            SELECT id FROM devices
+            WHERE archived_at IS NULL AND last_heartbeat IS NOT NULL AND last_heartbeat < @cutoff
+            ORDER BY last_heartbeat, id LIMIT {limit}
+            """,
+            r => r.GetString(0),
+            ("cutoff", cutoff)
+        );
+
+    public Task SetDeviceHealth(string id, ClientHealth health) =>
+        Execute("UPDATE devices SET health = @health WHERE id = @id", ("health", Wire.Serialize(health)), ("id", id));
 
     public async Task<bool> DeviceKeyExists(string publicKeyPem) =>
         await Count("SELECT COUNT(*) FROM devices WHERE public_key_pem = @key", ("key", publicKeyPem)) > 0;
@@ -125,7 +177,7 @@ public sealed partial class Transaction
         string keyId
     ) =>
         Query<(string, string, DateTimeOffset?, bool)>(
-            "SELECT id, host_name, last_heartbeat, policy_keys FROM devices ORDER BY host_name, id",
+            "SELECT id, host_name, last_heartbeat, policy_keys FROM devices WHERE archived_at IS NULL ORDER BY host_name, id",
             r =>
                 (
                     r.GetString(0),
@@ -191,7 +243,8 @@ public sealed partial class Transaction
             """
             SELECT d.id, d.host_name FROM devices d
             LEFT JOIN alerts a ON a.id = 'offline:' || d.id
-            WHERE d.last_heartbeat IS NOT NULL AND d.last_heartbeat <= @cutoff AND (a.id IS NULL OR a.state <> 'Active')
+            WHERE d.last_heartbeat IS NOT NULL AND d.last_heartbeat <= @cutoff AND d.archived_at IS NULL
+                AND (a.id IS NULL OR a.state <> 'Active')
             """,
             r => (r.GetString(0), r.GetString(1)),
             ("cutoff", cutoff)

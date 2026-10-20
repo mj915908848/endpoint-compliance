@@ -67,7 +67,9 @@ public sealed record DeviceRecord(
     string AgentVersion = "",
     NetworkAdapter[]? Network = null,
     string SourceAddress = "",
-    StoredVerdict? Verdict = null
+    StoredVerdict? Verdict = null,
+    DateTimeOffset? ArchivedAt = null,
+    ClientHealth? Health = null
 );
 
 /// <summary>
@@ -133,7 +135,15 @@ public sealed record DraftRecord(
     bool ImpactReviewed
 );
 
-public sealed record CommandRecord(string DeviceId, DeviceCommand Command, CommandReply? Reply = null);
+/// <param name="RepliedAt">When the device answered; commands answered before this was recorded have none.</param>
+/// <param name="Outcome">For an upgrade: how the installation ended, as the device reported it after.</param>
+public sealed record CommandRecord(
+    string DeviceId,
+    DeviceCommand Command,
+    CommandReply? Reply = null,
+    DateTimeOffset? RepliedAt = null,
+    UpgradeOutcome? Outcome = null
+);
 
 public sealed record AuditRecord(string Id, string Actor, string Action, string Target, DateTimeOffset At);
 
