@@ -581,6 +581,7 @@ public sealed class AgentRuntime(
             }
             if (enforceTask.IsFaulted)
             {
+                EnforcementFailed(enforceTask.Exception!.Flatten().InnerException ?? enforceTask.Exception!);
                 await ReportTaskFailureAsync(queue, notices, failures, "enforcement", enforceTask.Exception!, ct);
                 enforceTask = EnforceAsync(queue, notices, ct);
             }
@@ -627,6 +628,60 @@ public sealed class AgentRuntime(
     }
 
     private int reportedDrops;
+
+    // What the heartbeat reports about this client itself (see ClientHealth).
+    private readonly DateTimeOffset started = DateTimeOffset.UtcNow;
+    private DateTimeOffset? lastUpload;
+    private string? enforcementError;
+    private DateTimeOffset? enforcementErrorAt;
+
+    // Checks dropped before the queue last emptied are history, not a problem now.
+    private int droppedBefore;
+
+    /// <summary>An upgrade whose installer could not even be started, reported with the next heartbeat.</summary>
+    private UpgradeOutcome? unstartedUpgrade;
+
+    private void EnforcementFailed(Exception e)
+    {
+        enforcementError = $"{e.GetType().Name}: {EvidenceSanitizer.Clean(e.Message)}";
+        enforcementErrorAt = DateTimeOffset.UtcNow;
+    }
+
+    private async Task<ClientHealth?> HealthAsync(EventOutbox queue, CancellationToken ct)
+    {
+        try
+        {
+            var (queued, oldest, refused) = await queue.StatsAsync(ct);
+            if (queued == 0)
+                droppedBefore = queue.Dropped;
+            return new(
+                started,
+                queued,
+                oldest,
+                lastUpload,
+                refused,
+                queue.Dropped - droppedBefore,
+                enforcementError is { Length: > 500 } error ? error[..500] : enforcementError,
+                enforcementErrorAt
+            );
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // A queue that cannot be read shows in its own health events; the heartbeat goes without.
+            Console.Error.WriteLine($"无法读取本地队列状态：{e.GetType().Name}");
+            return null;
+        }
+    }
+
+    /// <summary>How the last upgrade this client started ended, once it has; null while unknown or reported.</summary>
+    private UpgradeOutcome? UpgradeOutcome()
+    {
+        if (unstartedUpgrade != null)
+            return unstartedUpgrade;
+        return PendingUpgrade
+            .Read(config.DataDirectory)
+            ?.Outcome(ReleaseVersion.Of(typeof(AgentRuntime).Assembly), DateTimeOffset.UtcNow);
+    }
 
     private bool EnrolledElsewhere()
     {
@@ -726,6 +781,7 @@ public sealed class AgentRuntime(
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 Console.Error.WriteLine($"结束禁用程序时出错：{e.GetType().Name}: {e.Message}");
+                EnforcementFailed(e);
                 continue;
             }
             foreach (var b in blocked)
@@ -809,6 +865,7 @@ public sealed class AgentRuntime(
         // Health goes first when connectivity resumes, then historical events.
         try
         {
+            var upgradeOutcome = UpgradeOutcome();
             var heartbeat = new HeartbeatRequest(
                 HostName,
                 ReleaseVersion.Of(typeof(AgentRuntime).Assembly),
@@ -817,10 +874,19 @@ public sealed class AgentRuntime(
                 latest?.Controls ?? [],
                 // A fixture stands in for another machine; this one's adapters would be wrong for it.
                 simulated ? null : NetworkInventory.Read(),
-                PolicyKeys.Ids(config)
+                PolicyKeys.Ids(config),
+                await HealthAsync(queue, ct),
+                upgradeOutcome
             );
             var reply = await api.SendAsync<JsonElement>(HttpMethod.Post, "/api/agent/heartbeat", heartbeat, ct);
             File.Delete(Path.Combine(config.DataDirectory, RemovedMarker));
+            // The server has the outcome; servers that do not record it go by the version reported.
+            if (upgradeOutcome != null)
+            {
+                Console.WriteLine($"已向管理端报告升级结果：{upgradeOutcome.Detail}");
+                unstartedUpgrade = null;
+                PendingUpgrade.Clear(config.DataDirectory);
+            }
             // Servers before 0.2.9 do not say so and take uncompressed bodies only.
             api.Gzip =
                 reply.ValueKind == JsonValueKind.Object
@@ -1139,12 +1205,21 @@ public sealed class AgentRuntime(
         if (prepared.Installer != null)
             try
             {
+                // Recorded first: the installer stops this service, and the version that runs next reports how it ended.
+                new PendingUpgrade(
+                    command.Id,
+                    command.Version!,
+                    Path.ChangeExtension(prepared.Installer, ".log"),
+                    DateTimeOffset.UtcNow
+                ).Save(config.DataDirectory);
                 ClientUpgrade.Install(prepared.Installer);
             }
             catch (System.ComponentModel.Win32Exception e)
             {
-                // Already answered; the version the next heartbeat reports shows the upgrade did not happen.
+                // Already answered as started; the next heartbeat says it did not.
                 Console.Error.WriteLine("无法启动客户端安装程序：" + e.Message);
+                PendingUpgrade.Clear(config.DataDirectory);
+                unstartedUpgrade = new(command.Id, command.Version!, false, "无法启动安装程序：" + e.Message);
             }
     }
 
@@ -1217,6 +1292,8 @@ public sealed class AgentRuntime(
             (batch, token) => api.SendAsync<EventReceipt>(HttpMethod.Post, "/api/agent/events", batch, token),
             ct
         );
+        if (result.Accepted > 0)
+            lastUpload = DateTimeOffset.UtcNow;
         if (result.Accepted > 0 || result.Refused > 0)
             Console.WriteLine(
                 $"已上报 {result.Accepted} 条记录"

@@ -328,7 +328,9 @@ export function App() {
                 />
                 <Route
                   path="/devices"
-                  element={<Devices openDevice={(id) => navigate(devicePath(id))} />}
+                  element={
+                    <Devices session={session} openDevice={(id) => navigate(devicePath(id))} />
+                  }
                 />
                 <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
                 <Route

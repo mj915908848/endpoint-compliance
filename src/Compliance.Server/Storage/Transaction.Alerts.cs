@@ -161,6 +161,14 @@ public sealed partial class Transaction
 
     public Task AcknowledgeAlert(string id) => Execute("UPDATE alerts SET acknowledged = 1 WHERE id = @id", ("id", id));
 
+    /// <summary>Resolves every active alert of a device, as when it is archived.</summary>
+    public Task<int> ResolveDeviceAlerts(string deviceId, DateTimeOffset lastSeen) =>
+        Execute(
+            "UPDATE alerts SET state = 'Resolved', last_seen = @last WHERE device_id = @device AND state <> 'Resolved'",
+            ("last", lastSeen),
+            ("device", deviceId)
+        );
+
     public Task ResolveAlert(string id, DateTimeOffset lastSeen) =>
         Execute(
             "UPDATE alerts SET state = 'Resolved', last_seen = @last WHERE id = @id",

@@ -32,3 +32,7 @@ export type VerdictChange = Schemas["VerdictChange"];
 export type ClientPackage = Schemas["ClientPackageItem"];
 export type UpgradeRollout = Schemas["UpgradeRollout"];
 export type SigningKeyState = Schemas["SigningKeyState"];
+export type DevicesChanged = Schemas["DevicesChanged"];
+export type ClientHealth = Schemas["ClientHealth"];
+export type UpgradeProgress = Schemas["UpgradeProgress"];
+export type UpgradeProgressItem = Schemas["UpgradeProgressItem"];

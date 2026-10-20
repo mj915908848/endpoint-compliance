@@ -10,3 +10,8 @@ public record CodeRequest(int? ExpiresMinutes = null, int? MaxUses = null, strin
 public record CommandRequest(string Type, string? Version = null);
 
 public record NoteRequest(string? Note);
+
+/// <summary>Devices an action applies to, chosen in the device list.</summary>
+public record DeviceIdsRequest(string[]? Ids);
+
+public record ArchiveDaysRequest(int Days);

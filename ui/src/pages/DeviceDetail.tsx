@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import { downloadJson, downloadReport, request } from "../api";
 import { useResource, useRefresh } from "../useResource";
@@ -13,6 +14,7 @@ import {
   CoverageGuide,
   CoverageTable,
   AgentVersion,
+  ago,
   DeviceGuide,
   deviceName,
   Empty,
@@ -27,7 +29,7 @@ import {
   VerdictHistory,
 } from "../components";
 import { role } from "../session";
-import type { DeviceDetail, Report, Session, VerdictChange } from "../types";
+import type { ClientHealth, DeviceDetail, Report, Session, VerdictChange } from "../types";
 
 export function DeviceDetailPage({
   id,
@@ -124,6 +126,30 @@ export function DeviceDetailPage({
       },
     });
   }
+  function archive(restore: boolean) {
+    if (!d) return;
+    modal.confirm({
+      title: restore ? `取消归档 ${deviceName(d)}？` : `归档 ${deviceName(d)}？`,
+      content: restore
+        ? "终端回到终端列表；长期未上线的仍会按系统设置再次自动归档。"
+        : "归档的终端不再出现在终端列表、总览统计、客户端升级和签名密钥更换中，它的告警自动恢复。终端重新上线时自动取消归档。适合已换下或报废的电脑。",
+      okText: restore ? "取消归档" : "归档",
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await request(`/api/devices/${restore ? "restore" : "archive"}`, {
+            method: "POST",
+            body: { ids: [id] },
+            csrfToken: session.csrfToken,
+          });
+          message.success(restore ? "已取消归档" : `已归档终端 ${d.hostName}`);
+          refresh();
+        } catch (e) {
+          message.error(errorText(e));
+        }
+      },
+    });
+  }
   async function download(kind: string) {
     try {
       if (kind === "md") await downloadReport(id);
@@ -179,6 +205,15 @@ export function DeviceDetailPage({
             </Dropdown>
             <Button onClick={refresh}>刷新</Button>
             {role(session, "Operator") && (
+              <Button
+                icon={<InboxOutlined />}
+                disabled={!d}
+                onClick={() => archive(!!d?.archivedAt)}
+              >
+                {d?.archivedAt ? "取消归档" : "归档"}
+              </Button>
+            )}
+            {role(session, "Operator") && (
               <Button danger icon={<DeleteOutlined />} disabled={!d} onClick={remove}>
                 删除终端
               </Button>
@@ -192,6 +227,11 @@ export function DeviceDetailPage({
             <DeviceGuide device={d}>
               <Fact label="在线状态">
                 <OnlineState device={d} />
+                {d.archivedAt && (
+                  <Tag style={{ marginLeft: 8 }} title={time(d.archivedAt)}>
+                    已归档
+                  </Tag>
+                )}
               </Fact>
               <Fact label="IP / MAC">
                 {d.network?.length ? (
@@ -211,6 +251,12 @@ export function DeviceDetailPage({
               <Fact label="最近心跳">{time(d.lastHeartbeat)}</Fact>
               <Fact label="客户端版本">
                 <AgentVersion device={d} />
+              </Fact>
+              <Fact label="客户端运行" wide={!!detail.data?.healthProblems?.length}>
+                <ClientHealthFact
+                  health={detail.data?.health ?? null}
+                  problems={detail.data?.healthProblems ?? []}
+                />
               </Fact>
               <Fact label="策略" wide>
                 {d.policyName && `${d.policyName} `}v{d.targetPolicyVersion}
@@ -300,6 +346,40 @@ export function DeviceDetailPage({
         )}
       </Fresh>
     </>
+  );
+}
+
+/** What the client said about itself with its last heartbeat. */
+function ClientHealthFact({
+  health,
+  problems,
+}: {
+  health: ClientHealth | null;
+  problems: string[];
+}) {
+  if (!health) return <Typography.Text type="secondary">客户端升级后上报</Typography.Text>;
+  const facts = [
+    health.queued > 0
+      ? `待上报 ${health.queued} 条${health.oldestQueued ? `，最早一条在 ${ago(health.oldestQueued)}前` : ""}`
+      : "无待上报记录",
+    health.lastUpload ? `最近上报 ${ago(health.lastUpload)}前` : null,
+    health.refused > 0 ? `近一天被拒收 ${health.refused} 条` : null,
+    health.dropped > 0 ? `已丢弃 ${health.dropped} 份较早的检查结果` : null,
+    health.enforcementError && health.enforcementErrorAt
+      ? `结束禁用程序出错（${ago(health.enforcementErrorAt)}前）：${health.enforcementError}`
+      : null,
+  ].filter(Boolean);
+  return (
+    <Space orientation="vertical" size={0}>
+      {problems.length ? (
+        <Typography.Text type="warning">{problems.join("；")}</Typography.Text>
+      ) : (
+        <Typography.Text type="success">正常</Typography.Text>
+      )}
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {facts.join(" · ")}
+      </Typography.Text>
+    </Space>
   );
 }
 

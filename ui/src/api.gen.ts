@@ -233,7 +233,9 @@ export interface paths {
     };
     get: {
       parameters: {
-        query?: never;
+        query?: {
+          archived?: boolean;
+        };
         header?: never;
         path?: never;
         cookie?: never;
@@ -253,6 +255,123 @@ export interface paths {
     };
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/devices/archive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["DeviceIdsRequest"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["DevicesChanged"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/devices/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["DeviceIdsRequest"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["DevicesChanged"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/devices/delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["DeviceIdsRequest"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["DevicesChanged"];
+          };
+        };
+      };
+    };
     delete?: never;
     options?: never;
     head?: never;
@@ -1462,6 +1581,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/settings/archive-days": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["ArchiveDaysRequest"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Done"];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/client-packages": {
     parameters: {
       query?: never;
@@ -1566,11 +1724,34 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          version: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["UpgradeProgress"];
+          };
+        };
+      };
+    };
     put?: never;
     post: {
       parameters: {
-        query?: never;
+        query?: {
+          count?: number;
+        };
         header?: never;
         path: {
           version: string;
@@ -1767,6 +1948,12 @@ export interface components {
       lastNotification: null | components["schemas"]["NotificationResult"];
       /** Format: int32 */
       auditRetentionDays: number;
+      /** Format: int32 */
+      archiveDays: number;
+    };
+    ArchiveDaysRequest: {
+      /** Format: int32 */
+      days: number;
     };
     AuditRecord: {
       id: string;
@@ -1779,6 +1966,23 @@ export interface components {
     AuditRetentionRequest: {
       /** Format: int32 */
       days: number;
+    };
+    ClientHealth: {
+      /** Format: date-time */
+      started: string;
+      /** Format: int32 */
+      queued: number;
+      /** Format: date-time */
+      oldestQueued: null | string;
+      /** Format: date-time */
+      lastUpload: null | string;
+      /** Format: int32 */
+      refused: number;
+      /** Format: int32 */
+      dropped: number;
+      enforcementError: null | string;
+      /** Format: date-time */
+      enforcementErrorAt: null | string;
     };
     ClientPackageItem: {
       version: string;
@@ -1856,6 +2060,15 @@ export interface components {
       controls: components["schemas"]["ControlState"][];
       /** Format: int32 */
       pendingCommands: number;
+      health: null | components["schemas"]["ClientHealth"];
+      healthProblems: null | string[];
+    };
+    DeviceIdsRequest: {
+      ids: null | string[];
+    };
+    DevicesChanged: {
+      /** Format: int32 */
+      done: number;
     };
     DeviceSummary: {
       id: string;
@@ -1887,6 +2100,8 @@ export interface components {
       sourceAddress: string;
       /** @default false */
       agentUnsupported: boolean;
+      /** Format: date-time */
+      archivedAt: null | string;
     };
     Done: {
       /** @default true */
@@ -1966,6 +2181,8 @@ export interface components {
       controls: components["schemas"]["ControlState"][];
       network?: null | components["schemas"]["NetworkAdapter"][];
       policyKeyIds?: null | string[];
+      health?: null | components["schemas"]["ClientHealth"];
+      upgrade?: null | components["schemas"]["UpgradeOutcome"];
     };
     KeyRotationProgress: {
       nextKeyId: string;
@@ -2203,6 +2420,29 @@ export interface components {
       fail: number;
       /** Format: int32 */
       unknown: number;
+    };
+    UpgradeOutcome: {
+      commandId: string;
+      version: string;
+      succeeded: boolean;
+      detail: string;
+    };
+    UpgradeProgress: {
+      version: string;
+      devices: components["schemas"]["UpgradeProgressItem"][];
+      /** Format: int32 */
+      remaining: number;
+    };
+    UpgradeProgressItem: {
+      deviceId: string;
+      hostName: string;
+      note: string;
+      onlineState: string;
+      agentVersion: string;
+      state: string;
+      detail: string;
+      /** Format: date-time */
+      sentAt: string;
     };
     UpgradeRollout: {
       /** Format: int32 */

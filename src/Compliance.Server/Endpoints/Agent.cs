@@ -98,6 +98,14 @@ static partial class Endpoints
                         || r.Network?.Any(a => a?.Addresses?.Length > 64) == true
                         || r.PolicyKeyIds?.Length > 4
                         || r.PolicyKeyIds?.Any(k => k is not { Length: > 0 and <= 64 } || k.Contains(',')) == true
+                        || r.Health is { } h
+                            && (h.Queued < 0 || h.Refused < 0 || h.Dropped < 0 || h.EnforcementError?.Length > 512)
+                        || r.Upgrade is { } u
+                            && (
+                                u.CommandId is not { Length: > 0 and <= 128 }
+                                || u.Version is not { Length: > 0 and <= 64 }
+                                || u.Detail is not { Length: <= 1024 }
+                            )
                     )
                         throw new ApiError(400, "Invalid heartbeat");
                     return await s.Tx(async tx =>
@@ -128,6 +136,40 @@ static partial class Endpoints
                         // Clients before key rotation existed do not say which keys they trust.
                         if (r.PolicyKeyIds is { } keys)
                             await tx.SetDevicePolicyKeys(deviceId, keys);
+                        var hostName = EvidenceSanitizer.Clean(r.HostName);
+                        // A device archived for staying away is back in use as soon as it reports.
+                        if (device.ArchivedAt != null && await tx.RestoreDevice(deviceId))
+                            await tx.Audit("system", "RestoreDevice", $"{hostName}（{deviceId}）重新上线", s.Now);
+                        if (r.Health is { } health)
+                        {
+                            health = health with
+                            {
+                                EnforcementError = health.EnforcementError is { } error
+                                    ? EvidenceSanitizer.Clean(error)
+                                    : null,
+                            };
+                            await tx.SetDeviceHealth(deviceId, health);
+                            await ClientStatus.UpdateAlert(tx, device with { HostName = hostName }, health, s.Now);
+                        }
+                        if (
+                            r.Upgrade is { } outcome
+                            && await tx.GetCommand(outcome.CommandId) is { } upgrade
+                            && upgrade.DeviceId == deviceId
+                            && upgrade.Command.Type == PackageService.Upgrade
+                            && await tx.SetUpgradeOutcome(
+                                upgrade.Command.Id,
+                                outcome with
+                                {
+                                    Detail = EvidenceSanitizer.Clean(outcome.Detail),
+                                }
+                            )
+                        )
+                            await tx.Audit(
+                                deviceId,
+                                outcome.Succeeded ? "UpgradeSucceeded" : "UpgradeFailed",
+                                $"{upgrade.Command.Version}：{EvidenceSanitizer.Clean(outcome.Detail)}",
+                                s.Now
+                            );
                         // StatusMonitor resolves the offline alert within 15 seconds; doing it here would make every
                         // heartbeat wait for the one global offline lock.
                         // Clients from 0.2.9 compress larger uploads once a server says it accepts them. The highest
@@ -215,7 +257,7 @@ static partial class Endpoints
                             throw new ApiError(409, "Reply already recorded");
                         if (command.Reply == null)
                         {
-                            await tx.SetCommandReply(id, reply with { Detail = EvidenceSanitizer.Clean(reply.Detail) });
+                            await tx.SetCommandReply(id, reply, s.Now);
                             await tx.Audit(
                                 deviceId,
                                 command.Command.Type == PackageService.Upgrade ? "UpgradeReply" : "ScanReply",

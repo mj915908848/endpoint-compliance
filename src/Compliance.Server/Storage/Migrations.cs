@@ -45,6 +45,7 @@ public static class Migrations
             tx =>
                 tx.Execute("CREATE INDEX IF NOT EXISTS policy_releases_policy ON policy_releases(policy_key, version)")
         ),
+        new(16, "archived devices, client health and upgrade outcomes", ArchiveHealthUpgrades),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -175,6 +176,18 @@ public static class Migrations
     {
         await tx.Execute("ALTER TABLE sessions ADD COLUMN last_active BIGINT NOT NULL DEFAULT 0");
         await tx.Execute("UPDATE sessions SET last_active = @now", ("now", DateTimeOffset.UtcNow));
+    }
+
+    /// <summary>
+    /// When a device was archived (null while it is in use), what its client last said about itself, and when each
+    /// command was answered and how an upgrade it started ended.
+    /// </summary>
+    static async Task ArchiveHealthUpgrades(Transaction tx)
+    {
+        await tx.Execute("ALTER TABLE devices ADD COLUMN archived_at BIGINT NULL");
+        await tx.Execute("ALTER TABLE devices ADD COLUMN health TEXT NOT NULL DEFAULT ''");
+        await tx.Execute("ALTER TABLE commands ADD COLUMN replied_at BIGINT NULL");
+        await tx.Execute("ALTER TABLE commands ADD COLUMN outcome TEXT NULL");
     }
 
     /// <summary>

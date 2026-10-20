@@ -303,6 +303,8 @@ public record EnrollmentResponse(string DeviceId, string PolicyPublicKeyPem, str
 
 /// <param name="PolicyVersion">The <see cref="PolicyDocument.Serial"/> of the policy the agent holds.</param>
 /// <param name="PolicyKeyIds">The policy signing keys the agent trusts: its own, and during a rotation the next.</param>
+/// <param name="Health">How the client itself is doing; older clients do not report it.</param>
+/// <param name="Upgrade">How the last upgrade the client started ended, until a heartbeat carrying it is accepted.</param>
 public record HeartbeatRequest(
     string HostName,
     string AgentVersion,
@@ -310,8 +312,35 @@ public record HeartbeatRequest(
     long PolicyVersion,
     ControlState[] Controls,
     NetworkAdapter[]? Network = null,
-    string[]? PolicyKeyIds = null
+    string[]? PolicyKeyIds = null,
+    ClientHealth? Health = null,
+    UpgradeOutcome? Upgrade = null
 );
+
+/// <summary>
+/// What a client reports about itself with every heartbeat. Its own health events wait in the queue like any other
+/// event, so a client that checks but cannot upload would otherwise look well from the server.
+/// </summary>
+/// <param name="Queued">Events waiting to be uploaded.</param>
+/// <param name="OldestQueued">When the oldest waiting event was recorded.</param>
+/// <param name="LastUpload">When the server last accepted events, since the service started.</param>
+/// <param name="Refused">Events the server refused in the last day, set aside and never sent again.</param>
+/// <param name="Dropped">Checks dropped because the queue was full, since it was last empty.</param>
+/// <param name="EnforcementError">The last error ending forbidden programs, and when it happened.</param>
+public record ClientHealth(
+    DateTimeOffset Started,
+    int Queued,
+    DateTimeOffset? OldestQueued,
+    DateTimeOffset? LastUpload,
+    int Refused,
+    int Dropped,
+    string? EnforcementError = null,
+    DateTimeOffset? EnforcementErrorAt = null
+);
+
+/// <summary>How an upgrade a client started ended: reported by whichever version runs once the installer is done.</summary>
+/// <param name="CommandId">The upgrade command the client was answering.</param>
+public record UpgradeOutcome(string CommandId, string Version, bool Succeeded, string Detail);
 
 /// <summary>A device's physical network adapter: its hardware address as AA-BB-CC-DD-EE-FF and its IP addresses.</summary>
 /// <param name="Primary">The adapter has a default gateway, so it is the one the device reaches the network by.</param>
@@ -330,6 +359,7 @@ public record CommandReply(bool Success, string Detail);
 /// <param name="PolicyApplied">The agent reported holding that release.</param>
 /// <param name="AgentOutdated">The client is older than the server.</param>
 /// <param name="AgentUnsupported">The client is older than <see cref="ReleaseVersion.MinimumAgent"/>.</param>
+/// <param name="ArchivedAt">When the device was archived; archived devices are left out of lists, counts and alerts.</param>
 public record DeviceSummary(
     string Id,
     string HostName,
@@ -349,7 +379,8 @@ public record DeviceSummary(
     bool AgentOutdated = false,
     NetworkAdapter[]? Network = null,
     string SourceAddress = "",
-    bool AgentUnsupported = false
+    bool AgentUnsupported = false,
+    DateTimeOffset? ArchivedAt = null
 );
 
 public record AlertSummary(
