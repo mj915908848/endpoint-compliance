@@ -15,9 +15,15 @@ export interface DeviceAlerts {
 // Compared as instants: the text form can differ in offset or fraction digits.
 const ms = (at: string) => Date.parse(at);
 
-/** Violations first, then sensitive files, then the rest; newest first within each. */
+/** Violations first, then sensitive files and baseline findings, then the rest; newest first within each. */
 const rank = (a: Pick<Alert, "type" | "state">) =>
-  a.state === "Resolved" ? 9 : a.type === "Violation" ? 0 : a.type === "SensitiveFile" ? 1 : 2;
+  a.state === "Resolved"
+    ? 9
+    : a.type === "Violation"
+      ? 0
+      : a.type === "SensitiveFile" || a.type === "Baseline"
+        ? 1
+        : 2;
 export const bySeverity = (x: Alert, y: Alert) =>
   rank(x) - rank(y) || ms(y.lastSeen) - ms(x.lastSeen);
 

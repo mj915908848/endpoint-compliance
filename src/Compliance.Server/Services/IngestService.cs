@@ -150,12 +150,14 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
         var policy = Wire.Read<PolicyDocument>((await policies.AssignedPolicy(tx, device)).Payload);
         var report = ReportEngine.Evaluate(policy, snapshot, Now);
         await SensitiveFileAlerts(tx, device, policy, sequence);
-        // Sensitive files get one alert per file from SensitiveFileAlerts, also when their rule makes the device fail.
+        await BaselineAlerts(tx, device, policy, sequence);
+        // Sensitive files get one alert per file from SensitiveFileAlerts, and baseline checks one per finding from
+        // BaselineAlerts, also when their rule makes the device fail.
         // The report says which evidence fails the device; judging each piece again in a snapshot of its own gave
         // the same answer at the cost of a whole evaluation per piece.
         var confirmed = report
             .ConfirmedEvidence.Select(i => snapshot.Evidence[i])
-            .Where(e => e.Kind != EvidenceKind.SensitiveFile)
+            .Where(e => e.Kind is not (EvidenceKind.SensitiveFile or EvidenceKind.Baseline))
             .ToArray();
 
         string ObjectId(Evidence e) =>
@@ -225,7 +227,7 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
             return;
         foreach (
             var metadata in incidents.Values.Where(x =>
-                !present.Contains(x.Id) && !x.Modules.Contains(SensitiveFiles.Module)
+                !present.Contains(x.Id) && !x.Modules.Any(m => m == SensitiveFiles.Module || Baseline.IsModule(m))
             )
         )
         {
@@ -260,6 +262,78 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
                 );
                 if (previous.State == "Active")
                     await tx.Audit(device.Id, "SnapshotRecovered", metadata.Id, Now);
+            }
+        }
+    }
+
+    /// <summary>
+    /// One alert per baseline finding (a check, and the user or account it names), for administrators: "Alert" rules
+    /// raise a Baseline alert and "Violation" rules a Violation alert. An alert resolves when a complete, fresh run
+    /// of its check after the alert no longer reports it, or when the check is no longer enabled.
+    /// </summary>
+    async Task BaselineAlerts(Transaction tx, DeviceRecord device, PolicyDocument policy, long sequence)
+    {
+        var snapshot = device.Snapshot!;
+        var fresh = Now.AddMinutes(-policy.InventoryFreshMinutes);
+        DateTimeOffset Collected(Evidence e) =>
+            e.CollectedAt
+            ?? snapshot.Modules.FirstOrDefault(m => m.Module == Baseline.Module(e.ProductId))?.CollectedAt
+            ?? snapshot.CollectedAt;
+        var alerts = await tx.DeviceAlerts(device.Id);
+        var incidents = await tx.SnapshotIncidents(device.Id);
+        var present = new HashSet<string>();
+        foreach (
+            var e in snapshot.Evidence.Where(e =>
+                e.Kind == EvidenceKind.Baseline
+                && e.Confirmed
+                && Baseline.Rule(policy, e.ProductId) is not null
+                && Collected(e) >= fresh
+            )
+        )
+        {
+            var id = "baseline:" + device.Id + ":" + Secrets.Hash(e.ObjectKey);
+            if (!present.Add(id))
+                continue;
+            var previous = alerts.GetValueOrDefault(id);
+            if (previous != null && previous.LastSequence >= sequence)
+                continue;
+            var module = Baseline.Module(e.ProductId);
+            await tx.PutSnapshotIncident(new SnapshotIncident(id, device.Id, e.UserSid ?? "machine", [module]));
+            var seen = Collected(e);
+            await tx.UpsertAlert(
+                new AlertSummary(
+                    id,
+                    device.Id,
+                    device.HostName,
+                    Baseline.Rule(policy, e.ProductId)!.Action == "Violation" ? "Violation" : "Baseline",
+                    e.ObjectKey,
+                    e.ProductName + "：" + e.Summary,
+                    "Active",
+                    sequence,
+                    previous?.State == "Active" ? previous.FirstSeen : seen,
+                    seen,
+                    previous?.State == "Active" && previous.Acknowledged
+                )
+            );
+        }
+
+        foreach (var metadata in incidents.Where(x => !present.Contains(x.Id) && x.Modules.Any(Baseline.IsModule)))
+        {
+            var previous = alerts.GetValueOrDefault(metadata.Id);
+            if (previous == null || previous.State != "Active" || previous.LastSequence >= sequence)
+                continue;
+            var module = metadata.Modules.First(Baseline.IsModule);
+            var checkedAgain = snapshot.Modules.Any(m =>
+                m.Module == module
+                && m.Status == "Complete"
+                && m.CollectedAt >= fresh
+                && m.CollectedAt > previous.LastSeen
+                && m.CollectedAt <= Now.AddMinutes(2)
+            );
+            if (!Baseline.Runs(policy, module) || checkedAgain)
+            {
+                await tx.UpsertAlert(previous with { State = "Resolved", LastSeen = Now, LastSequence = sequence });
+                await tx.Audit(device.Id, "SnapshotRecovered", metadata.Id, Now);
             }
         }
     }

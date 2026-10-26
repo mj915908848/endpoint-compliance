@@ -64,7 +64,7 @@ const channels = [
   },
 ];
 
-const pushTypes = ["Violation", "SensitiveFile", "Health", "BlockedAttempt", "Offline"];
+const pushTypes = ["Violation", "SensitiveFile", "Baseline", "Health", "BlockedAttempt", "Offline"];
 
 const retentionChoices = [
   { value: 0, label: "永久保留" },

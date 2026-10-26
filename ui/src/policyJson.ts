@@ -79,6 +79,15 @@ const sensitiveFiles = shape(
     maxHitsPerScope: number,
   },
 );
+const baseline = shape(
+  {},
+  {
+    enabled: flag,
+    rules: list(
+      shape({ id: text }, { action: oneOf("Alert", "Violation"), limit: number, exempt: texts }),
+    ),
+  },
+);
 const policy = shape(
   { products: list(product) },
   {
@@ -92,6 +101,7 @@ const policy = shape(
     blockDomains: texts,
     approvedNetworkAdapters: texts,
     sensitiveFiles,
+    baseline,
     applicationRules: list(shape({ productId: text, name: text, sha256: text, type: text })),
   },
 );
@@ -111,6 +121,18 @@ export function withDefaults(draft: Policy, value: Partial<Policy>): Policy {
         extensions: r.extensions ?? [],
         matchFolders: r.matchFolders ?? true,
         action: r.action ?? "Alert",
+      })),
+    };
+  }
+  if (value.baseline) {
+    const checks = { ...(draft.baseline ?? { enabled: false, rules: [] }), ...value.baseline };
+    merged.baseline = {
+      ...checks,
+      rules: (checks.rules ?? []).map((r) => ({
+        ...r,
+        action: r.action ?? "Alert",
+        limit: r.limit ?? 0,
+        exempt: r.exempt ?? [],
       })),
     };
   }

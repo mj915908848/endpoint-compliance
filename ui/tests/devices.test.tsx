@@ -261,6 +261,7 @@ describe("device detail", () => {
       protectionStatus: "审计模式",
       snapshot,
       sensitiveFileNotes: [],
+      baselineNotes: [],
       policyName: "默认策略",
       policyVersion: 1,
     };

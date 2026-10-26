@@ -93,6 +93,7 @@ describe("sensitive file report", () => {
       reasons: [],
       coverageGaps: [],
       sensitiveFileNotes: ["敏感文件：D 盘 命中过多，仅列出部分"],
+      baselineNotes: [],
       policyName: "默认策略",
       policyVersion: 1,
       violationCount: 0,
@@ -138,5 +139,74 @@ describe("sensitive file report", () => {
     expect(screen.getByText("敏感文件：D 盘 命中过多，仅列出部分")).toBeTruthy();
     expect(screen.getAllByText("D 盘").length).toBeGreaterThan(0);
     expect(screen.getAllByText("用户 kaiyu").length).toBeGreaterThan(0);
+  });
+});
+
+describe("baseline report", () => {
+  it("lists unmet checks by name and says which could not be read", async () => {
+    const { ReportFindings } = await import("../src/components");
+    const at = "2026-10-26T05:52:04Z";
+    const report: Report = {
+      verdict: "PASS",
+      summary: "检查通过",
+      reasons: [],
+      coverageGaps: [],
+      sensitiveFileNotes: [],
+      baselineNotes: ["安全基线：BitLocker 加密（整机）：未覆盖，此 Windows 版本不提供 BitLocker"],
+      policyName: "默认策略",
+      policyVersion: 1,
+      violationCount: 0,
+      evidenceCount: 0,
+      protectionStatus: "审计模式",
+      snapshot: {
+        schemaVersion: 1,
+        deviceId: "d",
+        hostName: "TEST-PC",
+        platform: "Windows",
+        simulated: false,
+        collectedAt: at,
+        policyVersion: 2,
+        controls: [],
+        users: [{ sid: "S-1-5-21-1-2-3-1001", name: "kaiyu" }],
+        modules: [
+          {
+            module: "baseline:screenlock",
+            scope: "machine",
+            status: "Complete",
+            collectedAt: at,
+            error: null,
+          },
+          {
+            module: "baseline:bitlocker",
+            scope: "machine",
+            status: "Unknown",
+            collectedAt: at,
+            error: "此 Windows 版本不提供 BitLocker",
+          },
+        ],
+        evidence: [
+          {
+            productId: "screenlock",
+            productName: "自动锁屏",
+            kind: "Baseline",
+            objectKey: "baseline:screenlock:S-1-5-21-1-2-3-1001",
+            source: "安全基线",
+            summary: "屏幕保护等待 30 分钟，超过 15 分钟",
+            userSid: "S-1-5-21-1-2-3-1001",
+            confirmed: true,
+            collectedAt: null,
+          },
+        ],
+      },
+    };
+    render(<ReportFindings report={report} />);
+    expect(screen.getByText("基线不符合")).toBeTruthy();
+    expect(screen.getAllByText("安全基线").length).toBeGreaterThan(0);
+    expect(screen.getByText("屏幕保护等待 30 分钟，超过 15 分钟")).toBeTruthy();
+    expect(screen.getByText("自动锁屏")).toBeTruthy();
+    expect(screen.getAllByText("用户 kaiyu").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("安全基线：BitLocker 加密（整机）：未覆盖，此 Windows 版本不提供 BitLocker"),
+    ).toBeTruthy();
   });
 });

@@ -20,6 +20,7 @@ public static class Labels
             "cli" => "命令行工具",
             "programs" => "全盘程序文件",
             SensitiveFiles.Module => "敏感文件",
+            _ when Baseline.IsModule(module) => "安全基线：" + Baseline.Name(module[Baseline.ModulePrefix.Length..]),
             _ => module,
         };
 
@@ -52,6 +53,7 @@ public static class Labels
             EvidenceKind.Clue => "待核查线索",
             EvidenceKind.BlockedAttempt => "拦截记录",
             EvidenceKind.SensitiveFile => "敏感文件",
+            EvidenceKind.Baseline => "安全基线",
             _ => kind.ToString(),
         };
 
@@ -107,6 +109,7 @@ public static class Labels
             "Offline" => "设备失联",
             "Clue" => "待核查线索",
             "SensitiveFile" => "敏感文件",
+            "Baseline" => "安全基线",
             _ => type,
         };
 }

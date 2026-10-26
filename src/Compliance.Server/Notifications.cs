@@ -19,7 +19,7 @@ public sealed record NotificationSettings
     /// <summary>
     /// Alert types to push. Offline is left out by default: every PC shut down after work raises one.
     /// </summary>
-    public string[] Types { get; init; } = ["Violation", "SensitiveFile", "Health"];
+    public string[] Types { get; init; } = ["Violation", "SensitiveFile", "Baseline", "Health"];
 
     /// <summary>The management UI address put into messages, e.g. https://compliance.example.com.</summary>
     public string ConsoleUrl { get; init; } = "";
@@ -27,7 +27,15 @@ public sealed record NotificationSettings
     public const string Key = "notifications";
 
     public static readonly string[] Channels = ["WeCom", "DingTalk", "Feishu"];
-    public static readonly string[] AlertTypes = ["Violation", "SensitiveFile", "Health", "BlockedAttempt", "Offline"];
+    public static readonly string[] AlertTypes =
+    [
+        "Violation",
+        "SensitiveFile",
+        "Baseline",
+        "Health",
+        "BlockedAttempt",
+        "Offline",
+    ];
 
     /// <summary>Robot webhooks only go to their vendor, so a saved URL cannot reach hosts inside the network.</summary>
     public static string[] Hosts(string channel) =>

@@ -1967,6 +1967,17 @@ export interface components {
       /** Format: int32 */
       days: number;
     };
+    BaselinePolicy: {
+      enabled: boolean;
+      rules: components["schemas"]["BaselineRule"][];
+    };
+    BaselineRule: {
+      id: string;
+      action: string;
+      /** Format: int32 */
+      limit: number;
+      exempt: string[];
+    };
     ClientHealth: {
       /** Format: date-time */
       started: string;
@@ -2029,6 +2040,7 @@ export interface components {
       protectionStatus: string;
       snapshot: components["schemas"]["ScanSnapshot"];
       sensitiveFileNotes: string[];
+      baselineNotes: string[];
       policyName: string;
       /** Format: int64 */
       policyVersion: number;
@@ -2158,7 +2170,8 @@ export interface components {
       | "Proxy"
       | "Clue"
       | "BlockedAttempt"
-      | "SensitiveFile";
+      | "SensitiveFile"
+      | "Baseline";
     HeartbeatReply: {
       ok: boolean;
       gzipUploads: boolean;
@@ -2311,6 +2324,7 @@ export interface components {
       applicationRules: components["schemas"]["ApplicationDenyRule"][];
       approvedNetworkAdapters: string[];
       sensitiveFiles: components["schemas"]["SensitiveFilePolicy"];
+      baseline: components["schemas"]["BaselinePolicy"];
     };
     PolicyHistoryItem: {
       /** Format: int64 */

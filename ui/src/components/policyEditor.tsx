@@ -20,13 +20,15 @@ import {
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import type {
+  BaselinePolicy,
+  BaselineRule,
   DeviceSummary,
   Policy,
   Product,
   SensitiveFilePolicy,
   SensitiveFileRule,
 } from "../types";
-import { categoryLabel, controlLabel, moduleLabel } from "./labels";
+import { baselineChecks, baselineName, categoryLabel, controlLabel, moduleLabel } from "./labels";
 import { deviceName, Empty, usePageScroll } from "./common";
 import { Panel } from "./layout";
 
@@ -66,6 +68,18 @@ const sensitiveOf = (p: Policy) => p.sensitiveFiles ?? defaultSensitiveFiles;
 export const sensitiveActionLabel = (action: string) =>
   action === "Violation" ? "判定违规" : "只告警";
 const categories = ["proxy", "vpn", "ai", "ide_ai"];
+
+/** Policies published before baseline checks omit the section. */
+export const defaultBaseline: BaselinePolicy = { enabled: false, rules: [] };
+const baselineOf = (p: Policy) => p.baseline ?? defaultBaseline;
+const limitOf = (r: BaselineRule) =>
+  r.limit || baselineChecks.find((c) => c.id === r.id)?.defaultLimit || 0;
+/** "最近 30 天内成功安装过系统更新" */
+export const baselineRequirement = (r: BaselineRule) =>
+  (baselineChecks.find((c) => c.id === r.id)?.requirement ?? r.id).replace(
+    "{0}",
+    String(limitOf(r)),
+  );
 
 /** The part of a policy an administrator edits; the server assigns version and validity on publish. */
 const content = ({ schemaVersion, version, issuedAt, expiresAt, ...rest }: Policy) => rest;
@@ -149,6 +163,25 @@ export function describeChanges(before: Policy, after: Policy): string[] {
     changes.push(`修改敏感文件规则“${rule.name}”${parts.length ? `：${parts.join("，")}` : ""}`);
   }
   diff("敏感文件排除目录", sb.excludePaths, sa.excludePaths, same);
+  const bb = baselineOf(before),
+    ba = baselineOf(after);
+  if (bb.enabled !== ba.enabled) changes.push(`安全基线检查：${ba.enabled ? "启用" : "停用"}`);
+  const checkIds = (x: BaselinePolicy) => x.rules.map((r) => r.id);
+  diff("安全基线检查项", checkIds(bb), checkIds(ba), baselineName);
+  for (const rule of ba.rules) {
+    const old = bb.rules.find((r) => r.id === rule.id);
+    if (!old || JSON.stringify(old) === JSON.stringify(rule)) continue;
+    const parts = [
+      old.action !== rule.action ? `处理方式改为${sensitiveActionLabel(rule.action)}` : "",
+      limitOf(old) !== limitOf(rule) ? `要求改为“${baselineRequirement(rule)}”` : "",
+      JSON.stringify(old.exempt) !== JSON.stringify(rule.exempt)
+        ? `允许的账户：${rule.exempt.length ? list(rule.exempt) : "无"}`
+        : "",
+    ].filter(Boolean);
+    changes.push(
+      `修改安全基线“${baselineName(rule.id)}”${parts.length ? `：${parts.join("，")}` : ""}`,
+    );
+  }
   if (
     sb.scanUserProfiles !== sa.scanUserProfiles ||
     sb.scanOtherFixedDrives !== sa.scanOtherFixedDrives ||
@@ -379,6 +412,12 @@ export function PolicyEditor({
         onChange={(sensitiveFiles) => set({ sensitiveFiles })}
       />
 
+      <BaselinePanel
+        value={baselineOf(value)}
+        readOnly={readOnly}
+        onChange={(baseline) => set({ baseline })}
+      />
+
       <Panel title="检查要求">
         <Field label="检查频率">
           <Space wrap>
@@ -447,6 +486,149 @@ export function PolicyEditor({
         </Row>
       </Panel>
     </Space>
+  );
+}
+
+function BaselinePanel({
+  value,
+  onChange,
+  readOnly,
+}: {
+  value: BaselinePolicy;
+  onChange: (v: BaselinePolicy) => void;
+  readOnly: boolean;
+}) {
+  const rule = (id: string) => value.rules.find((r) => r.id === id);
+  // Rules keep the order of the check list, so the published policy does not change with the order of clicks.
+  const setRule = (id: string, next: BaselineRule | null) =>
+    onChange({
+      ...value,
+      rules: baselineChecks
+        .map((c) => (c.id === id ? next : rule(c.id)))
+        .filter((r): r is BaselineRule => !!r),
+    });
+  const patch = (id: string, change: Partial<BaselineRule>) => {
+    const current = rule(id);
+    if (current) setRule(id, { ...current, ...change });
+  };
+  const fresh = (id: string): BaselineRule => ({ id, action: "Alert", limit: 0, exempt: [] });
+  const collapsed = !value.enabled && value.rules.length === 0;
+  return (
+    <Panel title={`安全基线（${value.rules.length}）`}>
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Field label="启用检查">
+          <Switch
+            aria-label="启用安全基线检查"
+            checked={value.enabled}
+            disabled={readOnly}
+            onChange={(enabled) =>
+              onChange({
+                enabled,
+                // Switching on for the first time selects every check, each only alerting.
+                rules:
+                  enabled && value.rules.length === 0
+                    ? baselineChecks.map((c) => fresh(c.id))
+                    : value.rules,
+              })
+            }
+          />
+          <Hint>
+            终端在每次完整检查时读取杀毒、防火墙、系统更新等设置，只读取、不修改。不符合的项目通知管理员；处理方式为“判定违规”的项目会让终端结论为不通过，读不到时结论为无法判断。
+          </Hint>
+          {value.enabled && value.rules.length === 0 && (
+            <Alert type="warning" showIcon title="启用安全基线需要至少选择一个检查项。" />
+          )}
+        </Field>
+        {!collapsed && (
+          <Table
+            rowKey={(c) => c.id}
+            dataSource={baselineChecks}
+            size="middle"
+            pagination={false}
+            scroll={{ x: 640 }}
+            columns={[
+              {
+                title: "检查项",
+                key: "name",
+                width: 170,
+                render: (_, c) => (
+                  <Checkbox
+                    checked={!!rule(c.id)}
+                    disabled={readOnly}
+                    onChange={(e) => setRule(c.id, e.target.checked ? fresh(c.id) : null)}
+                  >
+                    {c.name}
+                  </Checkbox>
+                ),
+              },
+              {
+                title: "要求",
+                key: "requirement",
+                render: (_, c) => {
+                  const r = rule(c.id) ?? fresh(c.id);
+                  const [before, after] = c.requirement.split("{0}");
+                  return (
+                    <Space orientation="vertical" size={6} style={{ width: "100%" }}>
+                      {c.maxLimit ? (
+                        <Space wrap size={6}>
+                          <span>{before}</span>
+                          <InputNumber
+                            precision={0}
+                            aria-label={`${c.name}期限`}
+                            min={1}
+                            max={c.maxLimit}
+                            value={limitOf(r)}
+                            disabled={readOnly || !rule(c.id)}
+                            onChange={(v) => v && patch(c.id, { limit: v })}
+                            suffix={c.unit}
+                            style={{ width: 110 }}
+                          />
+                          <span>{after}</span>
+                        </Space>
+                      ) : (
+                        <span>{c.requirement}</span>
+                      )}
+                      {c.id === "admins" && rule(c.id) && (
+                        <TagInput
+                          label="允许的管理员账户"
+                          value={r.exempt}
+                          disabled={readOnly}
+                          placeholder="允许的账户名，例如 itadmin"
+                          onChange={(exempt) => patch(c.id, { exempt })}
+                        />
+                      )}
+                    </Space>
+                  );
+                },
+              },
+              {
+                title: "处理方式",
+                key: "action",
+                width: 130,
+                render: (_, c) => (
+                  <Select
+                    aria-label={`${c.name}处理方式`}
+                    value={rule(c.id)?.action ?? "Alert"}
+                    disabled={readOnly || !rule(c.id)}
+                    onChange={(action: string) => patch(c.id, { action })}
+                    options={["Alert", "Violation"].map((a) => ({
+                      value: a,
+                      label: sensitiveActionLabel(a),
+                    }))}
+                    style={{ width: 110 }}
+                  />
+                ),
+              },
+            ]}
+          />
+        )}
+        {!collapsed && (
+          <Hint>
+            自动锁屏只检查屏幕保护和整机“无操作锁定”策略，只能读取已登录用户的设置；本地管理员组里的域管理员等组不会上报。服务器版系统没有安全中心时，杀毒软件显示为“未覆盖”。
+          </Hint>
+        )}
+      </Space>
+    </Panel>
   );
 }
 

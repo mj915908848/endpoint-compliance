@@ -35,6 +35,9 @@ public enum EvidenceKind
 
     /// <summary>A file or folder whose name contains a configured keyword; ProductId is the rule id.</summary>
     SensitiveFile,
+
+    /// <summary>A security baseline check the device does not meet; ProductId is the check id.</summary>
+    Baseline,
 }
 
 public record ProductRule(
@@ -154,6 +157,34 @@ public record PolicyDocument
 
     /// <summary>File name keyword scanning; off unless an administrator enables it.</summary>
     public SensitiveFilePolicy SensitiveFiles { get; init; } = new();
+
+    /// <summary>Security baseline checks (antivirus, firewall, updates ...); off unless an administrator enables it.</summary>
+    public BaselinePolicy Baseline { get; init; } = new();
+}
+
+/// <summary>
+/// The security baseline checks to run, each its own module. They run with full checks, so their results are judged
+/// against <see cref="PolicyDocument.InventoryFreshMinutes"/>.
+/// </summary>
+public record BaselinePolicy
+{
+    public bool Enabled { get; init; }
+    public BaselineRule[] Rules { get; init; } = [];
+}
+
+/// <summary>
+/// One check from <see cref="Compliance.Core.Baseline.Checks"/>. Action "Alert" only notifies administrators;
+/// "Violation" also makes the device fail, and makes the check's results required for a pass.
+/// </summary>
+public record BaselineRule(string Id)
+{
+    public string Action { get; init; } = "Alert";
+
+    /// <summary>Days or minutes for checks that have a limit; 0 uses the check's default.</summary>
+    public int Limit { get; init; }
+
+    /// <summary>Account names the check allows, e.g. an IT account in the local Administrators group.</summary>
+    public string[] Exempt { get; init; } = [];
 }
 
 /// <summary>
@@ -265,6 +296,9 @@ public record ComplianceReport(
 {
     /// <summary>Incomplete sensitive file scans when every rule only alerts; they do not affect the verdict.</summary>
     public string[] SensitiveFileNotes { get; init; } = [];
+
+    /// <summary>Incomplete baseline checks whose rules only alert; they do not affect the verdict.</summary>
+    public string[] BaselineNotes { get; init; } = [];
 
     /// <summary>The name of the policy the report judged against.</summary>
     public string PolicyName { get; init; } = "";

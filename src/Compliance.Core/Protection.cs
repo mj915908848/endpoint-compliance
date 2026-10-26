@@ -121,6 +121,7 @@ public static class PolicyCrypto
         )
             throw new ArgumentException("已批准网卡无效：最多 100 项，每项 3–64 个字符");
         SensitiveFiles.Validate(doc.SensitiveFiles);
+        Baseline.Validate(doc.Baseline);
         DomainRules.CompileEdge(doc.BlockDomains);
         foreach (var rule in doc.ApplicationRules)
             if (
@@ -350,7 +351,7 @@ public static class ReportRenderer
             b.AppendLine("- " + Cell(reason));
         if (report.Reasons.Length == 0)
             b.AppendLine("未发现确认违规。结论的完整性以“检查覆盖”一节为准。");
-        b.AppendLine("\n## 4. 软件与敏感文件\n");
+        b.AppendLine("\n## 4. 软件、敏感文件与安全基线\n");
         Table(
             b,
             s.Evidence.Where(e =>
@@ -360,6 +361,7 @@ public static class ReportRenderer
             names
         );
         SensitiveTable(b, report, names);
+        BaselineTable(b, report, names);
         b.AppendLine("\n## 5. 代理设置\n");
         Table(b, s.Evidence.Where(e => e.Kind == EvidenceKind.Proxy), "未发现代理设置。", names);
         b.AppendLine("\n## 6. 网络线索与防护措施\n");
@@ -406,6 +408,7 @@ public static class ReportRenderer
                 + "- 在完成 Windows 实机、安装包签名和网关验收前，不能据此认定生产环境防护已经生效。\n"
                 + "- 检查不读取聊天内容、密码或浏览记录，也不会自动卸载软件。\n"
                 + "- 敏感文件扫描只比对文件和文件夹名称，不读取、不上传文件内容。\n"
+                + "- 安全基线只读取系统设置，不会修改任何配置。\n"
         );
         return b.ToString();
     }
@@ -446,6 +449,36 @@ public static class ReportRenderer
             b.AppendLine(
                 $"| {Cell(e.ObjectKey)} | {Cell(e.Summary)} | {Cell(e.UserSid is null ? "未知" : Labels.Scope(e.UserSid, names))} | {Cell(Labels.Scope(e.Source, names))} |"
             );
+    }
+
+    private static void BaselineTable(
+        StringBuilder b,
+        ComplianceReport report,
+        IReadOnlyDictionary<string, string> names
+    )
+    {
+        var s = report.Snapshot;
+        var rows = s.Evidence.Where(e => e.Kind == EvidenceKind.Baseline).ToArray();
+        var checks = s.Modules.Where(m => Baseline.IsModule(m.Module)).ToArray();
+        if (rows.Length == 0 && report.BaselineNotes.Length == 0 && checks.Length == 0)
+            return;
+        b.AppendLine("\n### 安全基线\n");
+        foreach (var note in report.BaselineNotes)
+            b.AppendLine("- " + Cell(note));
+        if (report.BaselineNotes.Length > 0)
+            b.AppendLine();
+        if (rows.Length == 0)
+        {
+            b.AppendLine(
+                checks.Length > 0 && checks.All(m => m.Status == "Complete")
+                    ? "已检查的安全基线均符合要求。"
+                    : "暂无不符合项；部分检查未能完成，不能据此认定全部符合。"
+            );
+            return;
+        }
+        b.AppendLine("| 检查项 | 范围 | 说明 |\n| --- | --- | --- |");
+        foreach (var e in rows)
+            b.AppendLine($"| {Cell(e.ProductName)} | {Cell(Labels.Scope(e.UserSid, names))} | {Cell(e.Summary)} |");
     }
 
     private static void Table(

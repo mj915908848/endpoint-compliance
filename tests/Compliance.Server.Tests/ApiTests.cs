@@ -1702,6 +1702,120 @@ public class ApiTests
     }
 
     [Fact]
+    public async Task Baseline_findings_alert_per_check_and_resolve_after_the_check_passes()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var invalid = await f.Publish(
+            new PolicyDocument
+            {
+                Baseline = new() { Enabled = true, Rules = [new("usb")] },
+                RequiredControls = [],
+            }
+        );
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Equal(
+            HttpStatusCode.OK,
+            (
+                await f.Publish(
+                    new PolicyDocument
+                    {
+                        RequiredControls = [],
+                        Baseline = new()
+                        {
+                            Enabled = true,
+                            Rules = [new("rdp"), new("firewall") { Action = "Violation" }],
+                        },
+                    }
+                )
+            ).StatusCode
+        );
+        f.Device = (await f.Enroll(await f.Code())).DeviceId;
+        Evidence Finding(string id, string name, string summary) =>
+            new(id, name, EvidenceKind.Baseline, "baseline:" + id, "安全基线", summary);
+        ScanSnapshot Scan(params Evidence[] evidence) =>
+            new()
+            {
+                DeviceId = f.Device,
+                HostName = "host",
+                PolicyVersion = 2,
+                CollectedAt = f.Clock.Now,
+                Modules = PolicyDocument
+                    .AllModules.Concat([Baseline.Module("rdp"), Baseline.Module("firewall")])
+                    .Select(m => new ModuleResult(m, "machine", "Complete", f.Clock.Now))
+                    .ToArray(),
+                Evidence = evidence,
+            };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([
+                new(
+                    "b1",
+                    1,
+                    f.Clock.Now,
+                    "Snapshot",
+                    "scan",
+                    Scan(
+                        Finding("rdp", "远程桌面", "远程桌面已开启"),
+                        Finding("firewall", "防火墙", "Windows 防火墙的公用网络已关闭")
+                    )
+                ),
+            ])
+        );
+        var alerts = (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!;
+        Assert.Equal(2, alerts.Length);
+        Assert.Equal("Baseline", alerts.Single(a => a.ObjectKey == "baseline:rdp").Type);
+        Assert.Equal("远程桌面：远程桌面已开启", alerts.Single(a => a.ObjectKey == "baseline:rdp").Summary);
+        Assert.Equal("Violation", alerts.Single(a => a.ObjectKey == "baseline:firewall").Type);
+        await f.Agent("POST", "/api/agent/heartbeat", new HeartbeatRequest("host", "1", f.Clock.Now, 2, []));
+        var device = (await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!.Single();
+        Assert.Equal(Verdict.FAIL, device.CurrentVerdict);
+
+        // The firewall was turned on; remote desktop is still open.
+        f.Clock.Now = f.Clock.Now.AddMinutes(5);
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([
+                new("b2", 2, f.Clock.Now, "Snapshot", "scan", Scan(Finding("rdp", "远程桌面", "远程桌面已开启"))),
+            ])
+        );
+        alerts = (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!;
+        Assert.Equal("Resolved", alerts.Single(a => a.ObjectKey == "baseline:firewall").State);
+        Assert.Equal("Active", alerts.Single(a => a.ObjectKey == "baseline:rdp").State);
+        await f.Agent("POST", "/api/agent/heartbeat", new HeartbeatRequest("host", "1", f.Clock.Now, 2, []));
+        device = (await f.Client.GetFromJsonAsync<DeviceSummary[]>("/api/devices", Wire.Json))!.Single();
+        Assert.Equal(Verdict.PASS, device.CurrentVerdict);
+
+        // A check that could not run proves nothing.
+        f.Clock.Now = f.Clock.Now.AddMinutes(5);
+        var unread = Scan() with
+        {
+            Modules = Scan()
+                .Modules.Select(m => m.Module == Baseline.Module("rdp") ? m with { Status = "Error" } : m)
+                .ToArray(),
+        };
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("b3", 3, f.Clock.Now, "Snapshot", "scan", unread)])
+        );
+        alerts = (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!;
+        Assert.Equal("Active", alerts.Single(a => a.ObjectKey == "baseline:rdp").State);
+        f.Clock.Now = f.Clock.Now.AddMinutes(5);
+        await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([new("b4", 4, f.Clock.Now, "Snapshot", "scan", Scan())])
+        );
+        Assert.All(
+            (await f.Client.GetFromJsonAsync<AlertSummary[]>("/api/alerts", Wire.Json))!,
+            a => Assert.Equal("Resolved", a.State)
+        );
+    }
+
+    [Fact]
     public async Task Signed_auth_binds_method_path_body_and_survives_restart_replay_rejection()
     {
         await using var f = new Fixture();

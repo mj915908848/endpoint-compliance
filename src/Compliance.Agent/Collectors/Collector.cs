@@ -56,7 +56,16 @@ public interface ICollector
     IEnumerable<CollectorScope> Scopes(ScanContext context);
 
     Task CollectAsync(ScanContext context, CollectorScope scope, List<Evidence> evidence, CancellationToken ct);
+
+    /// <summary>Whether the policy asks for this module: listed as required, or an enabled baseline check.</summary>
+    bool Runs(PolicyDocument policy) => policy.RequiredModules.Contains(Module) || Baseline.Runs(policy, Module);
 }
+
+/// <summary>
+/// Thrown by a collector that cannot tell on this device, e.g. a Windows edition without the feature it reads; the
+/// scope is reported as not covered with this message, rather than as a read failure.
+/// </summary>
+public sealed class NotCoveredException(string message) : Exception(message);
 
 /// <summary>
 /// Collector runs that timed out and are still going. A timed-out run cannot be stopped (registry, WMI and file
@@ -123,6 +132,7 @@ public sealed partial class WindowsCollector(
         new SystemProxyCollector(),
         new ProcessesCollector(),
         new PortsCollector(),
+        .. BaselineCollector.All,
     ];
 
     public async Task<ScanSnapshot> CollectAsync(
@@ -175,21 +185,19 @@ public sealed partial class WindowsCollector(
         bool full = previousInventory is null || !priorUsers!.SequenceEqual(currentUsers);
         if (!full)
         {
-            var inventory = Collectors
-                .Where(c => c.Inventory && policy.RequiredModules.Contains(c.Module))
-                .Select(c => c.Module)
-                .ToHashSet();
+            var inventory = Collectors.Where(c => c.Inventory && c.Runs(policy)).Select(c => c.Module).ToHashSet();
             modules.AddRange(previousInventory!.Modules.Where(m => inventory.Contains(m.Module)));
             evidence.AddRange(
-                previousInventory.Evidence.Where(e => e.Kind is EvidenceKind.Installation or EvidenceKind.Extension)
+                previousInventory.Evidence.Where(e =>
+                    e.Kind is EvidenceKind.Installation or EvidenceKind.Extension
+                    || e.Kind == EvidenceKind.Baseline && inventory.Contains(Baseline.Module(e.ProductId))
+                )
             );
         }
 
         var context = new ScanContext(policy, profiles, volumes, volumeReading);
         // Modules the policy leaves out are not run at all.
-        foreach (
-            var collector in Collectors.Where(c => (full || !c.Inventory) && policy.RequiredModules.Contains(c.Module))
-        )
+        foreach (var collector in Collectors.Where(c => (full || !c.Inventory) && c.Runs(policy)))
         foreach (var scope in collector.Scopes(context))
         {
             if (scope.Unavailable is not null)
@@ -215,6 +223,11 @@ public sealed partial class WindowsCollector(
                 await run.WaitAsync(collector.Timeout, ct);
                 evidence.AddRange(found);
                 modules.Add(new(collector.Module, scope.Scope, "Complete", DateTimeOffset.UtcNow));
+            }
+            catch (NotCoveredException ex)
+            {
+                evidence.AddRange(found);
+                modules.Add(new(collector.Module, scope.Scope, "Unknown", DateTimeOffset.UtcNow, ex.Message));
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultSensitiveFiles, describeChanges } from "../src/components";
+import { defaultBaseline, defaultSensitiveFiles, describeChanges } from "../src/components";
 import { Policies } from "../src/pages/Policies";
 import { Providers } from "../src/providers";
 import type { Policy } from "../src/types";
@@ -32,6 +32,7 @@ const base: Policy = {
   inventoryFreshMinutes: 120,
   lightweightFreshMinutes: 10,
   sensitiveFiles: defaultSensitiveFiles,
+  baseline: defaultBaseline,
   products: [
     {
       id: "cursor",
@@ -359,6 +360,46 @@ describe("sensitive file rules", () => {
   });
 });
 
+describe("baseline checks", () => {
+  it("selects every check when switched on, and publishes a stricter update rule", async () => {
+    const posts = stub(base, base);
+    renderPage();
+    expect(await screen.findByText("安全基线（0）")).toBeTruthy();
+    await userEvent.click(screen.getByRole("switch", { name: "启用安全基线检查" }));
+    expect(await screen.findByText("安全基线（9）")).toBeTruthy();
+    const days = screen.getByRole("spinbutton", { name: "系统更新期限" });
+    await userEvent.clear(days);
+    await userEvent.type(days, "14");
+    await userEvent.click(screen.getByRole("checkbox", { name: "远程桌面" }));
+    expect(await screen.findByText("安全基线（8）")).toBeTruthy();
+    const bar = screen.getByRole("region", { name: "未发布的修改" });
+    await userEvent.click(within(bar).getByRole("button", { name: "保存并发布" }));
+    expect((await screen.findAllByText("安全基线检查：启用")).length).toBeGreaterThan(0);
+    await userEvent.click(
+      within(screen.getAllByRole("dialog").at(-1)!).getByRole("button", { name: "发布" }),
+    );
+    await waitFor(() => expect(posts).toHaveLength(1));
+    const baseline = posts[0].baseline;
+    expect(baseline.enabled).toBe(true);
+    expect(baseline.rules.map((r) => r.id)).toEqual([
+      "antivirus",
+      "firewall",
+      "updates",
+      "bitlocker",
+      "screenlock",
+      "guest",
+      "admins",
+      "smb1",
+    ]);
+    expect(baseline.rules.find((r) => r.id === "updates")).toEqual({
+      id: "updates",
+      action: "Alert",
+      limit: 14,
+      exempt: [],
+    });
+  });
+});
+
 describe("change summary", () => {
   it("names added, removed and edited rules in plain language", () => {
     const after: Policy = {
@@ -387,6 +428,34 @@ describe("change summary", () => {
     expect(
       describeChanges(base, { ...base, quickCheckMinutes: 10, fullCheckMinutes: 240 }),
     ).toEqual(["检查频率：快速检查每 10 分钟，完整检查每 240 分钟"]);
+  });
+
+  it("names baseline checks and their changes", () => {
+    const before: Policy = {
+      ...base,
+      baseline: {
+        enabled: true,
+        rules: [{ id: "updates", action: "Alert", limit: 0, exempt: [] }],
+      },
+    };
+    const after: Policy = {
+      ...base,
+      baseline: {
+        enabled: true,
+        rules: [
+          { id: "updates", action: "Violation", limit: 14, exempt: [] },
+          { id: "admins", action: "Alert", limit: 0, exempt: ["itadmin"] },
+        ],
+      },
+    };
+    expect(describeChanges(base, before)).toEqual([
+      "安全基线检查：启用",
+      "安全基线检查项新增：系统更新",
+    ]);
+    expect(describeChanges(before, after)).toEqual([
+      "安全基线检查项新增：本地管理员",
+      "修改安全基线“系统更新”：处理方式改为判定违规，要求改为“最近 14 天内成功安装过系统更新”",
+    ]);
   });
 
   it("names sensitive file keyword and action changes", () => {
