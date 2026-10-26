@@ -806,6 +806,142 @@ Test(
         PolicyCrypto.Validate(old);
     }
 );
+var firewallRule = new BaselineRule("firewall");
+var baselinePolicy = p with
+{
+    Baseline = new() { Enabled = true, Rules = [firewallRule, new BaselineRule("updates") { Limit = 14 }] },
+};
+var firewallOff = new Evidence(
+    "firewall",
+    "防火墙",
+    EvidenceKind.Baseline,
+    "baseline:firewall",
+    "安全基线",
+    "Windows 防火墙的公用网络已关闭"
+);
+var baselineScan = clean with
+{
+    Modules =
+    [
+        .. clean.Modules,
+        new(Baseline.Module("firewall"), "machine", "Complete", now),
+        new(Baseline.Module("updates"), "machine", "Complete", now),
+    ],
+    Evidence = [firewallOff],
+};
+Test(
+    "baseline findings of alert rules leave the verdict alone, and their gaps are notes",
+    () =>
+    {
+        var r = ReportEngine.Evaluate(baselinePolicy, baselineScan, now);
+        Eq(Verdict.PASS, r.Verdict);
+        Eq(0, r.BaselineNotes.Length);
+        var unread = baselineScan with
+        {
+            Modules =
+            [
+                .. clean.Modules,
+                new(Baseline.Module("firewall"), "machine", "Complete", now),
+                new(Baseline.Module("updates"), "machine", "Unknown", now, "未找到累积更新的安装记录"),
+            ],
+        };
+        var partial = ReportEngine.Evaluate(baselinePolicy, unread, now);
+        Eq(Verdict.PASS, partial.Verdict);
+        Yes(partial.BaselineNotes.Single().Contains("安全基线：系统更新（整机）：未覆盖，未找到累积更新的安装记录"));
+        var missing = ReportEngine.Evaluate(baselinePolicy, clean, now);
+        Yes(missing.BaselineNotes.Any(x => x.Contains("缺少安全基线检查结果：防火墙")));
+        // Checks the policy does not enable are not asked for.
+        Eq(0, ReportEngine.Evaluate(p, baselineScan, now).BaselineNotes.Length);
+        Eq(
+            0,
+            ReportEngine
+                .Evaluate(
+                    baselinePolicy with
+                    {
+                        Baseline = baselinePolicy.Baseline with { Enabled = false },
+                    },
+                    clean,
+                    now
+                )
+                .BaselineNotes.Length
+        );
+    }
+);
+Test(
+    "baseline violation rules fail the device and need fresh complete results",
+    () =>
+    {
+        var strict = baselinePolicy with
+        {
+            Baseline = baselinePolicy.Baseline with { Rules = [firewallRule with { Action = "Violation" }] },
+        };
+        var r = ReportEngine.Evaluate(strict, baselineScan, now);
+        Eq(Verdict.FAIL, r.Verdict);
+        Yes(r.Reasons.Single().Contains("防火墙（整机）：安全基线"));
+        Eq(0, r.ConfirmedEvidence.Single());
+        var pending = ReportEngine.Evaluate(strict, clean, now);
+        Eq(Verdict.UNKNOWN, pending.Verdict);
+        Yes(pending.CoverageGaps.Any(x => x.Contains("缺少安全基线检查结果：防火墙")));
+        // Baseline checks run with full checks, so their results last as long as inventory.
+        var hourOld = baselineScan with
+        {
+            Evidence = [],
+            Modules = [.. clean.Modules, new(Baseline.Module("firewall"), "machine", "Complete", now.AddMinutes(-100))],
+        };
+        Eq(Verdict.PASS, ReportEngine.Evaluate(strict, hourOld, now).Verdict);
+        var aged = hourOld with
+        {
+            Modules = [.. clean.Modules, new(Baseline.Module("firewall"), "machine", "Complete", now.AddMinutes(-130))],
+        };
+        Eq(Verdict.UNKNOWN, ReportEngine.Evaluate(strict, aged, now).Verdict);
+        Eq(Verdict.PASS, ReportEngine.Evaluate(strict, baselineScan with { Evidence = [] }, now).Verdict);
+    }
+);
+Test(
+    "report lists baseline findings in the software section",
+    () =>
+    {
+        var md = ReportRenderer.Markdown(ReportEngine.Evaluate(baselinePolicy, baselineScan, now));
+        Eq(9, md.Split('\n').Count(x => x.StartsWith("## ")));
+        Yes(md.Contains("### 安全基线") && md.Contains("| 防火墙 | 整机 | Windows 防火墙的公用网络已关闭 |"));
+        Yes(!ReportRenderer.Markdown(ReportEngine.Evaluate(p, clean, now)).Contains("### 安全基线"));
+        Eq("安全基线：BitLocker 加密", Labels.Module(Baseline.Module("bitlocker")));
+        Eq("最近 30 天内成功安装过系统更新", Baseline.Requirement(new("updates")));
+        Eq("无操作 5 分钟内锁屏，恢复时需要密码", Baseline.Requirement(new("screenlock") { Limit = 5 }));
+    }
+);
+Test(
+    "baseline rules are validated",
+    () =>
+    {
+        PolicyCrypto.Validate(baselinePolicy);
+        PolicyCrypto.Validate(p with { Baseline = new() { Rules = [new("rdp")] } });
+        BaselinePolicy With(params BaselineRule[] rules) => new() { Enabled = true, Rules = rules };
+        Throws(() => PolicyCrypto.Validate(p with { Baseline = null! }));
+        Throws(() => PolicyCrypto.Validate(p with { Baseline = With() }));
+        Throws(() => PolicyCrypto.Validate(p with { Baseline = With(new BaselineRule("usb")) }));
+        Throws(() => PolicyCrypto.Validate(p with { Baseline = With(new BaselineRule("rdp") { Action = "Block" }) }));
+        Throws(() => PolicyCrypto.Validate(p with { Baseline = With(new BaselineRule("rdp") { Limit = 3 }) }));
+        Throws(() => PolicyCrypto.Validate(p with { Baseline = With(new BaselineRule("updates") { Limit = 366 }) }));
+        Throws(() => PolicyCrypto.Validate(p with { Baseline = With(new BaselineRule("updates") { Limit = -1 }) }));
+        Throws(() =>
+            PolicyCrypto.Validate(p with { Baseline = With(new BaselineRule("admins") { Exempt = [" it"] }) })
+        );
+        Throws(() =>
+            PolicyCrypto.Validate(p with { Baseline = With(new BaselineRule("rdp"), new BaselineRule("rdp")) })
+        );
+        PolicyCrypto.Validate(
+            p with
+            {
+                Baseline = With(new BaselineRule("admins") { Exempt = [@"PC\it", "helpdesk"] }),
+            }
+        );
+        // Policies published before this feature carry no baseline settings and stay valid.
+        var old = Wire.Read<PolicyDocument>(Wire.Serialize(p).Replace("\"baseline\"", "\"unused\""));
+        Yes(!old.Baseline.Enabled);
+        PolicyCrypto.Validate(old);
+    }
+);
 Test(
     "a report stays the same until its ValidUntil, whatever the timestamps",
     () =>
@@ -823,7 +959,8 @@ Test(
                 r.ViolationCount,
                 r.EvidenceCount,
                 r.ProtectionStatus,
-                string.Join(";", r.SensitiveFileNotes)
+                string.Join(";", r.SensitiveFileNotes),
+                string.Join(";", r.BaselineNotes)
             );
         var timed = 0;
         for (var i = 0; i < 400; i++)
@@ -833,8 +970,24 @@ Test(
                 ExpiresAt = now.AddMinutes(random.Next(-5, 600)),
                 IssuedAt = now.AddMinutes(random.Next(-600, 5)),
                 SensitiveFiles = random.Next(2) == 0 ? new() : new() { Enabled = true, Rules = [rule] },
+                Baseline =
+                    random.Next(2) == 0
+                        ? new()
+                        : new()
+                        {
+                            Enabled = true,
+                            Rules = [firewallRule with { Action = random.Next(2) == 0 ? "Alert" : "Violation" }],
+                        },
             };
-            var modules = new[] { "installed", "proxy", "users", "processes", SensitiveFiles.Module }
+            var modules = new[]
+            {
+                "installed",
+                "proxy",
+                "users",
+                "processes",
+                SensitiveFiles.Module,
+                Baseline.Module("firewall"),
+            }
                 .Where(_ => random.Next(4) != 0)
                 .Select(m => new ModuleResult(m, "machine", random.Next(6) == 0 ? "Failed" : "Complete", At(300)))
                 .ToArray();
@@ -842,6 +995,7 @@ Test(
             [
                 .. random.Next(2) == 0 ? [violation with { CollectedAt = At(300) }] : Array.Empty<Evidence>(),
                 .. random.Next(3) == 0 ? [sensitiveHit with { CollectedAt = At(2000) }] : Array.Empty<Evidence>(),
+                .. random.Next(3) == 0 ? [firewallOff with { CollectedAt = At(300) }] : Array.Empty<Evidence>(),
             ];
             var snapshot = clean with { CollectedAt = At(30), Modules = modules, Evidence = evidence };
             var report = ReportEngine.Evaluate(policy, snapshot, now);

@@ -14,7 +14,46 @@ export const onlineLabel = lookup({
   Offline: "失联",
 });
 
-export const moduleLabel = lookup({
+/** Security baseline checks; keep in sync with Baseline.Checks in src/Compliance.Core/Baseline.cs. */
+export const baselineChecks: {
+  id: string;
+  name: string;
+  requirement: string;
+  defaultLimit?: number;
+  maxLimit?: number;
+  unit?: string;
+}[] = [
+  {
+    id: "antivirus",
+    name: "杀毒软件",
+    requirement: "已安装杀毒软件，实时防护已开启，病毒库为最新",
+  },
+  { id: "firewall", name: "防火墙", requirement: "防火墙已开启" },
+  {
+    id: "updates",
+    name: "系统更新",
+    requirement: "最近 {0} 天内成功安装过系统更新",
+    defaultLimit: 30,
+    maxLimit: 365,
+    unit: "天",
+  },
+  { id: "bitlocker", name: "BitLocker 加密", requirement: "系统盘已开启 BitLocker 加密保护" },
+  {
+    id: "screenlock",
+    name: "自动锁屏",
+    requirement: "无操作 {0} 分钟内锁屏，恢复时需要密码",
+    defaultLimit: 15,
+    maxLimit: 120,
+    unit: "分钟",
+  },
+  { id: "guest", name: "来宾账户", requirement: "来宾（Guest）账户已停用" },
+  { id: "admins", name: "本地管理员", requirement: "本地管理员组中只有内置管理员和允许的账户" },
+  { id: "rdp", name: "远程桌面", requirement: "远程桌面已关闭" },
+  { id: "smb1", name: "SMBv1 协议", requirement: "SMBv1 文件共享协议已关闭" },
+];
+export const baselineName = (id: string) => baselineChecks.find((c) => c.id === id)?.name ?? id;
+
+const moduleNames = lookup({
   installed: "已安装软件",
   "installed-paths": "常见安装目录",
   services: "系统服务",
@@ -30,6 +69,10 @@ export const moduleLabel = lookup({
   programs: "全盘程序文件",
   "sensitive-files": "敏感文件",
 });
+export const moduleLabel = (module: string) =>
+  module.startsWith("baseline:")
+    ? `安全基线：${baselineName(module.slice("baseline:".length))}`
+    : moduleNames(module);
 
 export const statusLabel = lookup({
   Complete: "已完成",
@@ -46,6 +89,7 @@ export const evidenceLabel = lookup({
   Clue: "待核查线索",
   BlockedAttempt: "拦截记录",
   SensitiveFile: "敏感文件",
+  Baseline: "安全基线",
 });
 
 export const alertTypeLabel = lookup({
@@ -55,6 +99,7 @@ export const alertTypeLabel = lookup({
   Offline: "设备失联",
   Clue: "待核查线索",
   SensitiveFile: "敏感文件",
+  Baseline: "安全基线",
 });
 
 export const auditActionLabel = lookup({

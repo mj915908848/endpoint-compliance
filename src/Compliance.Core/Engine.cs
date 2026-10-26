@@ -100,6 +100,26 @@ public static class ReportEngine
                     );
             }
         }
+        // Baseline checks, like sensitive files, only limit the verdict through rules that make the device fail;
+        // the problems of rules that only alert are notes for the administrator.
+        var baselineGaps = new List<string>();
+        var baselineNotes = new List<string>();
+        void BaselineIssue(string id, string issue) =>
+            (Baseline.Rule(policy, id)?.Action == "Violation" ? baselineGaps : baselineNotes).Add(issue);
+        foreach (var rule in Baseline.Active(policy))
+        {
+            var module = Baseline.Module(rule.Id);
+            var entries = snapshot.Modules.Where(m => m.Module == module).ToArray();
+            if (entries.Length == 0)
+                BaselineIssue(rule.Id, $"缺少安全基线检查结果：{Baseline.Name(rule.Id)}");
+            foreach (var entry in entries)
+            {
+                if (entry.Status != "Complete")
+                    BaselineIssue(rule.Id, ModuleGap(entry, names));
+                if (!Within(entry.CollectedAt, policy.InventoryFreshMinutes))
+                    BaselineIssue(rule.Id, $"{Labels.Module(module)}：数据已过期或时间异常");
+            }
+        }
         var controlsMissing = new List<string>();
         foreach (var id in Controls.Normalize(policy.RequiredControls))
         {
@@ -142,6 +162,7 @@ public static class ReportEngine
             }
             var module = e.Kind switch
             {
+                EvidenceKind.Baseline => Baseline.Module(e.ProductId),
                 EvidenceKind.Installation => "installed",
                 EvidenceKind.Extension => "extensions",
                 EvidenceKind.Proxy => "proxy",
@@ -151,16 +172,25 @@ public static class ReportEngine
             if (moduleTimes.TryGetValue((module, "machine"), out var machine) && (scoped is null || machine < scoped))
                 scoped = machine;
             var time = e.CollectedAt ?? scoped ?? snapshot.CollectedAt;
-            var minutes = e.Kind is EvidenceKind.Installation or EvidenceKind.Extension
+            var minutes = e.Kind is EvidenceKind.Installation or EvidenceKind.Extension or EvidenceKind.Baseline
                 ? policy.InventoryFreshMinutes
                 : policy.LightweightFreshMinutes;
             return Within(time, minutes);
         }
         foreach (var e in snapshot.Evidence.Where(e => e.Confirmed && !EvidenceFresh(e)))
-            if (e.Kind != EvidenceKind.SensitiveFile)
+            if (e.Kind == EvidenceKind.SensitiveFile)
+            {
+                if (sensitive.Enabled)
+                    sensitiveIssues.Add($"{e.ProductName}：证据已过期或时间异常，需要重新检查");
+            }
+            else if (e.Kind == EvidenceKind.Baseline)
+            {
+                if (Baseline.Rule(policy, e.ProductId) is not null)
+                    BaselineIssue(e.ProductId, $"{e.ProductName}：证据已过期或时间异常，需要重新检查");
+            }
+            else
                 gaps.Add($"{e.ProductName}：证据已过期或时间异常，需要重新检查");
-            else if (sensitive.Enabled)
-                sensitiveIssues.Add($"{e.ProductName}：证据已过期或时间异常，需要重新检查");
+        gaps.AddRange(baselineGaps);
         bool sensitiveRequired =
             SensitiveFiles.HasViolationRules(policy) || policy.RequiredModules.Contains(SensitiveFiles.Module);
         if (sensitiveRequired)
@@ -185,6 +215,11 @@ public static class ReportEngine
                         && EvidenceFresh(e)
                         && sensitiveRules.TryGetValue(e.ProductId, out var rule)
                         && rule.Action == "Violation"
+                    || current
+                        && e.Kind == EvidenceKind.Baseline
+                        && e.Confirmed
+                        && EvidenceFresh(e)
+                        && Baseline.Rule(policy, e.ProductId)?.Action == "Violation"
                 )
             )
             .Select(x => x.i)
@@ -212,6 +247,7 @@ public static class ReportEngine
         return new(verdict, summary, reasons, gaps.Distinct().ToArray(), count, confirmed.Length, protection, snapshot)
         {
             SensitiveFileNotes = sensitiveRequired ? [] : sensitiveIssues.Distinct().ToArray(),
+            BaselineNotes = baselineNotes.Distinct().ToArray(),
             PolicyName = policy.PolicyId,
             PolicyVersion = policy.Version,
             ValidUntil = validUntil == DateTimeOffset.MaxValue ? null : validUntil,

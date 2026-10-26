@@ -1706,6 +1706,51 @@
           }
         }
       },
+      "BaselinePolicy": {
+        "required": [
+          "enabled",
+          "rules"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BaselineRule"
+            }
+          }
+        }
+      },
+      "BaselineRule": {
+        "required": [
+          "id",
+          "action",
+          "limit",
+          "exempt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "exempt": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ClientHealth": {
         "required": [
           "started",
@@ -1886,6 +1931,7 @@
           "protectionStatus",
           "snapshot",
           "sensitiveFileNotes",
+          "baselineNotes",
           "policyName",
           "policyVersion"
         ],
@@ -1924,6 +1970,12 @@
             "$ref": "#/components/schemas/ScanSnapshot"
           },
           "sensitiveFileNotes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "baselineNotes": {
             "type": "array",
             "items": {
               "type": "string"
@@ -2394,7 +2446,8 @@
           "Proxy",
           "Clue",
           "BlockedAttempt",
-          "SensitiveFile"
+          "SensitiveFile",
+          "Baseline"
         ]
       },
       "HeartbeatReply": {
@@ -2923,7 +2976,8 @@
           "blockDomains",
           "applicationRules",
           "approvedNetworkAdapters",
-          "sensitiveFiles"
+          "sensitiveFiles",
+          "baseline"
         ],
         "type": "object",
         "properties": {
@@ -3019,6 +3073,9 @@
           },
           "sensitiveFiles": {
             "$ref": "#/components/schemas/SensitiveFilePolicy"
+          },
+          "baseline": {
+            "$ref": "#/components/schemas/BaselinePolicy"
           }
         }
       },

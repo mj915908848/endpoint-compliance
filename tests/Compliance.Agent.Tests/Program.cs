@@ -2514,6 +2514,129 @@ await Check(
     }
 );
 
+await Check(
+    "baseline rules judge what the device reports and say when it cannot tell",
+    async () =>
+    {
+        NotCoveredException NotCovered(Func<IEnumerable<BaselineFinding>> f) =>
+            Throws<NotCoveredException>(() => f().ToArray());
+        Assert(!BaselineRules.Antivirus(SecurityHealth.Good, ["Microsoft Defender"]).Any(), "healthy antivirus");
+        Assert(
+            BaselineRules.Antivirus(SecurityHealth.Poor, ["Microsoft Defender"]).Single().Summary
+                == "杀毒软件（Microsoft Defender）未开启实时防护或病毒库已过期",
+            "poor antivirus names the product"
+        );
+        Assert(BaselineRules.Antivirus(SecurityHealth.Poor, []).Single().Summary == "未安装杀毒软件", "no antivirus");
+        Assert(NotCovered(() => BaselineRules.Antivirus(null, [])).Message.Contains("服务器版"), "no security center");
+        NotCovered(() => BaselineRules.Antivirus(SecurityHealth.NotMonitored, []));
+
+        var on = new Dictionary<string, bool?>
+        {
+            ["域"] = true,
+            ["专用"] = true,
+            ["公用"] = true,
+        };
+        var publicOff = new Dictionary<string, bool?>
+        {
+            ["域"] = true,
+            ["专用"] = true,
+            ["公用"] = false,
+        };
+        // A third-party firewall turns Windows Firewall off; Security Center's verdict counts first.
+        Assert(!BaselineRules.Firewall(SecurityHealth.Good, publicOff).Any(), "security center says good");
+        Assert(
+            BaselineRules.Firewall(SecurityHealth.Poor, publicOff).Single().Summary == "Windows 防火墙的公用网络已关闭",
+            "closed profile named"
+        );
+        Assert(!BaselineRules.Firewall(null, on).Any(), "server with every profile on");
+        Assert(BaselineRules.Firewall(null, publicOff).Any(), "server with a profile off");
+        NotCovered(() => BaselineRules.Firewall(null, new Dictionary<string, bool?> { ["域"] = null }));
+
+        var now = DateTimeOffset.Parse("2026-10-26T08:00:00Z");
+        Assert(!BaselineRules.Updates(now.AddDays(-29), now, 30).Any(), "recent update");
+        Assert(BaselineRules.Updates(now.AddDays(-45), now, 30).Single().Summary.Contains("已有 45 天"), "old update");
+        NotCovered(() => BaselineRules.Updates(null, now, 30));
+
+        Assert(!BaselineRules.BitLocker("C:", 1, 1).Any(), "protected drive");
+        Assert(
+            BaselineRules.BitLocker("C:", 0, 0).Single().Summary == "系统盘 C: 未开启 BitLocker 加密",
+            "plain drive"
+        );
+        Assert(BaselineRules.BitLocker("C:", 0, 1).Single().Summary.Contains("已暂停"), "suspended protection");
+        Assert(BaselineRules.BitLocker("C:", 0, 2).Single().Summary.Contains("正在加密"), "encrypting");
+        NotCovered(() => BaselineRules.BitLocker("C:", 2, 1));
+
+        var good = new ScreenSaverSettings("S-1-5-21-1-2-3-1001", true, true, 600, true);
+        Assert(!BaselineRules.ScreenLock(null, [good], 15).Any(), "ten minutes is within fifteen");
+        Assert(!BaselineRules.ScreenLock(300, [], 15).Any(), "machine inactivity policy covers everyone");
+        var slow = good with { Sid = "S-1-5-21-1-2-3-1002", TimeoutSeconds = 1800 };
+        var open = good with { Sid = "S-1-5-21-1-2-3-1003", Secure = false };
+        var none = good with { Sid = "S-1-5-21-1-2-3-1004", HasScreenSaver = false };
+        var found = BaselineRules.ScreenLock(1800, [good, slow, open, none], 15).ToArray();
+        Assert(found.Length == 3 && found.All(f => f.UserSid == f.Key), "each failing user is named");
+        Assert(found[0].Summary == "屏幕保护等待 30 分钟，超过 15 分钟", found[0].Summary);
+        Assert(found[1].Summary == "屏幕保护恢复时不要求密码", found[1].Summary);
+        Assert(found[2].Summary.StartsWith("未启用屏幕保护"), found[2].Summary);
+        NotCovered(() => BaselineRules.ScreenLock(null, [], 15));
+
+        Assert(BaselineRules.Guest("Guest", false).Single().Summary == "来宾账户 Guest 已启用", "guest enabled");
+        Assert(!BaselineRules.Guest("Guest", true).Any() && !BaselineRules.Guest(null, null).Any(), "guest disabled");
+
+        GroupMember[] members =
+        [
+            new("S-1-5-21-1-2-3-500", @"PC\Administrator", true),
+            new("S-1-5-21-9-8-7-512", @"CORP\Domain Admins", false),
+            new("S-1-5-21-1-2-3-1001", @"PC\kaiyu", true),
+            new("S-1-5-21-1-2-3-1005", @"PC\ITAdmin", true),
+        ];
+        var admins = BaselineRules.Admins(members, ["itadmin"]).ToArray();
+        Assert(admins.Single().Summary == @"账户 PC\kaiyu 是本地管理员组成员", "only the ordinary user is reported");
+        Assert(BaselineRules.Admins(members, [@"PC\kaiyu", "ITAdmin"]).Count() == 0, "full names allowed too");
+
+        Assert(BaselineRules.Rdp(null, 0).Single().Summary == "远程桌面已开启", "rdp on");
+        Assert(BaselineRules.Rdp(0, 1).Single().Summary.Contains("组策略"), "rdp opened by policy");
+        Assert(!BaselineRules.Rdp(1, 0).Any() && !BaselineRules.Rdp(null, null).Any(), "rdp off");
+
+        Assert(!BaselineRules.Smb1(new(null, null, null)).Any(), "SMBv1 not installed");
+        Assert(!BaselineRules.Smb1(new(3, 0, 4)).Any(), "SMBv1 turned off");
+        Assert(BaselineRules.Smb1(new(3, null, 3)).Single().Summary == "SMBv1 服务端和客户端未关闭", "SMBv1 on");
+        await Task.CompletedTask;
+    }
+);
+await Check(
+    "baseline checks run only while enabled, each as its own module, and every one reads this Windows",
+    async () =>
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        var policy = PolicySeed.Create() with
+        {
+            RequiredModules = ["users"],
+            Baseline = new() { Enabled = true, Rules = [.. Baseline.Checks.Select(c => new BaselineRule(c.Id))] },
+        };
+        var snapshot = await new WindowsCollector().CollectAsync("device", policy, CancellationToken.None);
+        foreach (var m in snapshot.Modules.Where(m => Baseline.IsModule(m.Module)))
+            Console.WriteLine($"  {m.Module}: {m.Status} {m.Error}");
+        foreach (var e in snapshot.Evidence.Where(e => e.Kind == EvidenceKind.Baseline))
+            Console.WriteLine($"  {e.ObjectKey}: {e.Summary}");
+        var results = snapshot.Modules.Where(m => Baseline.IsModule(m.Module)).ToArray();
+        Assert(results.Length == Baseline.Checks.Length, "one result per check: " + results.Length);
+        // A read that fails outright is a bug on a stock Windows; a check the edition cannot answer says so.
+        Assert(
+            results.All(m => m.Status is "Complete" or "Unknown"),
+            string.Join("; ", results.Where(m => m.Status == "Error").Select(m => m.Module + " " + m.Error))
+        );
+        var off = await new WindowsCollector().CollectAsync(
+            "device",
+            policy with
+            {
+                Baseline = policy.Baseline with { Enabled = false },
+            },
+            CancellationToken.None
+        );
+        Assert(!off.Modules.Any(m => Baseline.IsModule(m.Module)), "disabled checks do not run");
+    }
+);
 if (OperatingSystem.IsWindows())
 {
     // Only an administrator can use a directory limited to SYSTEM and Administrators; CI runners are elevated.

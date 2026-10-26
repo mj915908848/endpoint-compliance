@@ -25,6 +25,7 @@ export const reportLimits = [
   "在完成 Windows 实机、安装包签名和网关验收前，不能据此认定生产环境防护已经生效。",
   "检查不读取聊天内容、密码或浏览记录，也不会自动卸载软件。",
   "敏感文件扫描只比对文件和文件夹名称，不读取、不上传文件内容。",
+  "安全基线只读取系统设置，不会修改任何配置。",
 ];
 
 /** Scope cell: account name, with the SID on hover for exact matching. */
@@ -57,7 +58,7 @@ function KindTag({ e }: { e: Evidence }) {
   if (e.kind === "Clue" || e.kind === "BlockedAttempt")
     return <Tag variant="filled">{evidenceLabel(e.kind)}</Tag>;
   return (
-    <Tag variant="filled" color={e.confirmed ? "error" : "warning"}>
+    <Tag variant="filled" color={e.confirmed && e.kind !== "Baseline" ? "error" : "warning"}>
       {e.confirmed ? "" : "线索 · "}
       {evidenceLabel(e.kind)}
     </Tag>
@@ -270,6 +271,11 @@ export function ReportFindings({ report: r }: { report: Report }) {
   const sensitiveNotes = r.sensitiveFileNotes ?? [];
   const sensitiveComplete =
     sensitiveScopes.length > 0 && sensitiveScopes.every((m) => m.status === "Complete");
+  const baseline = s.evidence.filter((e) => e.kind === "Baseline");
+  const baselineChecks = s.modules.filter((m) => m.module.startsWith("baseline:"));
+  const baselineNotes = r.baselineNotes ?? [];
+  const baselineComplete =
+    baselineChecks.length > 0 && baselineChecks.every((m) => m.status === "Complete");
   const clue = s.evidence.filter((e) => ["Clue", "BlockedAttempt"].includes(e.kind));
   const groups: {
     key: string;
@@ -299,11 +305,25 @@ export function ReportFindings({ report: r }: { report: Report }) {
           },
         ]
       : []),
+    ...(baseline.length > 0 || baselineNotes.length > 0 || baselineChecks.length > 0
+      ? [
+          {
+            key: "baseline",
+            label: "安全基线",
+            values: baseline,
+            tone: "warning" as Tone,
+            none: baselineComplete
+              ? "均符合"
+              : "暂无不符合项，部分检查未完成，不能据此认定全部符合",
+            notes: baselineNotes,
+          },
+        ]
+      : []),
     { key: "clue", label: "网络线索与拦截记录", values: clue, tone: "muted", none: "没有" },
   ];
   // Groups holding confirmed records start open; clues and empty groups stay closed.
   const open = groups
-    .filter((g) => g.tone === "danger" && g.values.some((e) => e.confirmed))
+    .filter((g) => g.tone !== "muted" && g.values.some((e) => e.confirmed))
     .map((g) => g.key);
   return (
     <div className="report">
@@ -311,6 +331,9 @@ export function ReportFindings({ report: r }: { report: Report }) {
         <Metric tone="danger" label="违规对象" value={r.reasons.length} />
         <Metric tone="warning" label="检查缺口" value={r.coverageGaps.length} />
         <Metric tone="danger" label="敏感文件" value={sensitive.length} />
+        {(baseline.length > 0 || baselineChecks.length > 0) && (
+          <Metric tone="warning" label="基线不符合" value={baseline.length} />
+        )}
         <Metric tone="muted" label="待核查线索" value={clue.length} />
       </div>
       <div className="report-meta">
