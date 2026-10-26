@@ -567,8 +567,18 @@ public sealed class AgentRuntime(
         }
         var enforceTask = processes is null ? Task.CompletedTask : EnforceAsync(queue, notices, ct);
         var failures = new Dictionary<string, DateTimeOffset>();
+        // The resident Windows service watches over itself; a fixture or a one-time check has nothing to watch.
+        var guarded = OperatingSystem.IsWindows() && !simulated;
+        if (guarded && TamperGuard.MarkRunning(config.DataDirectory, TamperGuard.BootTime()) is { } killed)
+            await TryEnqueueAsync(queue, notices, "Tamper", killed.ObjectKey, null, killed.Detail, ct);
+        // Disposed when the loop ends, before the queue: a service Windows stops says why first.
+        await using var stopping = new OnDispose(() =>
+            guarded && ct.IsCancellationRequested ? StoppedAsync(api, queue, notices) : Task.CompletedTask
+        );
         while (!ct.IsCancellationRequested)
         {
+            if (guarded)
+                await GuardAsync(queue, notices, failures, ct);
             // Enrolled again (as a new device) by an administrator: the service restarts to use it.
             if (EnrolledElsewhere())
                 throw new DeviceReenrolledException();
@@ -627,7 +637,129 @@ public sealed class AgentRuntime(
         }
     }
 
+    /// <summary>
+    /// Reports what <see cref="TamperGuard"/> found and the notes other processes left. Not while an installer runs:
+    /// it stops the service and rewrites the Run value itself.
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private async Task GuardAsync(
+        EventOutbox queue,
+        NotificationStore notices,
+        Dictionary<string, DateTimeOffset> reported,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            await TamperGuard.TakeNotesAsync(
+                config.DataDirectory,
+                async note =>
+                {
+                    await TryEnqueueAsync(queue, notices, "Tamper", note.ObjectKey, null, note.Detail, ct);
+                    if (note.ObjectKey == "tamper:uninstall-refused")
+                        await notices.AddAsync(
+                            Guid.NewGuid().ToString("D"),
+                            null,
+                            "卸载客户端需要管理员设置的卸载密码，本次卸载已阻止，管理员已收到通知。",
+                            ct
+                        );
+                }
+            );
+            if (TrayLauncher.InstallerRunning())
+                return;
+            foreach (var found in TamperGuard.Check(new WindowsTamperSystem()))
+            {
+                Console.Error.WriteLine(found.Detail);
+                if (reported.TryGetValue(found.ObjectKey, out var at) && at > DateTimeOffset.UtcNow.AddHours(-1))
+                    continue;
+                reported[found.ObjectKey] = DateTimeOffset.UtcNow;
+                await TryEnqueueAsync(queue, notices, "Tamper", found.ObjectKey, null, found.Detail, ct);
+            }
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            Console.Error.WriteLine($"防篡改检查失败：{e.GetType().Name}: {EvidenceSanitizer.Clean(e.Message)}");
+        }
+    }
+
+    /// <summary>
+    /// The service is stopping: a shutdown is told to the server so the device shows as shut down rather than lost,
+    /// and a stop nobody's installer asked for is reported as tampering. Sent at once, within a few seconds, or left
+    /// queued for the next start.
+    /// </summary>
+    private async Task StoppedAsync(AgentApi api, EventOutbox queue, NotificationStore notices)
+    {
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            var reason = TamperGuard.Stopping;
+            if (reason == StopReason.Shutdown)
+                await TryEnqueueAsync(queue, notices, "Shutdown", "agent:power", null, "系统关机或重启", budget.Token);
+            else if (reason == StopReason.Stopped && OperatingSystem.IsWindows() && !TrayLauncher.InstallerRunning())
+                await TryEnqueueAsync(
+                    queue,
+                    notices,
+                    "Tamper",
+                    "tamper:service-stopped",
+                    null,
+                    "客户端服务被手动停止，停止期间不再检查和拦截",
+                    budget.Token
+                );
+            await UploadBatchAsync(api, queue, notices, budget.Token);
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"停止前未能上报：{e.GetType().Name}");
+        }
+        finally
+        {
+            TamperGuard.ClearRunning(config.DataDirectory);
+        }
+    }
+
+    public void ClearRunning() => TamperGuard.ClearRunning(config.DataDirectory);
+
+    /// <summary>The policy this client holds, if its signature checks out.</summary>
+    public PolicyDocument? CachedPolicy()
+    {
+        LoadCachedPolicy().GetAwaiter().GetResult();
+        return policy;
+    }
+
+    /// <summary>
+    /// Run by the MSI when the client is removed, with the service already stopped: tells the server, and sends what
+    /// was still queued, within <paramref name="ct"/>.
+    /// </summary>
+    public async Task ReportUninstallAsync(bool authorized, CancellationToken ct)
+    {
+        var uri = ValidateServer(config.ServerUrl, simulated, localDemo);
+        using var key = new DeviceIdentity(config.DataDirectory, simulated).Load();
+        using var client = CreateInternalClient();
+        var api = new AgentApi(client, uri, config.DeviceId, key);
+        await using var queue = new EventOutbox(Path.Combine(config.DataDirectory, "outbox.sqlite"));
+        await using var notices = new NotificationStore(Path.Combine(config.DataDirectory, "notices.sqlite"));
+        await TamperGuard.TakeNotesAsync(
+            config.DataDirectory,
+            note => TryEnqueueAsync(queue, notices, "Tamper", note.ObjectKey, null, note.Detail, ct)
+        );
+        await TryEnqueueAsync(
+            queue,
+            notices,
+            "Tamper",
+            "tamper:uninstall",
+            null,
+            authorized ? "客户端已卸载（卸载密码验证通过）" : "客户端已卸载",
+            ct
+        );
+        await UploadAsync(api, queue, notices, ct);
+    }
+
     private int reportedDrops;
+
+    private sealed class OnDispose(Func<Task> action) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await action();
+    }
 
     // What the heartbeat reports about this client itself (see ClientHealth).
     private readonly DateTimeOffset started = DateTimeOffset.UtcNow;

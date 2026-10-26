@@ -19,7 +19,7 @@ public sealed record NotificationSettings
     /// <summary>
     /// Alert types to push. Offline is left out by default: every PC shut down after work raises one.
     /// </summary>
-    public string[] Types { get; init; } = ["Violation", "SensitiveFile", "Baseline", "Health"];
+    public string[] Types { get; init; } = ["Violation", "SensitiveFile", "Baseline", "Tamper", "Health"];
 
     /// <summary>The management UI address put into messages, e.g. https://compliance.example.com.</summary>
     public string ConsoleUrl { get; init; } = "";
@@ -32,6 +32,7 @@ public sealed record NotificationSettings
         "Violation",
         "SensitiveFile",
         "Baseline",
+        "Tamper",
         "Health",
         "BlockedAttempt",
         "Offline",

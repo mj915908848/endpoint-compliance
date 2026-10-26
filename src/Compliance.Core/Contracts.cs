@@ -160,6 +160,17 @@ public record PolicyDocument
 
     /// <summary>Security baseline checks (antivirus, firewall, updates ...); off unless an administrator enables it.</summary>
     public BaselinePolicy Baseline { get; init; } = new();
+
+    /// <summary>Uninstall protection; the client reports stops, removals and changes to its start-up either way.</summary>
+    public TamperPolicy Tamper { get; init; } = new();
+}
+
+public record TamperPolicy
+{
+    /// <summary>
+    /// The <see cref="Compliance.Core.UninstallPassword"/> hash that removing the client asks for; empty for none.
+    /// </summary>
+    public string UninstallPassword { get; init; } = "";
 }
 
 /// <summary>

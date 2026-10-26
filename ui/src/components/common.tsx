@@ -208,7 +208,9 @@ export function OverviewGuide({ devices }: { devices: DeviceSummary[] }) {
       title={message}
       description={
         offline.length > 0 &&
-        `另有 ${offline.length} 台终端失联或疑似失联，暂无法判断${
+        `另有 ${offline.length} 台终端${
+          offline.every((d) => d.onlineState === "Shutdown") ? "已关机" : "未在线（失联或已关机）"
+        }，暂无法判断${
           lastFailed.length > 0
             ? `，其中 ${lastFailed.length} 台上次检查未通过，违规记录仍然保留`
             : ""
@@ -226,7 +228,7 @@ export function DeviceGuide({ device, children }: { device: DeviceSummary; child
       ? {
           tone: "warning",
           icon: <ClockCircleFilled />,
-          title: "终端未在线",
+          title: device.onlineState === "Shutdown" ? "终端已关机" : "终端未在线",
           hint: `${
             device.lastVerdict === "FAIL"
               ? "上次检查未通过，已发现的违规仍需处理。"

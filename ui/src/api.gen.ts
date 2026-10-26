@@ -2325,6 +2325,7 @@ export interface components {
       approvedNetworkAdapters: string[];
       sensitiveFiles: components["schemas"]["SensitiveFilePolicy"];
       baseline: components["schemas"]["BaselinePolicy"];
+      tamper: components["schemas"]["TamperPolicy"];
     };
     PolicyHistoryItem: {
       /** Format: int64 */
@@ -2424,6 +2425,9 @@ export interface components {
     SigningKeyState: {
       keyId: string;
       rotation: null | components["schemas"]["KeyRotationProgress"];
+    };
+    TamperPolicy: {
+      uninstallPassword: string;
     };
     TrendDay: {
       /** Format: date */

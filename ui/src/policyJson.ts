@@ -102,6 +102,7 @@ const policy = shape(
     approvedNetworkAdapters: texts,
     sensitiveFiles,
     baseline,
+    tamper: shape({}, { uninstallPassword: text }),
     applicationRules: list(shape({ productId: text, name: text, sha256: text, type: text })),
   },
 );
@@ -136,5 +137,7 @@ export function withDefaults(draft: Policy, value: Partial<Policy>): Policy {
       })),
     };
   }
+  if (value.tamper)
+    merged.tamper = { ...(draft.tamper ?? { uninstallPassword: "" }), ...value.tamper };
   return merged;
 }

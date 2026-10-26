@@ -21,6 +21,7 @@ export type SensitiveFileRule = Schemas["SensitiveFileRule"];
 export type SensitiveFilePolicy = Schemas["SensitiveFilePolicy"];
 export type BaselineRule = Schemas["BaselineRule"];
 export type BaselinePolicy = Schemas["BaselinePolicy"];
+export type TamperPolicy = Schemas["TamperPolicy"];
 export type SignedPolicy = Schemas["SignedPolicy"];
 export type Audit = Schemas["AuditRecord"];
 export type NotificationSettings = Schemas["NotificationView"];

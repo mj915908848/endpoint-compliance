@@ -15,11 +15,11 @@ export interface DeviceAlerts {
 // Compared as instants: the text form can differ in offset or fraction digits.
 const ms = (at: string) => Date.parse(at);
 
-/** Violations first, then sensitive files and baseline findings, then the rest; newest first within each. */
+/** Violations and tampering first, then sensitive files and baseline findings, then the rest; newest first within each. */
 const rank = (a: Pick<Alert, "type" | "state">) =>
   a.state === "Resolved"
     ? 9
-    : a.type === "Violation"
+    : a.type === "Violation" || a.type === "Tamper"
       ? 0
       : a.type === "SensitiveFile" || a.type === "Baseline"
         ? 1
@@ -73,7 +73,7 @@ type Tone = "danger" | "warning" | "neutral";
 const tone = (a: Pick<Alert, "type" | "state">): Tone =>
   a.state === "Resolved"
     ? "neutral"
-    : a.type === "Violation"
+    : a.type === "Violation" || a.type === "Tamper"
       ? "danger"
       : a.type === "Offline" || a.type === "BlockedAttempt"
         ? "neutral"

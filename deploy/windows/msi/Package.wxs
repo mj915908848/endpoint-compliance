@@ -36,8 +36,11 @@
     <Property Id="MSIFASTINSTALL" Value="1" />
     <Property Id="SERVERURL" Secure="yes" />
     <Property Id="CODE" Secure="yes" Hidden="yes" />
-    <!-- The enrollment's command line holds the code. -->
+    <!-- Asked for by removal when the policy sets an uninstall password: msiexec /x ... UNINSTALLPASSWORD=... -->
+    <Property Id="UNINSTALLPASSWORD" Secure="yes" Hidden="yes" />
+    <!-- The enrollment's and the password check's command lines hold the code and the password. -->
     <Property Id="EnrollAgent" Hidden="yes" />
+    <Property Id="VerifyUninstall" Hidden="yes" />
 
     <StandardDirectory Id="ProgramMenuFolder" />
     <StandardDirectory Id="ProgramFiles64Folder">
@@ -194,7 +197,30 @@
       Return="ignore"
     />
 
+    <!-- Removing the client (not upgrading it) first checks the uninstall password the policy sets, before the service
+         stops: a wrong or missing one fails the removal, which rolls back, and the service reports the attempt. -->
+    <SetProperty
+      Id="VerifyUninstall"
+      Value="&quot;[#AgentExe]&quot; --config &quot;[CommonAppDataFolder]ComplianceAgent\agent.json&quot; --verify-uninstall --password &quot;[UNINSTALLPASSWORD]&quot;"
+      Before="VerifyUninstall"
+      Sequence="execute"
+    />
+    <CustomAction
+      Id="VerifyUninstall"
+      BinaryRef="Wix4UtilCA_X64"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check"
+      HideTarget="yes"
+    />
+
     <InstallExecuteSequence>
+      <Custom
+        Action="VerifyUninstall"
+        Before="StopServices"
+        Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"
+      />
       <Custom
         Action="RemoveBrowserRules"
         After="StopServices"

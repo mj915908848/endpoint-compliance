@@ -2977,7 +2977,8 @@
           "applicationRules",
           "approvedNetworkAdapters",
           "sensitiveFiles",
-          "baseline"
+          "baseline",
+          "tamper"
         ],
         "type": "object",
         "properties": {
@@ -3076,6 +3077,9 @@
           },
           "baseline": {
             "$ref": "#/components/schemas/BaselinePolicy"
+          },
+          "tamper": {
+            "$ref": "#/components/schemas/TamperPolicy"
           }
         }
       },
@@ -3491,6 +3495,17 @@
                 "$ref": "#/components/schemas/KeyRotationProgress"
               }
             ]
+          }
+        }
+      },
+      "TamperPolicy": {
+        "required": [
+          "uninstallPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "uninstallPassword": {
+            "type": "string"
           }
         }
       },

@@ -13,12 +13,13 @@ public sealed partial class Transaction
     const string DeviceColumns =
         "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, controls, snapshot, snapshot_sequence, target_policy_version";
     const string DeviceSelect =
-        DeviceColumns + ", note, agent_version, network, source_address, verdict_detail, archived_at, health";
+        DeviceColumns
+        + ", note, agent_version, network, source_address, verdict_detail, archived_at, health, shutdown_at";
 
     // The same columns with controls and snapshot left out: most requests need neither, and parsing the snapshot of
     // every device is the bulk of reading one.
     const string DeviceHeadSelect =
-        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version, network, source_address, verdict_detail, archived_at, health";
+        "id, host_name, public_key_pem, last_heartbeat, applied_policy_version, NULL, NULL, snapshot_sequence, target_policy_version, note, agent_version, network, source_address, verdict_detail, archived_at, health, shutdown_at";
 
     static DeviceRecord ReadDevice(DbDataReader r) =>
         new(
@@ -37,7 +38,8 @@ public sealed partial class Transaction
             r.GetString(12),
             r.IsDBNull(13) ? null : Wire.Read<StoredVerdict>(r.GetString(13)),
             OptionalTime(r, 14),
-            r.GetString(15) is { Length: > 0 } health ? Wire.Read<ClientHealth>(health) : null
+            r.GetString(15) is { Length: > 0 } health ? Wire.Read<ClientHealth>(health) : null,
+            OptionalTime(r, 16)
         );
 
     public Task<DeviceRecord?> GetDevice(string id) =>
@@ -234,16 +236,24 @@ public sealed partial class Transaction
             ("now", now)
         );
 
+    /// <summary>The device's client said Windows is shutting down; see <see cref="DeviceStatus.IsShutDown"/>.</summary>
+    public Task SetShutdown(string id, DateTimeOffset at) =>
+        Execute("UPDATE devices SET shutdown_at = @at WHERE id = @id", ("at", at), ("id", id));
+
     public Task SetTargetPolicy(string id, long version) =>
         Execute("UPDATE devices SET target_policy_version = @version WHERE id = @id", ("version", version), ("id", id));
 
-    /// <summary>Devices whose last heartbeat is at or before <paramref name="cutoff"/> and that have no active offline alert.</summary>
+    /// <summary>
+    /// Devices whose last heartbeat is at or before <paramref name="cutoff"/>, that have no active offline alert and
+    /// did not say they were shutting down.
+    /// </summary>
     public Task<List<(string Id, string HostName)>> DevicesGoingOffline(DateTimeOffset cutoff) =>
         Query(
             """
             SELECT d.id, d.host_name FROM devices d
             LEFT JOIN alerts a ON a.id = 'offline:' || d.id
             WHERE d.last_heartbeat IS NOT NULL AND d.last_heartbeat <= @cutoff AND d.archived_at IS NULL
+                AND (d.shutdown_at IS NULL OR d.shutdown_at < d.last_heartbeat)
                 AND (a.id IS NULL OR a.state <> 'Active')
             """,
             r => (r.GetString(0), r.GetString(1)),

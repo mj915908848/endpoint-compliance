@@ -1018,5 +1018,25 @@ Test(
         Yes(timed > 300);
     }
 );
+Test(
+    "the uninstall password the browser hashes verifies here, and policies only take a well-formed hash",
+    () =>
+    {
+        // Computed by the management UI (ui/tests/policies.test.tsx) from the same password and salt.
+        const string fromBrowser =
+            "pbkdf2-sha256$100000$AAECAwQFBgcICQoLDA0ODw==$7InOAJONupobuIcPJmOTXsIqbTjfORptMJj7iFb/F5A=";
+        Yes(UninstallPassword.Verify(fromBrowser, "卸载-Pass1"));
+        Yes(!UninstallPassword.Verify(fromBrowser, "卸载-pass1"));
+        Yes(!UninstallPassword.Verify(fromBrowser, null));
+        Yes(!UninstallPassword.Verify(fromBrowser.Replace("100000", "1000"), "卸载-Pass1"));
+        Yes(UninstallPassword.Verify(UninstallPassword.Hash("另一个密码"), "另一个密码"));
+        PolicyCrypto.Validate(p with { Tamper = new() { UninstallPassword = fromBrowser } });
+        PolicyCrypto.Validate(p with { Tamper = new() });
+        Throws(() => PolicyCrypto.Validate(p with { Tamper = new() { UninstallPassword = "plain-password" } }));
+        Throws(() => PolicyCrypto.Validate(p with { Tamper = null! }));
+        // Policies signed before uninstall passwords existed read as having none.
+        Eq("", Wire.Read<PolicyDocument>("{\"products\":[]}").Tamper.UninstallPassword);
+    }
+);
 Console.WriteLine($"Core tests: {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

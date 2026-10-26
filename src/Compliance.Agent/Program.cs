@@ -40,6 +40,18 @@ public static class Program
                     Console.WriteLine($"已删除非管理员创建的数据目录 {data}");
                 return 0;
             }
+            if (Has("--verify-uninstall"))
+            {
+                // Run by the MSI as SYSTEM before it removes the client; refusing rolls the removal back.
+                if (simulated || !OperatingSystem.IsWindows())
+                    return 0;
+                return UninstallCheck.Run(
+                    AgentConfiguration.Exists(configPath) ? AgentConfiguration.Read(configPath) : null,
+                    configPath,
+                    simulated,
+                    Arg("--password")
+                );
+            }
             if (Has("--uninstall-cleanup"))
             {
                 // Run by the MSI as SYSTEM when the client is removed, after the service stopped and before the data
@@ -47,6 +59,7 @@ public static class Program
                 // files the service wrote after the MSI listed the directory would keep it there.
                 if (simulated || !OperatingSystem.IsWindows())
                     return 0;
+                await ReportUninstallAsync(configPath, data);
                 var state = Path.Combine(data, "browser-blocklist.json");
                 var problem = new BrowserBlocklist(new WindowsBlocklistStore(), state).RemoveOwn();
                 Console.WriteLine(problem ?? "已移除本客户端添加的浏览器网址拦截规则");
@@ -191,6 +204,29 @@ public static class Program
         return 0;
     }
 
+    /// <summary>Tells the server the client is going away; a server out of reach does not hold up the removal.</summary>
+    static async Task ReportUninstallAsync(string configPath, string data)
+    {
+        try
+        {
+            if (!AgentConfiguration.Exists(configPath))
+                return;
+            var config = AgentConfiguration.Read(configPath);
+            if (string.IsNullOrWhiteSpace(config.DeviceId) || string.IsNullOrWhiteSpace(config.PolicyPublicKeyPem))
+                return;
+            using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await new AgentRuntime(config, configPath, false, null, config.HttpTrial).ReportUninstallAsync(
+                UninstallCheck.Authorized(data),
+                budget.Token
+            );
+            Console.WriteLine("已通知管理端客户端卸载");
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"未能通知管理端客户端卸载：{e.GetType().Name}: {e.Message}");
+        }
+    }
+
     static bool IdentityUsable(AgentConfiguration config, bool simulated)
     {
         if (!new DeviceIdentity(config.DataDirectory, simulated).TryLoad(out var key, out _))
@@ -249,8 +285,15 @@ public static class Program
         using var host = Host.CreateDefaultBuilder(args)
             .UseWindowsService(options => options.ServiceName = "ComplianceAgent")
             .ConfigureServices(services =>
-                services.AddSingleton<Func<AgentRuntime?>>(Load).AddHostedService<AgentWorker>()
-            )
+            {
+                services.AddSingleton<Func<AgentRuntime?>>(Load).AddHostedService<AgentWorker>();
+                // Tells shutdowns from stops (TamperGuard.Stopping); replaces the lifetime UseWindowsService added.
+                if (
+                    OperatingSystem.IsWindows()
+                    && Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService()
+                )
+                    services.AddSingleton<IHostLifetime, AgentServiceLifetime>();
+            })
             .Build();
         await host.RunAsync();
         return Environment.ExitCode;
@@ -272,9 +315,10 @@ public sealed class AgentWorker(Func<AgentRuntime?> load) : BackgroundService
             && Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService()
         )
             _ = StartTraysAsync(stoppingToken);
+        AgentRuntime? runtime = null;
         try
         {
-            var runtime = load();
+            runtime = load();
             if (runtime is null)
             {
                 Console.WriteLine("客户端尚未登记，等待登记。");
@@ -312,6 +356,8 @@ public sealed class AgentWorker(Func<AgentRuntime?> load) : BackgroundService
         catch (Exception ex)
         {
             Console.Error.WriteLine("Service fault: " + ex.GetType().Name + ": " + ex.Message);
+            // A fault is logged as one; the restart must not report it as the process having been ended.
+            runtime?.ClearRunning();
             Environment.Exit(1); // SCM recovery must see a process failure.
         }
     }

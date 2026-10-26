@@ -6,7 +6,7 @@ real scan, and checks that the registry, PackageManager, socket-table, account l
 produced complete modules and the expected evidence. Runs on Windows only (CI uses windows-latest); it
 changes the current user's proxy setting and restores it, and removes the planted files.
 """
-import argparse, http.cookiejar, json, os, pathlib, re, secrets, shutil, socket, subprocess, sys, time, urllib.request
+import argparse, base64, hashlib, http.cookiejar, json, os, pathlib, re, secrets, shutil, socket, subprocess, sys, time, urllib.request
 import winreg
 
 # The runner console is cp1252; agent and server logs are UTF-8 Chinese.
@@ -30,6 +30,13 @@ with socket.socket() as probe:
     port = probe.getsockname()[1]
 base = f"http://127.0.0.1:{port}"
 password = secrets.token_urlsafe(24)
+# The policy asks for it when the MSI removes the client (UninstallPassword in src/Compliance.Core/Tamper.cs).
+uninstall_password = "smoke-" + secrets.token_hex(6)
+salt = secrets.token_bytes(16)
+uninstall_hash = "pbkdf2-sha256$100000${}${}".format(
+    base64.b64encode(salt).decode(),
+    base64.b64encode(hashlib.pbkdf2_hmac("sha256", uninstall_password.encode(), salt, 100000)).decode(),
+)
 env = os.environ.copy()
 env.update({
     "ASPNETCORE_URLS": base,
@@ -172,6 +179,7 @@ try:
         "rules": [{"id": "smoke", "name": "冒烟测试机密", "keywords": [KEYWORD], "extensions": [],
                    "matchFolders": True, "action": "Alert"}],
     }
+    policy["tamper"] = {"uninstallPassword": uninstall_hash}
     request("/api/policies", policy)
     code = request("/api/enrollment-codes", {"expiresMinutes": 15})["code"]
 
@@ -445,15 +453,22 @@ try:
         agent_data = pathlib.Path(os.environ["ProgramData"]) / "ComplianceAgent"
         code = request("/api/enrollment-codes", {"expiresMinutes": 60, "maxUses": 5, "label": "MSI"})["code"]
 
-        def msiexec(action, name, *properties):
+        def msiexec(action, name, *properties, succeeds=True):
             global msi_installed
             log = data / name
             started = time.monotonic()
+            if action == "/x" and succeeds:
+                properties = (*properties, f"UNINSTALLPASSWORD={uninstall_password}")
             result = subprocess.run(["msiexec", action, str(msi), "/qn", "/l*v", str(log), *properties], timeout=600)
             took = time.monotonic() - started
             raw = log.read_bytes() if log.exists() else b""
             text = raw.decode("utf-16", errors="replace") if raw[:2] == b"\xff\xfe" else raw.decode("mbcs", errors="replace")
+            if not succeeds:
+                assert result.returncode != 0, f"msiexec {action} should have failed"
+                assert uninstall_password not in text, "The MSI log holds the uninstall password"
+                return text
             assert result.returncode == 0, f"msiexec {action} exited with {result.returncode}: {text[-3000:]}"
+            assert uninstall_password not in text, "The MSI log holds the uninstall password"
             # No system restore point: where System Protection is on, creating one is slow (runners have it off).
             assert re.search(r"Property\(S\): MSIFASTINSTALL = 1\r?$", text, re.M), "The MSI does not skip the restore point"
             print(f"TIME msiexec {action} ({name}) {took:.1f}s; slowest actions: {slowest_actions(text)}", flush=True)
@@ -495,6 +510,16 @@ try:
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Classes\AppUserModelId\ComplianceAgent.Tray") as key:
                 assert winreg.QueryValueEx(key, "DisplayName")[0] == "终端合规客户端"
 
+        def wait_alert(object_key, device_id, contains=""):
+            deadline = time.monotonic() + 180
+            while True:
+                for a in request("/api/alerts"):
+                    if a["type"] == "Tamper" and a["objectKey"] == object_key and a["deviceId"] == device_id \
+                            and contains in (a.get("summary") or ""):
+                        return a
+                assert time.monotonic() < deadline, f"No Tamper alert {object_key} {contains}"
+                time.sleep(2)
+
         def removed():
             assert subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True).returncode != 0, \
                 "Uninstalling the MSI left the service"
@@ -535,6 +560,8 @@ try:
         while "STOPPED" not in subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True, text=True).stdout:
             assert time.monotonic() < deadline, "The service did not stop"
             time.sleep(1)
+        wait_alert("tamper:service-stopped", taken["id"])
+        print("PASS stopping the service by hand is reported as tampering before it stops")
         edge = r"SOFTWARE\Policies\Microsoft\Edge\URLBlocklist"
         with winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, edge, 0, winreg.KEY_SET_VALUE) as key:
             winreg.SetValueEx(key, "1", 0, winreg.REG_SZ, "external.example.com")
@@ -558,8 +585,32 @@ try:
         silent = wait_device(known=known)
         assert json.loads((agent_data / "agent.json").read_text(encoding="utf-8"))["serverUrl"] == base
         print("PASS a silent MSI install removes a foreign data directory and enrolls with SERVERURL and CODE")
+
+        # Set to start by hand and its tray taken off sign-in: both come back, and the administrator hears of it.
+        subprocess.run(["sc.exe", "config", "ComplianceAgent", "start=", "demand"], check=True, capture_output=True)
+        run_key = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, run_key, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.DeleteValue(key, "ComplianceTray")
+        wait_alert("tamper:service-start", silent["id"], "已恢复为自动启动")
+        wait_alert("tamper:tray-autostart", silent["id"], "已恢复")
+        config = subprocess.run(["sc.exe", "qc", "ComplianceAgent"], capture_output=True, text=True, errors="replace").stdout
+        assert "AUTO_START" in config, f"The start type was not restored: {config}"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, run_key) as key:
+            assert "Compliance.Tray.exe" in winreg.QueryValueEx(key, "ComplianceTray")[0]
+        print("PASS a service set to manual start and a removed tray Run value are restored and reported")
+
+        # The policy sets an uninstall password: removing without it fails and is reported; with it, it goes.
+        msiexec("/x", "msi-uninstall-refused.log", succeeds=False)
+        assert "RUNNING" in subprocess.run(["sc.exe", "query", "ComplianceAgent"], capture_output=True, text=True).stdout, \
+            "A refused removal left the service stopped"
+        wait_alert("tamper:uninstall-refused", silent["id"], "未提供卸载密码")
+        msiexec("/x", "msi-uninstall-wrong.log", "UNINSTALLPASSWORD=wrong-password", succeeds=False)
+        assert program.exists() and agent_data.exists(), "A refused removal removed files"
+        print("PASS removing the client without the uninstall password fails, keeps it running and is reported")
         msiexec("/x", "msi-uninstall-2.log")
         removed()
+        wait_alert("tamper:uninstall", silent["id"], "卸载密码验证通过")
+        print("PASS removing it with the password works and tells the server")
 
         # Installed without an enrollment, the service waits and tells the tray; enrolling as the window does
         # (elevated) starts it reporting without a restart.
@@ -604,7 +655,8 @@ try:
     print("Evidence: " + str(data))
 finally:
     if msi_installed:
-        subprocess.run(["msiexec", "/x", str(args.msi.resolve()), "/qn"], timeout=300)
+        subprocess.run(["msiexec", "/x", str(args.msi.resolve()), "/qn", f"UNINSTALLPASSWORD={uninstall_password}"],
+                       timeout=300)
     if installed:
         subprocess.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
