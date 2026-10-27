@@ -90,6 +90,7 @@ public static class PolicyCrypto
             || doc.TargetDeviceIds is null
         )
             throw new ArgumentException("策略不完整：至少需要一个必需检查项");
+        DeviceGroups.ValidatePolicy(doc);
         if (doc.InventoryFreshMinutes is < 1 or > 10080 || doc.LightweightFreshMinutes is < 1 or > 1440)
             throw new ArgumentException("检查时效超出范围：完整检查 1–10080 分钟，快速检查 1–1440 分钟");
         if (doc.QuickCheckMinutes is < 1 or > 60 || doc.FullCheckMinutes is < 10 or > 1440)

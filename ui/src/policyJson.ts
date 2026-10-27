@@ -94,6 +94,7 @@ const policy = shape(
     policyId: text,
     mode: oneOf("Audit", "Enforce"),
     targetDeviceIds: texts,
+    targetGroups: texts,
     requiredModules: texts,
     requiredControls: texts,
     quickCheckMinutes: number,

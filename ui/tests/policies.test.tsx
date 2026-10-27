@@ -27,6 +27,7 @@ const base: Policy = {
   sequence: 1,
   mode: "Audit",
   targetDeviceIds: [],
+  targetGroups: [],
   issuedAt: "2026-10-14T00:00:00Z",
   expiresAt: "2027-10-14T00:00:00Z",
   denyInstalled: true,
@@ -137,6 +138,27 @@ describe("policy editor", () => {
     expect(posts[0]).toMatchObject({ policyId: "研发部", targetDeviceIds: ["a"], mode: "Audit" });
     expect(posts[0].products).toEqual(base.products);
     expect(await screen.findByText("研发部 · 1 台")).toBeTruthy();
+  });
+
+  it("creates a policy for device groups, leaving out groups another policy has", async () => {
+    const posts = stub(base, base, [
+      { id: "a", hostName: "PC-A", group: "研发部" },
+      { id: "b", hostName: "PC-B", group: "研发部" },
+      { id: "c", hostName: "PC-C", group: "" },
+    ]);
+    renderPage();
+    expect(await screen.findByText("未被其他策略指定的所有终端（当前 3 台）")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: /新建策略/ }));
+    await userEvent.type(screen.getByLabelText("策略名称"), "研发部策略");
+    await userEvent.click(screen.getByRole("radio", { name: "按分组" }));
+    await userEvent.click(screen.getByLabelText("指定分组"));
+    await userEvent.click(await screen.findByTitle("研发部（2 台）"));
+    await userEvent.click(screen.getAllByRole("button", { name: "保存并发布" })[0]);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/新建策略“研发部策略”，适用分组 研发部/)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "发布" }));
+    await waitFor(() => expect(posts.posted).toEqual(["/api/policies/new"]));
+    expect(posts[0]).toMatchObject({ targetGroups: ["研发部"], targetDeviceIds: [] });
   });
 
   it("publishes an edit directly after showing what changes", async () => {

@@ -1,3 +1,5 @@
+using Compliance.Core;
+
 namespace Compliance.Server;
 
 static partial class Endpoints
@@ -21,6 +23,15 @@ static partial class Endpoints
                     var minutes = request.ExpiresMinutes ?? 15;
                     var uses = request.MaxUses ?? 1;
                     var label = (request.Label ?? "").Trim();
+                    string groupName;
+                    try
+                    {
+                        groupName = DeviceGroups.Normalize(request.Group);
+                    }
+                    catch (ArgumentException e)
+                    {
+                        throw new ApiError(400, e.Message);
+                    }
                     if (minutes is < 1 or > MaxCodeMinutes)
                         throw new ApiError(400, "有效期须在 1 分钟到 7 天之间");
                     if (uses is < 1 or > MaxCodeUses)
@@ -36,7 +47,8 @@ static partial class Endpoints
                         0,
                         s.Now,
                         u.Username,
-                        false
+                        false,
+                        groupName
                     );
                     await s.Tx(async tx =>
                     {
@@ -44,12 +56,13 @@ static partial class Endpoints
                         await tx.Audit(
                             u.Username,
                             "CreateEnrollmentCode",
-                            $"{(label.Length > 0 ? label : record.Id)}，可登记 {uses} 台",
+                            $"{(label.Length > 0 ? label : record.Id)}，可登记 {uses} 台"
+                                + (groupName.Length > 0 ? $"，分组“{groupName}”" : ""),
                             s.Now
                         );
                         return true;
                     });
-                    return new NewEnrollmentCode(code, record.Id, label, record.ExpiresAt, uses);
+                    return new NewEnrollmentCode(code, record.Id, label, record.ExpiresAt, uses, groupName);
                 }
             )
             .Accepts<CodeRequest>(JsonBody);

@@ -10,7 +10,9 @@ import {
   Empty,
   errorText,
   Fresh,
+  GroupFilter,
   groupByDevice,
+  inGroup,
   PageHeading,
   Panel,
   UpdatedAt,
@@ -36,7 +38,16 @@ export function Alerts({
   const [olderDone, setOlderDone] = useState(false);
   const [olderLoading, setOlderLoading] = useState(false);
   const canAck = role(session, "Operator");
-  const all = useMemo(() => data.data ?? [], [data.data]);
+  const [group, setGroup] = useState<string | null>(null);
+  // Alerts of devices deleted since have no group, so they show only when no group is chosen.
+  const groupOf = useMemo(
+    () => new Map((devices.data ?? []).map((d) => [d.id, d.group ?? ""])),
+    [devices.data],
+  );
+  const shown = (a: Alert) =>
+    group === null ||
+    (groupOf.has(a.deviceId) && inGroup({ group: groupOf.get(a.deviceId)! }, group));
+  const all = useMemo(() => (data.data ?? []).filter(shown), [data.data, group, groupOf]);
   const open = all.filter((a) => a.state !== "Resolved");
   const groups = useMemo(
     () =>
@@ -47,7 +58,9 @@ export function Alerts({
     [all, devices.data],
   );
   const notes = new Map((devices.data ?? []).map((d) => [d.id, d.note]));
-  const resolved = [...all.filter((a) => a.state === "Resolved"), ...older].sort(bySeverity);
+  const resolved = [...all.filter((a) => a.state === "Resolved"), ...older.filter(shown)].sort(
+    bySeverity,
+  );
   const loadOlder = async () => {
     const last = older.at(-1);
     // After the last page; the first page starts where the list above ends, which the server works out by its own
@@ -58,7 +71,7 @@ export function Alerts({
     setOlderLoading(true);
     try {
       const page = await request<Alert[]>(`/api/alerts/resolved?${cursor}limit=${PAGE}`);
-      const known = new Set(resolved.map((a) => a.id));
+      const known = new Set([...(data.data ?? []), ...older].map((a) => a.id));
       setOlder((o) => [...o, ...page.filter((a) => !known.has(a.id))]);
       if (page.length < PAGE) setOlderDone(true);
     } catch (e) {
@@ -96,7 +109,12 @@ export function Alerts({
         title="告警中心"
         description="“确认”只记录管理员已知悉；告警是否恢复，以终端新的检查结果为准。"
         extra={<UpdatedAt at={data.updatedAt} refreshing={data.refreshing} />}
-        action={<Button onClick={refresh}>刷新</Button>}
+        action={
+          <Space>
+            <GroupFilter devices={devices.data ?? []} value={group} onChange={setGroup} />
+            <Button onClick={refresh}>刷新</Button>
+          </Space>
+        }
       />
       <Fresh error={data.error} loading={data.loading}>
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>

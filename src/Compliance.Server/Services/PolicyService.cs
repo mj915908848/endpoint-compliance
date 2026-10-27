@@ -136,9 +136,19 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
         (await All(tx)).FirstOrDefault(p => p.IsDefault)?.Release
         ?? throw new InvalidOperationException("No policy release; database was not initialized");
 
-    /// <summary>A device follows the named policy that lists it, otherwise the default policy.</summary>
-    public static PolicyState PolicyFor(string deviceId, List<PolicyState> policies) =>
-        policies.FirstOrDefault(p => !p.IsDefault && p.Document.TargetDeviceIds.Contains(deviceId))
+    /// <summary>
+    /// A device follows the named policy that lists it, otherwise the one that lists its group, otherwise the default
+    /// policy.
+    /// </summary>
+    public static PolicyState PolicyFor(DeviceRecord device, List<PolicyState> policies) =>
+        policies.FirstOrDefault(p => !p.IsDefault && p.Document.TargetDeviceIds.Contains(device.Id))
+        ?? (
+            device.Group.Length == 0
+                ? null
+                : policies.FirstOrDefault(p =>
+                    !p.IsDefault && p.Document.TargetGroups.Any(g => DeviceGroups.Same(g, device.Group))
+                )
+        )
         ?? policies.First(p => p.IsDefault);
 
     /// <summary>
@@ -146,15 +156,13 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
     /// policy that devices move to from a newer release is first re-issued under a new serial; its own version, which
     /// administrators see, stays the same since its content does.
     /// </summary>
-    async Task Reassign(Transaction tx)
+    public async Task Reassign(Transaction tx)
     {
         var policies = await All(tx);
         var devices = await tx.AllDeviceHeads();
         foreach (
             var stale in policies
-                .Where(p =>
-                    devices.Any(d => d.TargetPolicyVersion > p.Document.Serial && PolicyFor(d.Id, policies) == p)
-                )
+                .Where(p => devices.Any(d => d.TargetPolicyVersion > p.Document.Serial && PolicyFor(d, policies) == p))
                 .ToList()
         )
         {
@@ -170,7 +178,7 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
         policies = await All(tx);
         foreach (var d in devices)
         {
-            var serial = PolicyFor(d.Id, policies).Document.Serial;
+            var serial = PolicyFor(d, policies).Document.Serial;
             if (d.TargetPolicyVersion != serial)
                 await tx.SetTargetPolicy(d.Id, serial);
         }
@@ -251,6 +259,7 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
             LightweightFreshMinutes = submitted.QuickCheckMinutes * 2,
             InventoryFreshMinutes = submitted.FullCheckMinutes * 2,
             TargetDeviceIds = isDefault ? [] : (submitted.TargetDeviceIds ?? []).Distinct().ToArray(),
+            TargetGroups = isDefault ? [] : (submitted.TargetGroups ?? []).Select(g => (g ?? "").Trim()).ToArray(),
         };
         if (
             doc.RequiredModules == null
@@ -277,8 +286,19 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
             throw new ApiError(409, "默认策略适用于所有终端，只能使用审计模式；强制模式请新建策略并指定试点终端");
         if (!isDefault)
         {
-            if (doc.TargetDeviceIds.Length == 0)
-                throw new ApiError(400, "请选择这份策略适用的终端；未指定的终端使用默认策略");
+            if (doc.TargetDeviceIds.Length == 0 && doc.TargetGroups.Length == 0)
+                throw new ApiError(400, "请选择这份策略适用的终端或分组；未指定的终端使用默认策略");
+            foreach (var g in doc.TargetGroups)
+                if (
+                    others.FirstOrDefault(p =>
+                        !p.IsDefault && p.Document.TargetGroups.Any(x => DeviceGroups.Same(x, g))
+                    ) is
+                    { } taken
+                )
+                    throw new ApiError(
+                        409,
+                        $"分组“{g}”已在策略“{taken.Document.PolicyId}”中，一个分组只能使用一份策略"
+                    );
             foreach (var id in doc.TargetDeviceIds)
                 if (others.FirstOrDefault(p => !p.IsDefault && p.Document.TargetDeviceIds.Contains(id)) is { } taken)
                     throw new ApiError(

@@ -22,6 +22,7 @@ const listed: EnrollmentCode = {
   createdAt: "2026-10-15T00:00:00Z",
   createdBy: "admin",
   revoked: false,
+  group: "",
 };
 
 afterEach(() => vi.restoreAllMocks());
@@ -68,6 +69,7 @@ describe("registration", () => {
       expiresMinutes: 7 * 24 * 60,
       maxUses: 30,
       label: "研发部",
+      group: "",
     });
 
     await userEvent.click(screen.getByRole("button", { name: /下载登记配置/ }));

@@ -84,6 +84,12 @@ public record PolicyDocument
     public long Serial => Sequence > 0 ? Sequence : Version;
     public string Mode { get; init; } = "Audit";
     public string[] TargetDeviceIds { get; init; } = [];
+
+    /// <summary>
+    /// Device groups the policy applies to, instead of naming devices (never both, and never in enforce mode). The
+    /// server decides which devices are in them, so agents accept the policy like the default one.
+    /// </summary>
+    public string[] TargetGroups { get; init; } = [];
     public DateTimeOffset IssuedAt { get; init; } = DateTimeOffset.UtcNow;
     public DateTimeOffset ExpiresAt { get; init; } = DateTimeOffset.UtcNow.AddDays(365);
     public bool DenyInstalled { get; init; } = true;
@@ -425,7 +431,8 @@ public record DeviceSummary(
     NetworkAdapter[]? Network = null,
     string SourceAddress = "",
     bool AgentUnsupported = false,
-    DateTimeOffset? ArchivedAt = null
+    DateTimeOffset? ArchivedAt = null,
+    string Group = ""
 );
 
 public record AlertSummary(

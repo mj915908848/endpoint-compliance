@@ -27,6 +27,7 @@ const device: DeviceSummary = {
   sourceAddress: "",
   agentUnsupported: false,
   archivedAt: null,
+  group: "",
 };
 
 function stubApi(roles: string[]) {
@@ -148,6 +149,44 @@ describe("archiving devices", () => {
       0,
     );
     expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+});
+
+describe("device groups", () => {
+  it("filters by group and puts the ticked devices in a group, new or existing", async () => {
+    const sales: DeviceSummary = { ...device, id: "dev-2", hostName: "SALES-PC", group: "销售部" };
+    const posts: unknown[] = [];
+    vi.stubGlobal("fetch", async (url: string, options: RequestInit) => {
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url === "/api/me")
+        return json({ username: "admin", roles: ["Reader", "Operator"], csrfToken: "t" });
+      if (url === "/api/devices") return json([device, sales]);
+      if (url === "/api/devices/group") {
+        posts.push(JSON.parse(options.body as string));
+        return json({ done: 1 });
+      }
+      return json([]);
+    });
+    renderAt("/devices");
+    expect(
+      (await screen.findAllByText("SALES-PC", {}, { timeout: 10_000 })).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("销售部", { selector: ".device-group" })).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("combobox", { name: "筛选分组" }));
+    await userEvent.click(await screen.findByTitle("未分组（1）"));
+    await waitFor(() => expect(screen.queryByText("SALES-PC")).toBeNull());
+    const row = screen.getAllByText("OLD-PC")[0].closest("tr")!;
+    await userEvent.click(within(row).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "设置分组" }));
+    const dialog = screen.getAllByRole("dialog").at(-1)!;
+    await userEvent.type(within(dialog).getByRole("combobox", { name: "分组" }), "研发部");
+    await userEvent.click(within(dialog).getByRole("button", { name: "确定" }));
+    await waitFor(() => expect(posts).toEqual([{ ids: ["dev-1"], group: "研发部" }]));
   });
 });
 

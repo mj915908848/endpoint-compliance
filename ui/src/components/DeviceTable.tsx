@@ -1,4 +1,4 @@
-import { Button, Space, Table, Typography, type TableColumnsType } from "antd";
+import { Button, Space, Table, Tag, Typography, type TableColumnsType } from "antd";
 import { ago, AgentVersion, DeviceState, Empty, NetworkLine, OnlineDot, time } from "./common";
 import { onlineLabel } from "./labels";
 import { sinceText } from "./alertList";
@@ -30,6 +30,7 @@ export function DeviceTable({
           <Space size={8} style={{ whiteSpace: "nowrap" }}>
             <OnlineDot device={d} />
             <Typography.Text strong>{d.hostName}</Typography.Text>
+            {d.group && <Tag className="device-group">{d.group}</Tag>}
             {d.onlineState !== "Online" && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {[onlineLabel(d.onlineState), ago(d.lastHeartbeat)].filter(Boolean).join(" ")}

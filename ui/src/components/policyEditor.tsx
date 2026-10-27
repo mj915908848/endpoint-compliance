@@ -32,6 +32,7 @@ import type {
 import { canHashUninstallPassword, hashUninstallPassword } from "../uninstallPassword";
 import { baselineChecks, baselineName, categoryLabel, controlLabel, moduleLabel } from "./labels";
 import { deviceName, Empty, usePageScroll } from "./common";
+import { groupsOf } from "./groups";
 import { Panel } from "./layout";
 
 export const modules = [
@@ -109,7 +110,7 @@ export function describeChanges(before: Policy, after: Policy): string[] {
     changes.push(`运行模式：${modeLabel(before.mode)} → ${modeLabel(after.mode)}`);
   if (JSON.stringify(before.targetDeviceIds) !== JSON.stringify(after.targetDeviceIds))
     changes.push(
-      `适用终端：${after.targetDeviceIds.length ? `${after.targetDeviceIds.length} 台指定终端` : "全部终端"}`,
+      `适用终端：${after.targetDeviceIds.length ? `${after.targetDeviceIds.length} 台指定终端` : (after.targetGroups ?? []).length ? "按分组" : "全部终端"}`,
     );
   const ids = (p: Policy) => p.products.map((x) => x.id);
   const name = (p: Policy) => (id: string) => p.products.find((x) => x.id === id)?.name ?? id;
@@ -129,6 +130,7 @@ export function describeChanges(before: Policy, after: Policy): string[] {
     if (minus.length) changes.push(`${label}移除：${list(minus.map(show))}`);
   };
   const same = (x: string) => x;
+  diff("适用分组", before.targetGroups ?? [], after.targetGroups ?? [], same);
   diff("禁止访问的域名", before.blockDomains, after.blockDomains, same);
   diff(
     "已批准的网卡",
@@ -256,6 +258,7 @@ export function PolicyEditor({
   readOnly,
   isDefault = true,
   takenBy = new Map(),
+  groupsTakenBy = new Map(),
 }: {
   value: Policy;
   onChange: (p: Policy) => void;
@@ -265,8 +268,20 @@ export function PolicyEditor({
   isDefault?: boolean;
   /** Devices already named by another policy, with that policy's name. */
   takenBy?: Map<string, string>;
+  /** Groups another named policy already lists, with that policy's name. */
+  groupsTakenBy?: Map<string, string>;
 }) {
   const set = (patch: Partial<Policy>) => onChange({ ...value, ...patch });
+  const targetGroups = value.targetGroups ?? [];
+  // A policy names devices or groups; the choice stays while its list is empty.
+  const [pickGroups, setByGroup] = useState(targetGroups.length > 0);
+  const byGroup = targetGroups.length > 0 || (pickGroups && value.targetDeviceIds.length === 0);
+  const lower = (g: string) => g.toLowerCase();
+  const groupTaken = (g: string | undefined) =>
+    !!g && [...groupsTakenBy.keys()].some((t) => lower(t) === lower(g));
+  const knownGroups = [
+    ...new Set([...groupsOf(devices).map((g) => g.name), ...groupsTakenBy.keys(), ...targetGroups]),
+  ];
   const productDomains = [...new Set(value.products.flatMap((p) => p.domains))];
   const missingDomains = productDomains.filter((d) => !value.blockDomains.includes(d));
 
@@ -315,36 +330,88 @@ export function PolicyEditor({
                 <Typography.Text>
                   未被其他策略指定的所有终端
                   {devices.length > 0 &&
-                    `（当前 ${devices.filter((d) => !takenBy.has(d.id)).length} 台）`}
+                    `（当前 ${devices.filter((d) => !takenBy.has(d.id) && !groupTaken(d.group)).length} 台）`}
                 </Typography.Text>
               ) : (
-                <Select
-                  mode="multiple"
-                  aria-label="指定终端"
-                  style={{ width: "100%" }}
-                  placeholder="选择终端，可多选"
-                  disabled={readOnly}
-                  value={value.targetDeviceIds}
-                  onChange={(ids: string[]) => set({ targetDeviceIds: ids })}
-                  optionFilterProp="label"
-                  options={[
-                    ...devices.map((d) => ({
-                      value: d.id,
-                      label: takenBy.has(d.id)
-                        ? `${deviceName(d)}（已在“${takenBy.get(d.id)}”）`
-                        : deviceName(d),
-                      disabled: takenBy.has(d.id),
-                    })),
-                    ...value.targetDeviceIds
-                      .filter((id) => !devices.some((d) => d.id === id))
-                      .map((id) => ({ value: id, label: `${id}（已删除）` })),
-                  ]}
-                />
+                <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+                  <Radio.Group
+                    aria-label="指定方式"
+                    value={byGroup ? "groups" : "devices"}
+                    disabled={readOnly}
+                    onChange={(e) => {
+                      const groups = e.target.value === "groups";
+                      setByGroup(groups);
+                      set({ targetDeviceIds: [], targetGroups: [] });
+                    }}
+                    options={[
+                      { value: "devices", label: "逐台选择" },
+                      { value: "groups", label: "按分组", disabled: value.mode === "Enforce" },
+                    ]}
+                  />
+                  {byGroup ? (
+                    <Select
+                      mode="tags"
+                      aria-label="指定分组"
+                      style={{ width: "100%" }}
+                      placeholder="选择或输入分组，可多选"
+                      disabled={readOnly}
+                      value={targetGroups}
+                      onChange={(groups: string[]) =>
+                        set({
+                          targetGroups: [
+                            ...new Map(
+                              groups
+                                .map((g) => g.trim())
+                                .filter((g) => g && !groupTaken(g))
+                                .map((g) => [lower(g), g] as const),
+                            ).values(),
+                          ],
+                        })
+                      }
+                      options={knownGroups.map((g) => {
+                        const count = devices.filter(
+                          (d) => d.group && lower(d.group) === lower(g),
+                        ).length;
+                        const owner = [...groupsTakenBy].find(([t]) => lower(t) === lower(g))?.[1];
+                        return {
+                          value: g,
+                          label: owner ? `${g}（已在“${owner}”）` : `${g}（${count} 台）`,
+                          disabled: !!owner,
+                        };
+                      })}
+                    />
+                  ) : (
+                    <Select
+                      mode="multiple"
+                      aria-label="指定终端"
+                      style={{ width: "100%" }}
+                      placeholder="选择终端，可多选"
+                      disabled={readOnly}
+                      value={value.targetDeviceIds}
+                      onChange={(ids: string[]) => set({ targetDeviceIds: ids })}
+                      optionFilterProp="label"
+                      options={[
+                        ...devices.map((d) => ({
+                          value: d.id,
+                          label: takenBy.has(d.id)
+                            ? `${deviceName(d)}（已在“${takenBy.get(d.id)}”）`
+                            : deviceName(d),
+                          disabled: takenBy.has(d.id),
+                        })),
+                        ...value.targetDeviceIds
+                          .filter((id) => !devices.some((d) => d.id === id))
+                          .map((id) => ({ value: id, label: `${id}（已删除）` })),
+                      ]}
+                    />
+                  )}
+                </Space>
               )}
               <Hint>
                 {isDefault
                   ? "新注册的终端也使用默认策略。要让部分终端使用不同规则，请新建策略。"
-                  : "一台终端只能使用一份策略；未指定的终端使用默认策略。"}
+                  : byGroup
+                    ? "分组里的终端都使用这份策略，以后加入分组的终端也会自动使用；单独指定了策略的终端除外。一个分组只能使用一份策略，强制模式不能按分组。"
+                    : "一台终端只能使用一份策略；未指定的终端使用默认策略。"}
               </Hint>
             </Field>
           </Col>
