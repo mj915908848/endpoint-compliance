@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { App, Button, Input, Select, Space, Typography } from "antd";
+import { App, Button, Input, Modal, Select, Space, Typography } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { downloadFile, request } from "../api";
 import { role } from "../session";
@@ -9,6 +9,10 @@ import {
   DeviceTable,
   errorText,
   Fresh,
+  GroupFilter,
+  GroupInput,
+  groupsOf,
+  inGroup,
   networkText,
   PageHeading,
   Panel,
@@ -31,7 +35,10 @@ export function Devices({
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState(params.get("filter") ?? "all"),
     [exporting, setExporting] = useState(false),
-    [selected, setSelected] = useState<string[]>([]);
+    [selected, setSelected] = useState<string[]>([]),
+    [group, setGroup] = useState<string | null>(params.get("group")),
+    [moving, setMoving] = useState<string | null>(null),
+    [saving, setSaving] = useState(false);
   // Archived devices come from a list of their own; every other filter reads the devices in use.
   const archived = filter === "archived";
   const data = useResource<DeviceSummary[]>(
@@ -41,6 +48,7 @@ export function Devices({
   const onlineCount = all.filter((d) => d.onlineState === "Online").length;
   const visible = all.filter(
     (d) =>
+      inGroup(d, group) &&
       (filter === "all" ||
         archived ||
         (filter === "attention"
@@ -50,7 +58,7 @@ export function Devices({
             : filter === "online"
               ? d.onlineState === "Online"
               : d.onlineState === "Online" && d.currentVerdict === filter)) &&
-      `${d.hostName} ${d.note ?? ""} ${d.id} ${networkText(d)}`
+      `${d.hostName} ${d.note ?? ""} ${d.group ?? ""} ${d.id} ${networkText(d)}`
         .toLowerCase()
         .includes(query.trim().toLowerCase()),
   );
@@ -102,6 +110,32 @@ export function Devices({
       },
     });
   }
+  async function moveTo(name: string) {
+    setSaving(true);
+    try {
+      const r = await request<DevicesChanged>("/api/devices/group", {
+        method: "POST",
+        body: { ids: chosen, group: name },
+        csrfToken: session.csrfToken,
+      });
+      void message.success(
+        r.done === 0
+          ? name
+            ? `所选终端已在分组“${name}”中`
+            : "所选终端都不在分组中"
+          : name
+            ? `已把 ${r.done} 台终端设为分组“${name}”`
+            : `已把 ${r.done} 台终端移出分组`,
+      );
+      setMoving(null);
+      setSelected([]);
+      refresh();
+    } catch (e) {
+      void message.error(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  }
   async function exportList() {
     setExporting(true);
     try {
@@ -148,11 +182,19 @@ export function Devices({
           <Space wrap>
             <Input.Search
               aria-label="搜索设备"
-              placeholder="主机名、IP、MAC 或备注"
+              placeholder="主机名、IP、MAC、备注或分组"
               allowClear
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               style={{ width: 260 }}
+            />
+            <GroupFilter
+              devices={all}
+              value={group}
+              onChange={(g) => {
+                setGroup(g);
+                setSelected([]);
+              }}
             />
             <Select
               aria-label="筛选状态"
@@ -179,6 +221,11 @@ export function Devices({
         {operator && chosen.length > 0 && (
           <Space wrap className="selection-bar">
             <span>已选 {chosen.length} 台</span>
+            {!archived && (
+              <Button size="small" onClick={() => setMoving("")}>
+                设置分组
+              </Button>
+            )}
             {archived ? (
               <Button size="small" onClick={() => act("restore")}>
                 取消归档
@@ -201,6 +248,40 @@ export function Devices({
             长期未上线或手动归档的终端。它们不计入统计，不产生告警；重新上线时自动回到终端列表。
           </Typography.Paragraph>
         )}
+        <Modal
+          title={`设置所选 ${chosen.length} 台终端的分组`}
+          open={moving !== null}
+          onCancel={() => setMoving(null)}
+          footer={[
+            <Button key="out" disabled={saving} onClick={() => void moveTo("")}>
+              移出分组
+            </Button>,
+            <Button key="cancel" onClick={() => setMoving(null)}>
+              取消
+            </Button>,
+            <Button
+              key="ok"
+              type="primary"
+              loading={saving}
+              disabled={!moving?.trim()}
+              onClick={() => void moveTo(moving!.trim())}
+            >
+              确定
+            </Button>,
+          ]}
+          destroyOnHidden
+        >
+          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            <GroupInput
+              value={moving ?? ""}
+              onChange={setMoving}
+              groups={groupsOf(all).map((g) => g.name)}
+            />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              分组可用于筛选终端和告警，也可以让策略按分组适用：终端换到哪个分组，就使用该分组的策略（单独指定了策略的终端除外）。
+            </Typography.Text>
+          </Space>
+        </Modal>
         <Fresh error={data.error} loading={data.loading}>
           <DeviceTable
             devices={visible}

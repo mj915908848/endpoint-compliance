@@ -278,6 +278,35 @@
         }
       }
     },
+    "/api/devices/group": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicesChanged"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/devices/export.csv": {
       "get": {
         "tags": [
@@ -1865,6 +1894,12 @@
               "null",
               "string"
             ]
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -2117,6 +2152,30 @@
           }
         }
       },
+      "DeviceGroupRequest": {
+        "required": [
+          "ids",
+          "group"
+        ],
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "group": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "DeviceIdsRequest": {
         "required": [
           "ids"
@@ -2167,7 +2226,8 @@
           "network",
           "sourceAddress",
           "agentUnsupported",
-          "archivedAt"
+          "archivedAt",
+          "group"
         ],
         "type": "object",
         "properties": {
@@ -2263,6 +2323,10 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "group": {
+            "type": "string",
+            "default": ""
           }
         }
       },
@@ -2287,7 +2351,8 @@
           "uses",
           "createdAt",
           "createdBy",
-          "revoked"
+          "revoked",
+          "group"
         ],
         "type": "object",
         "properties": {
@@ -2318,6 +2383,10 @@
           },
           "revoked": {
             "type": "boolean"
+          },
+          "group": {
+            "type": "string",
+            "default": ""
           }
         }
       },
@@ -2732,7 +2801,8 @@
           "id",
           "label",
           "expiresAt",
-          "maxUses"
+          "maxUses",
+          "group"
         ],
         "type": "object",
         "properties": {
@@ -2752,6 +2822,10 @@
           "maxUses": {
             "type": "integer",
             "format": "int32"
+          },
+          "group": {
+            "type": "string",
+            "default": ""
           }
         }
       },
@@ -2962,6 +3036,7 @@
           "sequence",
           "mode",
           "targetDeviceIds",
+          "targetGroups",
           "issuedAt",
           "expiresAt",
           "denyInstalled",
@@ -3001,6 +3076,12 @@
             "type": "string"
           },
           "targetDeviceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "targetGroups": {
             "type": "array",
             "items": {
               "type": "string"

@@ -378,6 +378,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/devices/group": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["DeviceGroupRequest"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["DevicesChanged"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/devices/export.csv": {
     parameters: {
       query?: never;
@@ -2012,6 +2051,7 @@ export interface components {
       /** Format: int32 */
       maxUses?: null | number;
       label?: null | string;
+      group?: null | string;
     };
     CodeRevoked: {
       revoked: string;
@@ -2075,6 +2115,10 @@ export interface components {
       health: null | components["schemas"]["ClientHealth"];
       healthProblems: null | string[];
     };
+    DeviceGroupRequest: {
+      ids: null | string[];
+      group: null | string;
+    };
     DeviceIdsRequest: {
       ids: null | string[];
     };
@@ -2114,6 +2158,8 @@ export interface components {
       agentUnsupported: boolean;
       /** Format: date-time */
       archivedAt: null | string;
+      /** @default  */
+      group: string;
     };
     Done: {
       /** @default true */
@@ -2132,6 +2178,8 @@ export interface components {
       createdAt: string;
       createdBy: string;
       revoked: boolean;
+      /** @default  */
+      group: string;
     };
     EnrollmentRequest: {
       code: string;
@@ -2246,6 +2294,8 @@ export interface components {
       expiresAt: string;
       /** Format: int32 */
       maxUses: number;
+      /** @default  */
+      group: string;
     };
     NoteRequest: {
       note: null | string;
@@ -2303,6 +2353,7 @@ export interface components {
       sequence: number;
       mode: string;
       targetDeviceIds: string[];
+      targetGroups: string[];
       /** Format: date-time */
       issuedAt: string;
       /** Format: date-time */

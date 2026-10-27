@@ -16,10 +16,20 @@ import {
 } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { downloadJson, request } from "../api";
-import { Empty, ErrorNotice, errorText, Fresh, PageHeading, Panel, time } from "../components";
+import {
+  Empty,
+  ErrorNotice,
+  errorText,
+  Fresh,
+  GroupInput,
+  groupsOf,
+  PageHeading,
+  Panel,
+  time,
+} from "../components";
 import { role } from "../session";
 import { useRefresh, useResource } from "../useResource";
-import type { EnrollmentCode, Session } from "../types";
+import type { DeviceSummary, EnrollmentCode, Session } from "../types";
 
 const validity = [
   { value: 15, label: "15 分钟" },
@@ -35,6 +45,7 @@ interface Created {
   label: string;
   expiresAt: string;
   maxUses: number;
+  group: string;
 }
 
 /** "有效", or why the code can no longer enroll a device. */
@@ -48,6 +59,7 @@ export function codeState(c: EnrollmentCode, now = Date.now()): [string, string]
 export function Registration({ session }: { session: Session }) {
   const operator = role(session, "Operator");
   const [label, setLabel] = useState(""),
+    [group, setGroup] = useState(""),
     [uses, setUses] = useState(1),
     [minutes, setMinutes] = useState(15),
     [server, setServer] = useState(window.location.origin),
@@ -55,6 +67,8 @@ export function Registration({ session }: { session: Session }) {
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
   const codes = useResource<EnrollmentCode[]>(operator ? "/api/enrollment-codes" : null);
+  const devices = useResource<DeviceSummary[]>(operator ? "/api/devices" : null);
+  const groups = groupsOf(devices.data ?? []).map((g) => g.name);
   const refresh = useRefresh();
 
   async function create() {
@@ -65,7 +79,7 @@ export function Registration({ session }: { session: Session }) {
       setResult(
         await request<Created>("/api/enrollment-codes", {
           method: "POST",
-          body: { expiresMinutes: minutes, maxUses: uses, label },
+          body: { expiresMinutes: minutes, maxUses: uses, label, group },
           csrfToken: session.csrfToken,
         }),
       );
@@ -108,7 +122,7 @@ export function Registration({ session }: { session: Session }) {
         <Panel title="生成登记码">
           <Form layout="vertical" onFinish={create}>
             <Row gutter={[24, 0]}>
-              <Col xs={24} md={8}>
+              <Col xs={24} md={6}>
                 <Form.Item
                   label="名称"
                   extra="可选，例如部门或批次，便于在下方列表和审计记录中辨认。"
@@ -122,7 +136,21 @@ export function Registration({ session }: { session: Session }) {
                   />
                 </Form.Item>
               </Col>
-              <Col xs={12} md={5}>
+              <Col xs={24} md={6}>
+                <Form.Item
+                  label="终端分组"
+                  extra="可选，用这个登记码登记的电脑自动归入该分组，并使用该分组的策略。"
+                >
+                  <GroupInput
+                    label="终端分组"
+                    value={group}
+                    onChange={setGroup}
+                    groups={groups}
+                    placeholder="如：研发部"
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={4}>
                 <Form.Item label="可登记台数">
                   <InputNumber
                     precision={0}
@@ -136,7 +164,7 @@ export function Registration({ session }: { session: Session }) {
                   />
                 </Form.Item>
               </Col>
-              <Col xs={12} md={5}>
+              <Col xs={12} md={4}>
                 <Form.Item label="有效期">
                   <Select
                     aria-label="有效期"
@@ -146,7 +174,7 @@ export function Registration({ session }: { session: Session }) {
                   />
                 </Form.Item>
               </Col>
-              <Col xs={24} md={6}>
+              <Col xs={24} md={4}>
                 <Form.Item label=" ">
                   <Button type="primary" htmlType="submit" loading={busy}>
                     生成登记码
@@ -160,7 +188,9 @@ export function Registration({ session }: { session: Session }) {
             <Alert
               type="success"
               showIcon
-              title={`登记码已生成：可登记 ${result.maxUses} 台，有效期至 ${time(result.expiresAt)}`}
+              title={`登记码已生成：可登记 ${result.maxUses} 台，有效期至 ${time(result.expiresAt)}${
+                result.group ? `，登记的电脑归入分组“${result.group}”` : ""
+              }`}
               description={
                 <Space orientation="vertical" size={12} style={{ width: "100%" }}>
                   <Typography.Text copyable className="mono registration-code">
@@ -217,6 +247,13 @@ export function Registration({ session }: { session: Session }) {
                   key: "label",
                   render: (_, c) =>
                     c.label || <Typography.Text type="secondary">未命名</Typography.Text>,
+                },
+                {
+                  title: "分组",
+                  key: "group",
+                  width: 120,
+                  render: (_, c) =>
+                    c.group || <Typography.Text type="secondary">—</Typography.Text>,
                 },
                 {
                   title: "已登记",

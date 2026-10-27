@@ -47,6 +47,7 @@ public static class Migrations
         ),
         new(16, "archived devices, client health and upgrade outcomes", ArchiveHealthUpgrades),
         new(17, "device shutdowns", tx => tx.Execute("ALTER TABLE devices ADD COLUMN shutdown_at BIGINT NULL")),
+        new(18, "device groups", DeviceGroups),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -189,6 +190,13 @@ public static class Migrations
         await tx.Execute("ALTER TABLE devices ADD COLUMN health TEXT NOT NULL DEFAULT ''");
         await tx.Execute("ALTER TABLE commands ADD COLUMN replied_at BIGINT NULL");
         await tx.Execute("ALTER TABLE commands ADD COLUMN outcome TEXT NULL");
+    }
+
+    /// <summary>Each device's group (empty for none), and the group an enrollment code puts its devices in.</summary>
+    static async Task DeviceGroups(Transaction tx)
+    {
+        await tx.Execute("ALTER TABLE devices ADD COLUMN group_name TEXT NOT NULL DEFAULT ''");
+        await tx.Execute("ALTER TABLE enrollment_codes ADD COLUMN group_name TEXT NOT NULL DEFAULT ''");
     }
 
     /// <summary>

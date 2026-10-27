@@ -264,7 +264,7 @@ public class SettingsTests
         var csv = await response.Content.ReadAsStringAsync();
         Assert.StartsWith("﻿\"计算机名\",\"备注\"", csv);
         var row = csv.Split("\r\n")[1];
-        Assert.StartsWith("\"host\",\"'=HYPERLINK(\"\"x\"\")\",\"\",\"\",\"失联\"", row);
+        Assert.StartsWith("\"host\",\"'=HYPERLINK(\"\"x\"\")\",\"\",\"\",\"\",\"失联\"", row);
         Assert.Contains(f.Device, row);
         var audit = await f.Client.GetFromJsonAsync<AuditRecord[]>("/api/audit", Wire.Json);
         Assert.Contains(audit!, a => a.Action == "ExportDevices");

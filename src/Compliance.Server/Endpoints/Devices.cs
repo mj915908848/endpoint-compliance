@@ -90,6 +90,50 @@ static partial class Endpoints
             )
             .Accepts<DeviceIdsRequest>(JsonBody);
 
+        // Puts devices in a group (or, with an empty name, takes them out); they move to that group's policy.
+        group
+            .MapPost(
+                "/group",
+                async (HttpContext c) =>
+                {
+                    var u = Require(c, "Operator");
+                    var request = await Body<DeviceGroupRequest>(c);
+                    var ids = CheckedIds(request.Ids);
+                    string name;
+                    try
+                    {
+                        name = DeviceGroups.Normalize(request.Group);
+                    }
+                    catch (ArgumentException e)
+                    {
+                        throw new ApiError(400, e.Message);
+                    }
+                    return await s.Tx(async tx =>
+                    {
+                        await tx.Lock(PolicyService.PolicyLock);
+                        var changed = 0;
+                        foreach (var id in ids)
+                        {
+                            await tx.Lock(ComplianceService.DeviceLock(id));
+                            if (await tx.GetDeviceHead(id) is not { } d || d.Group == name)
+                                continue;
+                            await tx.SetDeviceGroup(id, name);
+                            await tx.Audit(
+                                u.Username,
+                                "SetDeviceGroup",
+                                $"{d.HostName}（{id}）：{(name.Length > 0 ? name : "移出分组")}",
+                                s.Now
+                            );
+                            changed++;
+                        }
+                        if (changed > 0)
+                            await s.Policies.Reassign(tx);
+                        return new DevicesChanged(changed);
+                    });
+                }
+            )
+            .Accepts<DeviceGroupRequest>(JsonBody);
+
         group.MapGet(
             "/export.csv",
             async (HttpContext c) =>
@@ -257,9 +301,11 @@ static partial class Endpoints
     const int MaxDevicesPerAction = 1000;
 
     /// <summary>The devices a list action names, sorted so that their locks are always taken in the same order.</summary>
-    static async Task<string[]> DeviceIds(HttpContext c)
+    static async Task<string[]> DeviceIds(HttpContext c) => CheckedIds((await Body<DeviceIdsRequest>(c)).Ids);
+
+    static string[] CheckedIds(string[]? requested)
     {
-        var ids = (await Body<DeviceIdsRequest>(c)).Ids ?? [];
+        var ids = requested ?? [];
         if (ids.Length == 0 || ids.Length > MaxDevicesPerAction || ids.Any(id => id is not { Length: > 0 and <= 64 }))
             throw new ApiError(400, $"请选择 1 到 {MaxDevicesPerAction} 台终端");
         return ids.Distinct().Order(StringComparer.Ordinal).ToArray();
@@ -284,6 +330,7 @@ static partial class Endpoints
         Line([
             "计算机名",
             "备注",
+            "分组",
             "IP 地址",
             "MAC 地址",
             "在线状态",
@@ -307,6 +354,7 @@ static partial class Endpoints
             Line([
                 d.HostName,
                 d.Note,
+                d.Group,
                 string.Join("；", (d.Network ?? []).SelectMany(a => a.Addresses)),
                 string.Join("；", (d.Network ?? []).Select(a => a.Mac)),
                 Labels.Online(d.OnlineState),

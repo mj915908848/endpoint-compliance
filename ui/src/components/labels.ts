@@ -116,6 +116,7 @@ export const auditActionLabel = lookup({
   RequestScan: "请求重新检查",
   DeleteDevice: "删除终端",
   SetDeviceNote: "修改终端备注",
+  SetDeviceGroup: "设置终端分组",
   ScanReply: "终端回复检查请求",
   AcknowledgeAlert: "确认告警",
   CreatePolicyDraft: "创建策略草稿",

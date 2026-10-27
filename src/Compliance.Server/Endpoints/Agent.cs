@@ -54,21 +54,27 @@ static partial class Endpoints
                             throw new ApiError(400, "Key already enrolled");
 
                         var id = Guid.NewGuid().ToString();
-                        // A new device has an id no policy lists yet, so it starts on the default policy.
-                        var target = Wire.Read<PolicyDocument>((await s.Policies.CurrentRelease(tx)).Payload).Serial;
-                        await tx.InsertDevice(
-                            new DeviceRecord(
-                                id,
-                                EvidenceSanitizer.Clean(r.HostName),
-                                publicKey,
-                                TargetPolicyVersion: target
-                            )
-                        );
+                        // A new device has an id no policy lists yet: it starts on its code's group's policy, if
+                        // one lists the group, otherwise on the default policy.
+                        var device = new DeviceRecord(id, EvidenceSanitizer.Clean(r.HostName), publicKey)
+                        {
+                            Group = code.Group,
+                        };
+                        device = device with
+                        {
+                            TargetPolicyVersion = PolicyService
+                                .PolicyFor(device, await s.Policies.All(tx))
+                                .Document.Serial,
+                        };
+                        await tx.InsertDevice(device);
+                        if (code.Group.Length > 0)
+                            await tx.SetDeviceGroup(id, code.Group);
                         await tx.CountCodeUse(hash);
                         await tx.Audit(
                             "enrollment",
                             "EnrollDevice",
-                            code.Label.Length > 0 ? $"{id}（登记码“{code.Label}”）" : id,
+                            (code.Label.Length > 0 ? $"{id}（登记码“{code.Label}”）" : id)
+                                + (code.Group.Length > 0 ? $"，分组“{code.Group}”" : ""),
                             s.Now
                         );
                         return new EnrollmentResponse(id, s.Policies.PublicKey, s.Policies.KeyId);

@@ -88,7 +88,7 @@ public sealed partial class Transaction
 
     // ---- enrollment codes ----------------------------------------------------------------
 
-    const string CodeColumns = "id, label, expires_at, max_uses, used, created_at, created_by, revoked";
+    const string CodeColumns = "id, label, expires_at, max_uses, used, created_at, created_by, revoked, group_name";
 
     static EnrollmentCode ReadCode(DbDataReader r) =>
         new(
@@ -99,7 +99,8 @@ public sealed partial class Transaction
             (int)Long(r, 4),
             Time(r, 5),
             r.GetString(6),
-            Long(r, 7) != 0
+            Long(r, 7) != 0,
+            r.GetString(8)
         );
 
     public Task<EnrollmentCode?> GetCode(string codeHash) =>
@@ -114,14 +115,15 @@ public sealed partial class Transaction
 
     public Task InsertCode(string codeHash, EnrollmentCode code) =>
         Execute(
-            $"INSERT INTO enrollment_codes(code_hash, {CodeColumns}) VALUES(@hash, @id, @label, @expires, @max, 0, @created, @by, 0)",
+            $"INSERT INTO enrollment_codes(code_hash, {CodeColumns}) VALUES(@hash, @id, @label, @expires, @max, 0, @created, @by, 0, @group)",
             ("hash", codeHash),
             ("id", code.Id),
             ("label", code.Label),
             ("expires", code.ExpiresAt),
             ("max", code.MaxUses),
             ("created", code.CreatedAt),
-            ("by", code.CreatedBy)
+            ("by", code.CreatedBy),
+            ("group", code.Group)
         );
 
     /// <summary>Migration 2 imports 0.1.0 codes before migration 5 adds the other columns.</summary>

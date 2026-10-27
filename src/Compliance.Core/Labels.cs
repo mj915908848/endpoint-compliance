@@ -97,6 +97,7 @@ public static class Labels
             "Online" => "在线",
             "SuspectedOffline" => "疑似失联",
             "Offline" => "失联",
+            "Shutdown" => "已关机",
             _ => state,
         };
 

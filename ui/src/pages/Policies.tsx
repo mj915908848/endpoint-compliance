@@ -88,6 +88,12 @@ export function Policies({ session }: { session: Session }) {
       .filter((p) => !p.isDefault && p.key !== selected)
       .flatMap((p) => p.doc.targetDeviceIds.map((id) => [id, p.doc.policyId] as const)),
   );
+  // Groups too: each is in one policy at most. Older releases have no group list.
+  const groupsTakenBy = new Map(
+    policies
+      .filter((p) => !p.isDefault && p.key !== selected)
+      .flatMap((p) => (p.doc.targetGroups ?? []).map((g) => [g, p.doc.policyId] as const)),
+  );
 
   function select(key: string) {
     const go = () => {
@@ -101,6 +107,7 @@ export function Policies({ session }: { session: Session }) {
           policyId: "",
           mode: "Audit",
           targetDeviceIds: [],
+          targetGroups: [],
           requiredControls: [],
         });
       } else edit(policies.find((p) => p.key === key)?.doc ?? null);
@@ -131,6 +138,7 @@ export function Policies({ session }: { session: Session }) {
       policyId: draft.policyId,
       mode: draft.mode,
       targetDeviceIds: draft.targetDeviceIds,
+      targetGroups: draft.targetGroups ?? [],
     });
     message.info("已载入内置最新规则，核对后点击“保存并发布”即可生效。");
   }
@@ -145,7 +153,11 @@ export function Policies({ session }: { session: Session }) {
     if (!draft || (!policy && !creating) || stale) return;
     const changes = creating
       ? [
-          `新建策略“${draft.policyId || "（未命名）"}”，适用 ${draft.targetDeviceIds.length} 台终端`,
+          `新建策略“${draft.policyId || "（未命名）"}”，适用${
+            draft.targetGroups?.length
+              ? `分组 ${draft.targetGroups.join("、")}`
+              : ` ${draft.targetDeviceIds.length} 台终端`
+          }`,
           "这些终端改用这份策略，其余终端仍使用默认策略",
         ]
       : describeChanges(policy!, draft);
@@ -342,6 +354,7 @@ export function Policies({ session }: { session: Session }) {
               readOnly={!canPublish}
               isDefault={isDefault}
               takenBy={takenBy}
+              groupsTakenBy={groupsTakenBy}
             />
           )}
         </Fresh>
@@ -465,7 +478,8 @@ function PolicyHistory({
               key: "content",
               render: (_, r) =>
                 `${modeLabel(r.doc.mode)} · 产品 ${r.doc.products.length} 个` +
-                (r.doc.targetDeviceIds.length ? ` · 终端 ${r.doc.targetDeviceIds.length} 台` : ""),
+                (r.doc.targetDeviceIds.length ? ` · 终端 ${r.doc.targetDeviceIds.length} 台` : "") +
+                (r.doc.targetGroups?.length ? ` · 分组 ${r.doc.targetGroups.join("、")}` : ""),
             },
             ...(canRestore
               ? [

@@ -34,7 +34,7 @@ static partial class Endpoints
                             p.Key,
                             p.IsDefault,
                             p.Release,
-                            devices.Count(d => PolicyService.PolicyFor(d.Id, policies) == p)
+                            devices.Count(d => PolicyService.PolicyFor(d, policies) == p)
                         ))
                         .ToArray();
                 });
@@ -145,7 +145,7 @@ static partial class Endpoints
                 published,
                 state.IsDefault,
                 signed,
-                devices.Count(d => PolicyService.PolicyFor(d.Id, policies) == state)
+                devices.Count(d => PolicyService.PolicyFor(d, policies) == state)
             );
         });
     }

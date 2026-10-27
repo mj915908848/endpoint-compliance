@@ -58,7 +58,14 @@ public record UpgradeProgressItem(
 );
 
 /// <summary>A new enrollment code; the code itself is shown only this once.</summary>
-public record NewEnrollmentCode(string Code, string Id, string Label, DateTimeOffset ExpiresAt, int MaxUses);
+public record NewEnrollmentCode(
+    string Code,
+    string Id,
+    string Label,
+    DateTimeOffset ExpiresAt,
+    int MaxUses,
+    string Group = ""
+);
 
 public record CodeRevoked(string Revoked);
 

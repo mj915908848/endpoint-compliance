@@ -24,6 +24,7 @@ const device: DeviceSummary = {
   sourceAddress: "",
   agentUnsupported: false,
   archivedAt: null,
+  group: "",
 };
 
 describe("plain-language result explanation", () => {

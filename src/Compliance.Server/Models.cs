@@ -50,7 +50,8 @@ public sealed record EnrollmentCode(
     int Uses,
     DateTimeOffset CreatedAt,
     string CreatedBy,
-    bool Revoked
+    bool Revoked,
+    string Group = ""
 );
 
 public sealed record DeviceRecord(
@@ -70,7 +71,8 @@ public sealed record DeviceRecord(
     StoredVerdict? Verdict = null,
     DateTimeOffset? ArchivedAt = null,
     ClientHealth? Health = null,
-    DateTimeOffset? ShutdownAt = null
+    DateTimeOffset? ShutdownAt = null,
+    string Group = ""
 );
 
 /// <summary>
