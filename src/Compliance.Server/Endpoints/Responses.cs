@@ -19,7 +19,25 @@ public record ServerStatus(
 public record NetworkCapability(string Id, bool Implemented, bool Verified, string Detail);
 
 /// <param name="IdleMinutes">Minutes without use before the session ends; 0 if it does not.</param>
-public record SessionInfo(string Username, string[] Roles, string CsrfToken, double IdleMinutes);
+/// <param name="TwoFactor">Whether the account signs in with an authenticator code too.</param>
+/// <param name="TwoFactorRequired">Whether every account must; one that does not yet can only set it up.</param>
+public record SessionInfo(
+    string Username,
+    string[] Roles,
+    string CsrfToken,
+    double IdleMinutes,
+    bool TwoFactor = false,
+    bool TwoFactorRequired = false
+);
+
+public record UserSummary(string Username, string[] Roles, bool TwoFactor, bool Disabled, DateTimeOffset? LastLoginAt);
+
+/// <param name="RequireTwoFactor">Whether every account must use two-step sign-in.</param>
+public record UsersView(UserSummary[] Users, bool RequireTwoFactor);
+
+/// <param name="Secret">The secret in Base32, for typing into an authenticator app that cannot scan.</param>
+/// <param name="Uri">The otpauth:// address the page shows as a QR code.</param>
+public record TwoFactorSetup(string Secret, string Uri);
 
 /// <param name="SignedOut">Other sessions of the account that were ended.</param>
 public record PasswordChanged(int SignedOut, bool Ok = true);

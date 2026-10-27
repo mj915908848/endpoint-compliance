@@ -59,14 +59,20 @@ public sealed class ComplianceService : IDisposable
                     || user.Username.Length > 100
                     || user.Password.Length < 16
                     || user.Roles.Length == 0
-                    || user.Roles.Any(r => r is not ("Reader" or "Operator" or "Publisher" or "Reviewer"))
+                    || user.Roles.Any(r => !UserRoles.All.Contains(r))
                 )
                     throw new InvalidOperationException(
                         "Bootstrap users need names, >=16 character passwords and defined roles"
                     );
                 if (await tx.GetUser(user.Username) == null)
                 {
-                    await tx.InsertUser(new UserRecord(user.Username, Secrets.Password(user.Password), user.Roles));
+                    // Configurations from before accounts were managed on the page name full administrators by
+                    // Operator and Publisher; they manage accounts too, as upgraded installations' do.
+                    var roles =
+                        user.Roles.Contains("Operator") && user.Roles.Contains("Publisher")
+                            ? [.. user.Roles.Union([UserRoles.Admin])]
+                            : user.Roles;
+                    await tx.InsertUser(new UserRecord(user.Username, Secrets.Password(user.Password), roles));
                     await tx.Audit("bootstrap", "CreateUser", user.Username, Now);
                 }
             }

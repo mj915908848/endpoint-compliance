@@ -10,6 +10,8 @@ const session = {
   roles: ["Reader", "Operator"],
   csrfToken: "t",
   idleMinutes: 0,
+  twoFactor: false,
+  twoFactorRequired: false,
 };
 
 // Logged in; every list is empty and device lookups fail, which is enough to render each page shell.

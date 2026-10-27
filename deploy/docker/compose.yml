@@ -41,7 +41,7 @@ services:
     environment:
       Compliance__Database: Host=db;Database=compliance;Username=compliance
       PGPASSWORD: ${DB_PASSWORD}
-      Compliance__BootstrapUsers: '[{"username":"${ADMIN_USER:-admin}","password":"${ADMIN_PASSWORD:?在 .env 中设置 ADMIN_PASSWORD}","roles":["Reader","Operator","Publisher"]}]'
+      Compliance__BootstrapUsers: '[{"username":"${ADMIN_USER:-admin}","password":"${ADMIN_PASSWORD:?在 .env 中设置 ADMIN_PASSWORD}","roles":["Reader","Operator","Publisher","Admin"]}]'
       TZ: Asia/Shanghai
     volumes:
       - ./certs:/certs:ro

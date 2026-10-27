@@ -294,28 +294,43 @@ export function CoverageGuide({ modules }: { modules: ModuleResult[] }) {
   );
 }
 
+/** The message the server answers a right password with when the account also needs its authenticator code. */
+export const TWO_FACTOR_NEEDED = "TwoFactorRequired";
+
 export function Login({
   onLogin,
   notice,
 }: {
-  onLogin: (username: string, password: string) => Promise<unknown>;
+  onLogin: (username: string, password: string, code?: string) => Promise<unknown>;
   /** Why the administrator was signed out, shown above the form. */
   notice?: string | null;
 }) {
-  const [form] = Form.useForm<{ username: string; password: string }>();
+  const [form] = Form.useForm<{ username: string; password: string; code?: string }>();
   const [busy, setBusy] = useState(false),
+    [needCode, setNeedCode] = useState(false),
     [error, setError] = useState<string | null>(null);
-  async function submit(values: { username: string; password: string }) {
+  async function submit(values: { username: string; password: string; code?: string }) {
     setBusy(true);
     setError(null);
     try {
-      await onLogin(values.username, values.password);
+      await onLogin(values.username, values.password, needCode ? values.code : undefined);
     } catch (e) {
+      // The password was right; the account also needs its authenticator code, so the password stays.
+      if (e instanceof Error && e.message === TWO_FACTOR_NEEDED) {
+        setNeedCode(true);
+        return;
+      }
       setError(errorText(e));
+      if (needCode) form.setFieldValue("code", "");
+      else form.setFieldValue("password", "");
     } finally {
-      form.setFieldValue("password", "");
       setBusy(false);
     }
+  }
+  function restart() {
+    setNeedCode(false);
+    setError(null);
+    form.resetFields();
   }
   return (
     <div className="login-screen">
@@ -337,13 +352,14 @@ export function Login({
             </Typography.Title>
             <span className="login-sub">管理中心</span>
           </div>
-          {notice && !error && (
+          {notice && !error && !needCode && (
             <Notice type="info" showIcon title={notice} style={{ marginBottom: 16 }} />
           )}
           <Form form={form} layout="vertical" requiredMark={false} onFinish={submit}>
             <Form.Item
               label="管理员账号"
               name="username"
+              hidden={needCode}
               rules={[{ required: true, message: "请输入账号" }]}
             >
               <Input autoComplete="username" />
@@ -351,18 +367,34 @@ export function Login({
             <Form.Item
               label="密码"
               name="password"
+              hidden={needCode}
               rules={[{ required: true, message: "请输入密码" }]}
             >
               <Input.Password autoComplete="current-password" visibilityToggle={false} />
             </Form.Item>
+            {needCode && (
+              <Form.Item
+                label="验证码"
+                name="code"
+                extra="这个账号启用了两步验证。打开手机上的验证器 App，输入显示的 6 位验证码。"
+                rules={[{ required: true, message: "请输入验证码" }]}
+              >
+                <Input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={7} />
+              </Form.Item>
+            )}
             {error && (
               <Form.Item>
                 <ErrorNotice error={error} title="登录失败" />
               </Form.Item>
             )}
             <Button type="primary" htmlType="submit" block loading={busy}>
-              登录
+              {needCode ? "验证并登录" : "登录"}
             </Button>
+            {needCode && (
+              <Button type="link" block onClick={restart} style={{ marginTop: 8 }}>
+                换个账号登录
+              </Button>
+            )}
           </Form>
           <Typography.Paragraph type="secondary" style={{ marginTop: 16, fontSize: 12 }}>
             系统不提供默认账号。仅连接本单位内网管理端，不依赖任何公网资源。

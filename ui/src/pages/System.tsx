@@ -22,6 +22,7 @@ import { role } from "../session";
 import { useRefresh, useResource } from "../useResource";
 import {
   alertTypeLabel,
+  AccountsPanel,
   ClientPackagesPanel,
   ErrorNotice,
   errorText,
@@ -514,7 +515,8 @@ function AboutPanel({ showKeyId }: { showKeyId: boolean }) {
 
 export function SystemPage({ session }: { session: Session }) {
   const operator = role(session, "Operator"),
-    publisher = role(session, "Publisher");
+    publisher = role(session, "Publisher"),
+    admin = role(session, "Admin");
   const tabs = [
     operator && {
       key: "notifications",
@@ -537,6 +539,7 @@ export function SystemPage({ session }: { session: Session }) {
         </Space>
       ),
     },
+    admin && { key: "accounts", label: "账号", children: <AccountsPanel session={session} /> },
     { key: "about", label: "关于", children: <AboutPanel showKeyId={!publisher} /> },
   ].filter((t) => !!t);
   // In the address so a reload or a shared link opens the same tab.

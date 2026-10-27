@@ -10,6 +10,8 @@ const session = {
   roles: ["Reader", "Publisher"],
   csrfToken: "t",
   idleMinutes: 0,
+  twoFactor: false,
+  twoFactorRequired: false,
 };
 const rotating: SigningKeyState = {
   keyId: "old-key",

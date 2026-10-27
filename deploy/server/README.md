@@ -11,7 +11,7 @@
 | Compliance:Storage | 生产 Postgres；Sqlite仅允许演示 |
 | Compliance:Database | PostgreSQL完整连接串；推荐SSL Mode=VerifyFull与受信CA；测试的loopback无TLS不能照搬生产 |
 | Compliance:SigningKeyPath | 受保护持久密钥路径；不可每次启动随机更换；与数据库一起备份 |
-| Compliance:BootstrapUsers | JSON数组，username/password/roles；密码至少16字符，首次插入，数据库已有账号不会被启动配置重置 |
+| Compliance:BootstrapUsers | JSON数组，username/password/roles；密码至少16字符，首次插入，数据库已有账号不会被启动配置重置；角色可选 Reader、Operator、Publisher、Admin（账号管理员，同时有 Operator 和 Publisher 的账号自动获得）。其他管理人员的账号建议在页面「系统设置 → 账号」中创建 |
 | Compliance:TrustedProxies | 仅实际可信反代IP，默认空；不接受任意Forwarded头 |
 | Kestrel:Certificates:Default:Path | 客户信任证书的PFX文件路径 |
 | Kestrel:Certificates:Default:Password | 通过受保护配置/环境注入；勿写进脚本仓库 |

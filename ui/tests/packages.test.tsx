@@ -10,6 +10,8 @@ const session = {
   roles: ["Reader", "Operator", "Publisher"],
   csrfToken: "t",
   idleMinutes: 0,
+  twoFactor: false,
+  twoFactorRequired: false,
 };
 const listed: ClientPackage = {
   version: "0.2.30",

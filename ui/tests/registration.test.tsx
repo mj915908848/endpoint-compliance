@@ -11,6 +11,8 @@ const session = {
   roles: ["Reader", "Operator"],
   csrfToken: "t",
   idleMinutes: 0,
+  twoFactor: false,
+  twoFactorRequired: false,
 };
 const code = "a".repeat(64);
 const listed: EnrollmentCode = {

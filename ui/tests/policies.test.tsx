@@ -17,8 +17,17 @@ const publisher = {
   roles: ["Reader", "Publisher"],
   csrfToken: "t",
   idleMinutes: 0,
+  twoFactor: false,
+  twoFactorRequired: false,
 };
-const reader = { username: "viewer", roles: ["Reader"], csrfToken: "t", idleMinutes: 0 };
+const reader = {
+  username: "viewer",
+  roles: ["Reader"],
+  csrfToken: "t",
+  idleMinutes: 0,
+  twoFactor: false,
+  twoFactorRequired: false,
+};
 
 const base: Policy = {
   schemaVersion: 1,

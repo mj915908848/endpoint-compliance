@@ -27,7 +27,48 @@ public sealed class Settings
     public string PackageDirectory { get; set; } = "";
 }
 
-public sealed record UserRecord(string Username, string PasswordHash, string[] Roles);
+/// <summary>
+/// A management account. <c>TotpSecret</c> is set once two-step sign-in is on; <c>TotpStep</c> is the step of the
+/// code used last, so a code cannot be used twice. A disabled account cannot sign in; it is kept, not deleted, so
+/// the audit log still names it and bootstrap does not create it again.
+/// </summary>
+public sealed record UserRecord(
+    string Username,
+    string PasswordHash,
+    string[] Roles,
+    string TotpSecret = "",
+    long TotpStep = 0,
+    bool Disabled = false,
+    DateTimeOffset LastLogin = default
+)
+{
+    public bool TwoFactor => TotpSecret.Length > 0;
+}
+
+public static class UserRoles
+{
+    /// <summary>Manages accounts and whether two-step sign-in is required.</summary>
+    public const string Admin = "Admin";
+
+    public static readonly string[] All = ["Reader", "Operator", "Publisher", "Reviewer", Admin];
+
+    /// <summary>The roles as the page names them, for audit records.</summary>
+    public static string Names(IEnumerable<string> roles) =>
+        string.Join(
+            "、",
+            roles.Select(r =>
+                r switch
+                {
+                    "Reader" => "只读",
+                    "Operator" => "操作员",
+                    "Publisher" => "发布人",
+                    "Reviewer" => "审核人",
+                    Admin => "账号管理员",
+                    _ => r,
+                }
+            )
+        );
+}
 
 public sealed record BootstrapUser(string Username, string Password, string[] Roles);
 
