@@ -28,7 +28,7 @@ export const roleChoices = [
   { value: "Reader", label: "只读", hint: "查看总览、终端、告警、报告和审计记录" },
   { value: "Operator", label: "操作员", hint: "处理告警、登记和管理终端、告警推送等设置" },
   { value: "Publisher", label: "发布人", hint: "发布策略、上传客户端安装包、更换签名密钥" },
-  { value: "Admin", label: "账号管理员", hint: "管理账号，要求所有账号使用两步验证" },
+  { value: "Admin", label: "账号管理员", hint: "管理账号、要求两步验证、设置日志外发" },
 ];
 
 const userPath = (u: UserSummary, rest: string) =>

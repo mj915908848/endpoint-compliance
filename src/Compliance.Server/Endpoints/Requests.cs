@@ -32,3 +32,15 @@ public record DeviceIdsRequest(string[]? Ids);
 public record DeviceGroupRequest(string[]? Ids, string? Group);
 
 public record ArchiveDaysRequest(int Days);
+
+public record LogForwardingRequest(
+    bool Enabled,
+    string? Host,
+    int Port = 514,
+    string Protocol = "Udp",
+    string Format = "Json",
+    int Facility = 16,
+    bool Alerts = true,
+    bool Audit = true,
+    string? CaCertificate = null
+);

@@ -30,6 +30,8 @@ public partial class Program
         b.Services.AddHttpClient(AlertNotifier.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(10));
         b.Services.AddSingleton<AlertNotifier>();
         b.Services.AddHostedService<NotificationService>();
+        b.Services.AddSingleton<LogForwarder>();
+        b.Services.AddHostedService<LogForwardingService>();
         b.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         b.Services.AddOpenApi(ApiDocument.Configure);
         b.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 2 * 1024 * 1024);

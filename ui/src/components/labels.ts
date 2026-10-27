@@ -119,6 +119,8 @@ export const auditActionLabel = lookup({
   DisableTwoFactor: "关闭两步验证",
   ResetTwoFactor: "重置两步验证",
   SetRequireTwoFactor: "设置是否要求两步验证",
+  SetLogForwarding: "设置日志外发",
+  TestLogForwarding: "发送日志外发测试消息",
   CreateEnrollmentCode: "生成登记码",
   RevokeEnrollmentCode: "撤销登记码",
   EnrollDevice: "终端登记",

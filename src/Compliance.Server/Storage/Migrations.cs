@@ -49,6 +49,7 @@ public static class Migrations
         new(17, "device shutdowns", tx => tx.Execute("ALTER TABLE devices ADD COLUMN shutdown_at BIGINT NULL")),
         new(18, "device groups", DeviceGroups),
         new(19, "accounts and two-step sign-in", Accounts),
+        new(20, "log forwarding", LogForwarding),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -213,6 +214,17 @@ public static class Migrations
                 && !user.Roles.Contains(UserRoles.Admin)
             )
                 await tx.SetRoles(user.Username, [.. user.Roles, UserRoles.Admin]);
+    }
+
+    /// <summary>
+    /// Which state of each alert was last sent to syslog. Existing alerts count as sent, so turning forwarding on
+    /// sends only what happens from then on.
+    /// </summary>
+    static async Task LogForwarding(Transaction tx)
+    {
+        await tx.Execute("ALTER TABLE alerts ADD COLUMN forwarded_state TEXT NOT NULL DEFAULT ''");
+        await tx.Execute("ALTER TABLE alerts ADD COLUMN forwarded_activation BIGINT NOT NULL DEFAULT 0");
+        await tx.Execute("UPDATE alerts SET forwarded_state = state, forwarded_activation = activations");
     }
 
     static async Task DeviceGroups(Transaction tx)

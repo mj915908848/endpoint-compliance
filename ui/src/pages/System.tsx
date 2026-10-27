@@ -23,6 +23,7 @@ import { useRefresh, useResource } from "../useResource";
 import {
   alertTypeLabel,
   AccountsPanel,
+  LogForwardingPanel,
   ClientPackagesPanel,
   ErrorNotice,
   errorText,
@@ -540,6 +541,11 @@ export function SystemPage({ session }: { session: Session }) {
       ),
     },
     admin && { key: "accounts", label: "账号", children: <AccountsPanel session={session} /> },
+    admin && {
+      key: "log-forwarding",
+      label: "日志外发",
+      children: <LogForwardingPanel session={session} />,
+    },
     { key: "about", label: "关于", children: <AboutPanel showKeyId={!publisher} /> },
   ].filter((t) => !!t);
   // In the address so a reload or a shared link opens the same tab.
