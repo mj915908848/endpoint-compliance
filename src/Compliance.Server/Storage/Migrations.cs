@@ -48,6 +48,7 @@ public static class Migrations
         new(16, "archived devices, client health and upgrade outcomes", ArchiveHealthUpgrades),
         new(17, "device shutdowns", tx => tx.Execute("ALTER TABLE devices ADD COLUMN shutdown_at BIGINT NULL")),
         new(18, "device groups", DeviceGroups),
+        new(19, "accounts and two-step sign-in", Accounts),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -193,6 +194,27 @@ public static class Migrations
     }
 
     /// <summary>Each device's group (empty for none), and the group an enrollment code puts its devices in.</summary>
+    /// <summary>
+    /// Two-step sign-in, disabled accounts and last sign-in. Accounts holding both Operator and Publisher, which the
+    /// page already called administrators, get the new Admin role that manages accounts, so an existing installation
+    /// is not left without anyone who can.
+    /// </summary>
+    static async Task Accounts(Transaction tx)
+    {
+        await tx.Execute("ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''");
+        await tx.Execute("ALTER TABLE users ADD COLUMN totp_pending TEXT NOT NULL DEFAULT ''");
+        await tx.Execute("ALTER TABLE users ADD COLUMN totp_step BIGINT NOT NULL DEFAULT 0");
+        await tx.Execute("ALTER TABLE users ADD COLUMN disabled BIGINT NOT NULL DEFAULT 0");
+        await tx.Execute("ALTER TABLE users ADD COLUMN last_login BIGINT NOT NULL DEFAULT 0");
+        foreach (var user in await tx.Users())
+            if (
+                user.Roles.Contains("Operator")
+                && user.Roles.Contains("Publisher")
+                && !user.Roles.Contains(UserRoles.Admin)
+            )
+                await tx.SetRoles(user.Username, [.. user.Roles, UserRoles.Admin]);
+    }
+
     static async Task DeviceGroups(Transaction tx)
     {
         await tx.Execute("ALTER TABLE devices ADD COLUMN group_name TEXT NOT NULL DEFAULT ''");

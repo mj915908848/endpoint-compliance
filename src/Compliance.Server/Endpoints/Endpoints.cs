@@ -8,6 +8,7 @@ static partial class Endpoints
     public static void Map(WebApplication app, ComplianceService s, Settings settings, AlertNotifier notifier)
     {
         MapAuth(app, s, settings);
+        MapUsers(app, s);
         MapAudit(app, s);
         MapDevices(app, s);
         MapAlerts(app, s);

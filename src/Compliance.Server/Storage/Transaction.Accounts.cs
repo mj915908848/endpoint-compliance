@@ -8,12 +8,23 @@ public sealed partial class Transaction
 {
     // ---- users and sessions --------------------------------------------------------------
 
-    public Task<UserRecord?> GetUser(string username) =>
-        Single(
-            "SELECT username, password_hash, roles FROM users WHERE username = @username",
-            r => new UserRecord(r.GetString(0), r.GetString(1), Wire.Read<string[]>(r.GetString(2))),
-            ("username", username)
+    const string UserColumns = "username, password_hash, roles, totp_secret, totp_step, disabled, last_login";
+
+    static UserRecord ReadUser(DbDataReader r) =>
+        new(
+            r.GetString(0),
+            r.GetString(1),
+            Wire.Read<string[]>(r.GetString(2)),
+            r.GetString(3),
+            Long(r, 4),
+            Long(r, 5) != 0,
+            Time(r, 6)
         );
+
+    public Task<UserRecord?> GetUser(string username) =>
+        Single($"SELECT {UserColumns} FROM users WHERE username = @username", ReadUser, ("username", username));
+
+    public Task<List<UserRecord>> Users() => Query($"SELECT {UserColumns} FROM users ORDER BY username", ReadUser);
 
     public Task InsertUser(UserRecord user) =>
         Execute(
@@ -22,6 +33,58 @@ public sealed partial class Transaction
             ("hash", user.PasswordHash),
             ("roles", Wire.Serialize(user.Roles))
         );
+
+    public Task SetRoles(string username, string[] roles) =>
+        Execute(
+            "UPDATE users SET roles = @roles WHERE username = @username",
+            ("roles", Wire.Serialize(roles)),
+            ("username", username)
+        );
+
+    public Task SetDisabled(string username, bool disabled) =>
+        Execute(
+            "UPDATE users SET disabled = @disabled WHERE username = @username",
+            ("disabled", disabled ? 1L : 0L),
+            ("username", username)
+        );
+
+    public Task SetLastLogin(string username, DateTimeOffset at) =>
+        Execute("UPDATE users SET last_login = @at WHERE username = @username", ("at", at), ("username", username));
+
+    /// <summary>A secret waiting for its first code; two-step sign-in is on only once it moves to the account.</summary>
+    public Task<string?> GetPendingTotp(string username) =>
+        Single(
+            "SELECT totp_pending FROM users WHERE username = @username AND totp_pending <> ''",
+            r => r.GetString(0),
+            ("username", username)
+        );
+
+    public Task SetPendingTotp(string username, string secret) =>
+        Execute(
+            "UPDATE users SET totp_pending = @secret WHERE username = @username",
+            ("secret", secret),
+            ("username", username)
+        );
+
+    /// <summary>Turns two-step sign-in on with <paramref name="secret"/>, or off with an empty one.</summary>
+    public Task SetTotp(string username, string secret, long step) =>
+        Execute(
+            "UPDATE users SET totp_secret = @secret, totp_pending = '', totp_step = @step WHERE username = @username",
+            ("secret", secret),
+            ("step", step),
+            ("username", username)
+        );
+
+    /// <summary>Records the step of a code just used, unless a later one already was: false then, the code is spent.</summary>
+    public async Task<bool> UseTotpStep(string username, long step) =>
+        await Execute(
+            "UPDATE users SET totp_step = @step WHERE username = @username AND totp_step < @step",
+            ("step", step),
+            ("username", username)
+        ) == 1;
+
+    public Task<int> DeleteSessions(string username) =>
+        Execute("DELETE FROM sessions WHERE username = @username", ("username", username));
 
     public Task<SessionRecord?> GetSession(string tokenHash) =>
         Single(

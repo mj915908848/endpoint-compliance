@@ -8,6 +8,15 @@ namespace Compliance.Server;
 /// <summary>Request authentication: session cookie + CSRF for admins, ECDSA request signatures for agents.</summary>
 static class Authentication
 {
+    static readonly string[] SetUpPaths =
+    [
+        "/api/me",
+        "/api/auth/logout",
+        "/api/auth/password",
+        "/api/auth/two-factor/setup",
+        "/api/auth/two-factor/enable",
+    ];
+
     public static async Task Admin(HttpContext c, ComplianceService s)
     {
         var token = c.Request.Cookies["compliance-session"];
@@ -42,7 +51,15 @@ static class Authentication
             )
                 throw new ApiError(403, "CSRF token required");
             c.Items["session"] = session;
-            return await tx.GetUser(session.Username) ?? throw new ApiError(401, "Account unavailable");
+            var user = await tx.GetUser(session.Username);
+            if (user is not { Disabled: false })
+                throw new ApiError(401, "Account unavailable");
+            var required = await Endpoints.TwoFactorRequired(tx);
+            c.Items["twoFactorRequired"] = required;
+            // An account the organisation requires two-step sign-in of may only set it up until it has.
+            if (required && !user.TwoFactor && !SetUpPaths.Contains((c.Request.Path.Value ?? "").ToLowerInvariant()))
+                throw new ApiError(403, "单位要求启用两步验证，请先在账号菜单中启用");
+            return user;
         });
         c.Items["user"] = user;
     }

@@ -2,7 +2,20 @@ using Compliance.Core;
 
 namespace Compliance.Server;
 
-public record LoginRequest(string Username, string Password);
+/// <param name="Code">The authenticator app's code, for an account with two-step sign-in.</param>
+public record LoginRequest(string Username, string Password, string? Code = null);
+
+public record NewUserRequest(string? Username, string? Password, string[]? Roles);
+
+public record RolesRequest(string[]? Roles);
+
+public record ResetPasswordRequest(string? Password);
+
+public record RequireTwoFactorRequest(bool Required);
+
+public record TwoFactorCodeRequest(string? Code);
+
+public record DisableTwoFactorRequest(string? Password, string? Code);
 
 /// <param name="Group">The device group the code puts the devices it enrolls in.</param>
 public record CodeRequest(int? ExpiresMinutes = null, int? MaxUses = null, string? Label = null, string? Group = null);

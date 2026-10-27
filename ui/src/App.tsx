@@ -9,7 +9,7 @@ import {
   useParams,
 } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu } from "antd";
+import { Alert, Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu, Typography } from "antd";
 import {
   AlertOutlined,
   AuditOutlined,
@@ -20,6 +20,7 @@ import {
   KeyOutlined,
   LockOutlined,
   LogoutOutlined,
+  SafetyOutlined,
   MenuOutlined,
   UpOutlined,
   DownOutlined,
@@ -32,6 +33,8 @@ import {
   Loading,
   Login,
   PasswordDialog,
+  TwoFactorDialog,
+  TwoFactorSetupForm,
 } from "./components";
 import { Alerts } from "./pages/Alerts";
 import { AuditPage } from "./pages/Audit";
@@ -58,6 +61,7 @@ const roleLabels: Record<string, string> = {
   Operator: "操作员",
   Publisher: "发布人",
   Reviewer: "审核人",
+  Admin: "账号管理员",
 };
 
 /** One administrator normally holds every role, so it is named as such rather than as a list. */
@@ -86,6 +90,7 @@ export function App() {
     [authError, setAuthError] = useState<string | null>(null),
     [logoutBusy, setLogoutBusy] = useState(false),
     [passwordOpen, setPasswordOpen] = useState(false),
+    [twoFactorOpen, setTwoFactorOpen] = useState(false),
     [signedOut, setSignedOut] = useState<string | null>(null),
     [idleWarning, setIdleWarning] = useState(false),
     [navOpen, setNavOpen] = useState(false);
@@ -149,10 +154,10 @@ export function App() {
       setIdleWarning(false);
     };
   }, [session, idleMinutes, queries]);
-  async function login(username: string, password: string) {
+  async function login(username: string, password: string, code?: string) {
     const result = await request<Session>("/api/auth/login", {
       method: "POST",
-      body: { username, password },
+      body: code === undefined ? { username, password } : { username, password, code },
     });
     // Stay on the requested URL so a shared device link opens after login.
     queries.clear();
@@ -190,6 +195,41 @@ export function App() {
       </Flex>
     );
   if (!session) return <Login onLogin={login} notice={signedOut} />;
+  // Says whether two-step sign-in is on after the administrator changed it.
+  const reloadSession = () =>
+    void request<Session>("/api/me")
+      .then(setSession)
+      .catch(() => undefined);
+  if (session.twoFactorRequired && !session.twoFactor)
+    return (
+      <div className="login-screen">
+        <section className="login-hero" aria-hidden="true">
+          <div className="login-hero-text">
+            <h1>终端合规管控平台</h1>
+          </div>
+        </section>
+        <section className="login-side">
+          <div className="login-card">
+            <div className="login-head">
+              <img src="/brand/logo.svg" alt="" className="login-logo" />
+            </div>
+            <Typography.Title level={4}>请先启用两步验证</Typography.Title>
+            <Typography.Paragraph type="secondary">
+              单位要求所有管理账号使用两步验证。账号 {session.username}{" "}
+              还没有启用，启用后才能继续使用。
+            </Typography.Paragraph>
+            <TwoFactorSetupForm session={session} onDone={reloadSession} />
+            <Button
+              type="link"
+              onClick={() => void logout()}
+              style={{ paddingLeft: 0, marginTop: 8 }}
+            >
+              退出
+            </Button>
+          </div>
+        </section>
+      </div>
+    );
   const page = currentPage(location.pathname);
   const nav = (
     <Menu
@@ -212,11 +252,17 @@ export function App() {
   const accountMenu = {
     items: [
       { key: "password", icon: <LockOutlined />, label: "修改密码" },
+      {
+        key: "two-factor",
+        icon: <SafetyOutlined />,
+        label: session.twoFactor ? "两步验证（已启用）" : "两步验证（未启用）",
+      },
       { key: "logout", icon: <LogoutOutlined />, label: "退出", disabled: logoutBusy },
     ],
     onClick: ({ key }: { key: string }) => {
       setNavOpen(false);
       if (key === "password") setPasswordOpen(true);
+      else if (key === "two-factor") setTwoFactorOpen(true);
       else void logout();
     },
   };
@@ -298,6 +344,12 @@ export function App() {
         session={session}
         open={passwordOpen}
         onClose={() => setPasswordOpen(false)}
+      />
+      <TwoFactorDialog
+        session={session}
+        open={twoFactorOpen}
+        onClose={() => setTwoFactorOpen(false)}
+        onChanged={reloadSession}
       />
       <Layout className="below-top">
         <Layout.Sider width={208} className="sidebar">

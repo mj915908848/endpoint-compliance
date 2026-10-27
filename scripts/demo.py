@@ -53,7 +53,7 @@ env.update({
     "Compliance__Database": str(data / "server.sqlite"),
     "Compliance__SigningKeyPath": str(data / "signing.pem"),
     "Compliance__BootstrapUsers": json.dumps([
-        {"username": "demo-admin", "password": password, "roles": ["Reader", "Operator", "Publisher"]},
+        {"username": "demo-admin", "password": password, "roles": ["Reader", "Operator", "Publisher", "Admin"]},
     ]),
 })
 log = (data / "server.log").open("a")
