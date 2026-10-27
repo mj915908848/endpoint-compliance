@@ -11,6 +11,7 @@ static partial class Endpoints
         MapUsers(app, s);
         MapAudit(app, s);
         MapDevices(app, s);
+        MapAssets(app, s);
         MapAlerts(app, s);
         MapEnrollment(app, s);
         MapPolicies(app, s);

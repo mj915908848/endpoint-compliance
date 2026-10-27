@@ -13,6 +13,7 @@ import { Alert, Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu, Typography
 import {
   AlertOutlined,
   AuditOutlined,
+  DatabaseOutlined,
   DashboardOutlined,
   DesktopOutlined,
   FileProtectOutlined,
@@ -37,6 +38,7 @@ import {
   TwoFactorSetupForm,
 } from "./components";
 import { Alerts } from "./pages/Alerts";
+import { AssetsPage } from "./pages/Assets";
 import { AuditPage } from "./pages/Audit";
 import { DeviceDetailPage } from "./pages/DeviceDetail";
 import { Devices } from "./pages/Devices";
@@ -49,6 +51,7 @@ import type { Session } from "./types";
 const pages: { path: string; label: string; icon: ReactNode }[] = [
   { path: "/", label: "总览", icon: <DashboardOutlined /> },
   { path: "/devices", label: "终端设备", icon: <DesktopOutlined /> },
+  { path: "/assets", label: "资产清单", icon: <DatabaseOutlined /> },
   { path: "/alerts", label: "告警中心", icon: <AlertOutlined /> },
   { path: "/policies", label: "策略管理", icon: <FileProtectOutlined /> },
   { path: "/registration", label: "终端登记", icon: <KeyOutlined /> },
@@ -385,6 +388,10 @@ export function App() {
                   }
                 />
                 <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
+                <Route
+                  path="/assets"
+                  element={<AssetsPage openDevice={(id) => navigate(devicePath(id))} />}
+                />
                 <Route
                   path="/alerts"
                   element={

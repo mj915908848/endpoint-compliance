@@ -384,6 +384,10 @@ public sealed class AgentRuntime(
     private ProcessEnforcer? processes;
     private BrowserBlocklist? browsers;
 
+    // The asset inventory last accepted by the server, without its collection time, and when.
+    private string? sentInventory;
+    private DateTimeOffset inventorySentAt = DateTimeOffset.MinValue;
+
     // A fixture stands in for another machine, so report its host name rather than this one's.
     private string HostName =>
         simulated
@@ -1296,6 +1300,57 @@ public sealed class AgentRuntime(
                 lastFull = lastLight;
             foreach (var command in scanCommands)
                 await AckAsync(api, command, new CommandReply(true, "Full scan completed and queued"), ct);
+            if (full)
+                await SendInventoryAsync(api, ct);
+        }
+    }
+
+    /// <summary>
+    /// Sends the asset inventory after a full check when it differs from the one the server last accepted, and at least
+    /// once a day so the server can tell it is current. A failure is tried again at the next full check.
+    /// </summary>
+    private async Task SendInventoryAsync(AgentApi api, CancellationToken ct)
+    {
+        AssetInventory inventory;
+        try
+        {
+            if (simulated)
+            {
+                // A fixture describes its inventory next to its snapshot; without one, a simulation sends none.
+                var fixture = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(fixturePath!))!, "inventory.json");
+                if (!File.Exists(fixture))
+                    return;
+                inventory = Inventory.Normalize(
+                    Wire.Read<AssetInventory>(await File.ReadAllTextAsync(fixture, ct)) with
+                    {
+                        CollectedAt = DateTimeOffset.UtcNow,
+                    }
+                );
+            }
+            else if (OperatingSystem.IsWindows())
+                inventory = await Task.Run(AssetInventoryReader.Read, ct);
+            else
+                return;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            Console.Error.WriteLine("Asset inventory unreadable: " + e.GetType().Name);
+            return;
+        }
+        var content = Wire.Serialize(inventory with { CollectedAt = default });
+        if (content == sentInventory && inventorySentAt > DateTimeOffset.UtcNow.AddDays(-1))
+            return;
+        try
+        {
+            await api.SendAsync<JsonElement>(HttpMethod.Post, "/api/agent/inventory", inventory, ct);
+            (sentInventory, inventorySentAt) = (content, DateTimeOffset.UtcNow);
+            if (AgentLog.Active)
+                Console.WriteLine($"已上报资产信息：{inventory.Software.Length} 个软件");
+        }
+        // Servers before asset inventory do not know the path; the next full check tries again.
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            Console.Error.WriteLine("Asset inventory pending: " + e.GetType().Name);
         }
     }
 

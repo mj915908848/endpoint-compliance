@@ -147,6 +147,8 @@ export const auditActionLabel = lookup({
   SetAuditRetention: "修改审计记录保留期限",
   PruneAudit: "清理过期审计记录",
   ExportDevices: "导出终端列表",
+  ExportAssets: "导出硬件资产",
+  ExportSoftware: "导出软件清单",
   ArchiveDevice: "归档终端",
   RestoreDevice: "取消归档终端",
   SetArchiveDays: "修改自动归档期限",
@@ -202,3 +204,11 @@ export function moduleErrorLabel(result: ModuleResult) {
     return "用户目录不可用，本项检查不完整。";
   return error;
 }
+
+export const inventoryChangeLabel = lookup({
+  SoftwareInstalled: "安装软件",
+  SoftwareRemoved: "卸载软件",
+  SoftwareUpdated: "软件更新",
+  HardwareChanged: "硬件变化",
+  SystemUpdated: "系统更新",
+});

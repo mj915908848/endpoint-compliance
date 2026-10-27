@@ -34,6 +34,64 @@
         }
       }
     },
+    "/api/agent/inventory": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetInventory"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{id}/inventory": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceInventory"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "tags": [
@@ -894,6 +952,137 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DeviceCommand"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AssetRow"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets/export.csv": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/assets/software": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SoftwareSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets/software/devices": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SoftwareInstall"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets/software/export.csv": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/assets/changes": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InventoryChangeRow"
+                  }
                 }
               }
             }
@@ -2077,6 +2266,107 @@
           }
         }
       },
+      "AssetInventory": {
+        "required": [
+          "collectedAt",
+          "hardware",
+          "operatingSystem",
+          "disks",
+          "volumes",
+          "software"
+        ],
+        "type": "object",
+        "properties": {
+          "collectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hardware": {
+            "$ref": "#/components/schemas/HardwareInfo"
+          },
+          "operatingSystem": {
+            "$ref": "#/components/schemas/OperatingSystemInfo"
+          },
+          "disks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiskInfo"
+            }
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeInfo"
+            }
+          },
+          "software": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstalledProgram"
+            }
+          }
+        }
+      },
+      "AssetRow": {
+        "required": [
+          "deviceId",
+          "hostName",
+          "note",
+          "group",
+          "hardware",
+          "operatingSystem",
+          "disks",
+          "volumes",
+          "softwareCount",
+          "collectedAt",
+          "receivedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "hardware": {
+            "$ref": "#/components/schemas/HardwareInfo"
+          },
+          "operatingSystem": {
+            "$ref": "#/components/schemas/OperatingSystemInfo"
+          },
+          "disks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiskInfo"
+            }
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeInfo"
+            }
+          },
+          "softwareCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "collectedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "AuditRecord": {
         "required": [
           "id",
@@ -2575,6 +2865,39 @@
           }
         }
       },
+      "DeviceInventory": {
+        "required": [
+          "inventory",
+          "receivedAt",
+          "changes"
+        ],
+        "type": "object",
+        "properties": {
+          "inventory": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AssetInventory"
+              }
+            ]
+          },
+          "receivedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InventoryChange"
+            }
+          }
+        }
+      },
       "DevicesChanged": {
         "required": [
           "done"
@@ -2730,6 +3053,30 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "DiskInfo": {
+        "required": [
+          "model",
+          "sizeBytes",
+          "mediaType",
+          "busType"
+        ],
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "busType": {
+            "type": "string"
           }
         }
       },
@@ -2922,6 +3269,48 @@
           "Baseline"
         ]
       },
+      "HardwareInfo": {
+        "required": [
+          "manufacturer",
+          "model",
+          "serialNumber",
+          "biosVersion",
+          "processor",
+          "cores",
+          "logicalProcessors",
+          "memoryBytes"
+        ],
+        "type": "object",
+        "properties": {
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "serialNumber": {
+            "type": "string"
+          },
+          "biosVersion": {
+            "type": "string"
+          },
+          "processor": {
+            "type": "string"
+          },
+          "cores": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "logicalProcessors": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "memoryBytes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "HeartbeatReply": {
         "required": [
           "ok",
@@ -3043,6 +3432,97 @@
                 "$ref": "#/components/schemas/UpgradeOutcome"
               }
             ]
+          }
+        }
+      },
+      "InstalledProgram": {
+        "required": [
+          "name",
+          "version",
+          "publisher",
+          "installedOn",
+          "scope"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "installedOn": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        }
+      },
+      "InventoryChange": {
+        "required": [
+          "at",
+          "kind",
+          "subject",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "InventoryChangeRow": {
+        "required": [
+          "deviceId",
+          "hostName",
+          "note",
+          "group",
+          "at",
+          "kind",
+          "subject",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
           }
         }
       },
@@ -3569,6 +4049,45 @@
           },
           "version": {
             "type": "string"
+          }
+        }
+      },
+      "OperatingSystemInfo": {
+        "required": [
+          "name",
+          "version",
+          "displayVersion",
+          "architecture",
+          "installedAt",
+          "lastBootAt"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "displayVersion": {
+            "type": "string"
+          },
+          "architecture": {
+            "type": "string"
+          },
+          "installedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastBootAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -4213,6 +4732,84 @@
           }
         }
       },
+      "SoftwareInstall": {
+        "required": [
+          "deviceId",
+          "hostName",
+          "note",
+          "group",
+          "version",
+          "scope",
+          "installedOn"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "installedOn": {
+            "type": "string"
+          }
+        }
+      },
+      "SoftwareSummary": {
+        "required": [
+          "name",
+          "publisher",
+          "devices",
+          "versions"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SoftwareVersion"
+            }
+          }
+        }
+      },
+      "SoftwareVersion": {
+        "required": [
+          "version",
+          "devices"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "TamperPolicy": {
         "required": [
           "uninstallPassword"
@@ -4477,6 +5074,35 @@
             "format": "int32"
           },
           "policyVersion": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "VolumeInfo": {
+        "required": [
+          "name",
+          "label",
+          "fileSystem",
+          "sizeBytes",
+          "freeBytes"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "fileSystem": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "freeBytes": {
             "type": "integer",
             "format": "int64"
           }

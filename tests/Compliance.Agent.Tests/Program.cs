@@ -152,6 +152,39 @@ await Check(
     }
 );
 await Check(
+    "the asset inventory lists programs as Apps & Features does and drops placeholder serial numbers",
+    () =>
+    {
+        static AssetInventoryReader.UninstallEntry E(
+            string? name,
+            bool system = false,
+            string? parent = null,
+            string? release = null,
+            string scope = "machine"
+        ) => new(name, " 1.0 ", "Vendor", "20250301", system, parent, release, scope);
+        var programs = AssetInventoryReader.Programs([
+            E("7-Zip"),
+            E("WeChat", scope: "zhangsan"),
+            E(null),
+            E("  "),
+            E("Microsoft Visual C++ Runtime Component", system: true),
+            E("Security Update for Office (KB5002)", parent: "Office16"),
+            E("Hotfix", release: "Hotfix"),
+        ]);
+        Assert(
+            programs.Select(p => p.Name).SequenceEqual(["7-Zip", "WeChat"]),
+            string.Join(",", programs.Select(p => p.Name))
+        );
+        Assert(programs[0] is { Version: "1.0", InstalledOn: "2025-03-01", Scope: "machine" }, "fields kept");
+        Assert(programs[1].Scope == "zhangsan", "per-user scope kept");
+        Assert(AssetInventoryReader.SerialNumber("To be filled by O.E.M.") == "", "placeholder");
+        Assert(AssetInventoryReader.SerialNumber("Default string") == "", "default string");
+        Assert(AssetInventoryReader.SerialNumber("0000000") == "", "zeros");
+        Assert(AssetInventoryReader.SerialNumber("PF3ABCDE") == "PF3ABCDE", "real serial");
+        return Task.CompletedTask;
+    }
+);
+await Check(
     "the network inventory reports physical adapters with reachable addresses, the gateway's first",
     () =>
     {
