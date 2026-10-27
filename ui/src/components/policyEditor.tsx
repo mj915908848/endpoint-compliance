@@ -27,7 +27,9 @@ import type {
   Product,
   SensitiveFilePolicy,
   SensitiveFileRule,
+  TamperPolicy,
 } from "../types";
+import { canHashUninstallPassword, hashUninstallPassword } from "../uninstallPassword";
 import { baselineChecks, baselineName, categoryLabel, controlLabel, moduleLabel } from "./labels";
 import { deviceName, Empty, usePageScroll } from "./common";
 import { Panel } from "./layout";
@@ -74,6 +76,9 @@ export const defaultBaseline: BaselinePolicy = { enabled: false, rules: [] };
 const baselineOf = (p: Policy) => p.baseline ?? defaultBaseline;
 const limitOf = (r: BaselineRule) =>
   r.limit || baselineChecks.find((c) => c.id === r.id)?.defaultLimit || 0;
+/** Policies published before uninstall passwords omit the section. */
+export const defaultTamper: TamperPolicy = { uninstallPassword: "" };
+const tamperOf = (p: Policy) => p.tamper ?? defaultTamper;
 /** "最近 30 天内成功安装过系统更新" */
 export const baselineRequirement = (r: BaselineRule) =>
   (baselineChecks.find((c) => c.id === r.id)?.requirement ?? r.id).replace(
@@ -182,6 +187,12 @@ export function describeChanges(before: Policy, after: Policy): string[] {
       `修改安全基线“${baselineName(rule.id)}”${parts.length ? `：${parts.join("，")}` : ""}`,
     );
   }
+  const pb = tamperOf(before).uninstallPassword,
+    pa = tamperOf(after).uninstallPassword;
+  if (pb !== pa)
+    changes.push(
+      `卸载密码：${!pa ? "取消，卸载客户端不再需要密码" : pb ? "更改" : "设置，卸载客户端需要密码"}`,
+    );
   if (
     sb.scanUserProfiles !== sa.scanUserProfiles ||
     sb.scanOtherFixedDrives !== sa.scanOtherFixedDrives ||
@@ -418,6 +429,12 @@ export function PolicyEditor({
         onChange={(baseline) => set({ baseline })}
       />
 
+      <TamperPanel
+        value={tamperOf(value)}
+        readOnly={readOnly}
+        onChange={(tamper) => set({ tamper })}
+      />
+
       <Panel title="检查要求">
         <Field label="检查频率">
           <Space wrap>
@@ -486,6 +503,118 @@ export function PolicyEditor({
         </Row>
       </Panel>
     </Space>
+  );
+}
+
+function TamperPanel({
+  value,
+  onChange,
+  readOnly,
+}: {
+  value: TamperPolicy;
+  onChange: (v: TamperPolicy) => void;
+  readOnly: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [repeat, setRepeat] = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = !!value.uninstallPassword;
+  const problem =
+    password.length < 8
+      ? "密码至少 8 个字符"
+      : password.includes('"')
+        ? "密码不能包含双引号"
+        : password !== repeat
+          ? "两次输入的密码不一致"
+          : null;
+  const close = () => {
+    setOpen(false);
+    setPassword("");
+    setRepeat("");
+  };
+  const save = async () => {
+    setBusy(true);
+    try {
+      onChange({ ...value, uninstallPassword: await hashUninstallPassword(password) });
+      close();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel title="防篡改">
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Field label="卸载密码">
+          <Space wrap>
+            <Tag color={set ? "green" : "default"}>{set ? "已设置" : "未设置"}</Tag>
+            {!readOnly && (
+              <Button size="small" onClick={() => setOpen(true)}>
+                {set ? "更改密码" : "设置卸载密码"}
+              </Button>
+            )}
+            {!readOnly && set && (
+              <Popconfirm
+                title="取消卸载密码？发布后卸载客户端不再需要密码。"
+                onConfirm={() => onChange({ ...value, uninstallPassword: "" })}
+              >
+                <Button size="small" danger>
+                  取消密码
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
+          <Hint>
+            设置后，卸载客户端需要提供该密码：msiexec /x 安装包.msi
+            UNINSTALLPASSWORD=密码。没有密码或密码错误时卸载会被阻止，并产生“防篡改”告警。升级客户端不需要密码。策略中只保存密码的不可逆摘要，忘记密码时重新设置并发布即可。
+          </Hint>
+        </Field>
+        <Field label="始终监视">
+          <Typography.Paragraph style={{ margin: 0 }}>
+            客户端服务被停止、被改为手动或禁用启动、进程被强制结束、托盘的登录自启动被删除或禁用，以及客户端被卸载时，都会产生“防篡改”告警；被改动的启动设置会自动恢复。电脑正常关机时终端显示为“已关机”，不再报告失联。
+          </Typography.Paragraph>
+          <Hint>本机管理员仍可能绕过这些措施；告警的作用是让每一次绕过都被看到。</Hint>
+        </Field>
+      </Space>
+      <Modal
+        title={set ? "更改卸载密码" : "设置卸载密码"}
+        open={open}
+        onCancel={close}
+        onOk={save}
+        okText="确定"
+        cancelText="取消"
+        okButtonProps={{ disabled: !!problem || !canHashUninstallPassword(), loading: busy }}
+        destroyOnHidden
+      >
+        <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+          {!canHashUninstallPassword() && (
+            <Alert
+              type="warning"
+              showIcon
+              title="浏览器只在 HTTPS 或本机访问时提供加密功能，请改用 HTTPS 地址打开管理端后再设置。"
+            />
+          )}
+          <Input.Password
+            aria-label="卸载密码"
+            placeholder="至少 8 个字符"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+          <Input.Password
+            aria-label="再次输入卸载密码"
+            placeholder="再次输入"
+            value={repeat}
+            onChange={(e) => setRepeat(e.target.value)}
+            autoComplete="new-password"
+          />
+          {password && problem && <Typography.Text type="secondary">{problem}</Typography.Text>}
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            设置后需要发布策略才会生效。请把密码交给负责卸载的管理员保管。
+          </Typography.Text>
+        </Space>
+      </Modal>
+    </Panel>
   );
 }
 

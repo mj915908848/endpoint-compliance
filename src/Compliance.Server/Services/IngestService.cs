@@ -71,7 +71,13 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
                 await SnapshotAlerts(tx, d, e.Sequence);
             }
 
-            if (e.Type != "Snapshot")
+            if (e.Type == "Shutdown")
+            {
+                // Not an alert: the device says it is off, so going silent is expected. Server time, as heartbeats.
+                await tx.SetShutdown(deviceId, Now);
+                d = d with { ShutdownAt = Now };
+            }
+            else if (e.Type != "Snapshot")
             {
                 var incidentId = deviceId + ":" + Secrets.Hash(e.ObjectKey);
                 // Snapshot alerts use other ids, so this map stays current while snapshots are handled in between.
@@ -119,7 +125,16 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
             || e.Sequence <= 0
             || e.SourceTime > Now.AddMinutes(5)
             || (e.Detail?.Length ?? 0) > 2048
-            || e.Type is not ("Snapshot" or "Violation" or "Recovered" or "Health" or "BlockedAttempt")
+            || e.Type
+                is not (
+                    "Snapshot"
+                    or "Violation"
+                    or "Recovered"
+                    or "Health"
+                    or "BlockedAttempt"
+                    or "Tamper"
+                    or "Shutdown"
+                )
         )
             throw new ApiError(400, "Invalid event");
         if (e.Type == "Snapshot" && e.Snapshot == null)

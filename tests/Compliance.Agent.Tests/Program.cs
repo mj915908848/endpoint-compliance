@@ -3069,6 +3069,81 @@ await Check(
     }
 );
 
+await Check(
+    "the tamper guard restores the service start type and the tray's start at sign-in, and says what it did",
+    () =>
+    {
+        var system = new FakeTamperSystem();
+        Assert(TamperGuard.Check(system).Count == 0, "nothing to report on an untouched install");
+        system.Start = 4;
+        system.Tray = null;
+        system.TrayDisabled = true;
+        var found = TamperGuard.Check(system);
+        Assert(
+            found
+                .Select(f => f.ObjectKey)
+                .SequenceEqual(["tamper:service-start", "tamper:tray-autostart", "tamper:tray-autostart-disabled"]),
+            string.Join(",", found.Select(f => f.ObjectKey))
+        );
+        Assert(found[0].Detail == "客户端服务的启动类型被改为“禁用”，已恢复为自动启动", found[0].Detail);
+        Assert(system.Start == 2 && system.Tray == system.Expected && !system.TrayDisabled, "all repaired");
+        Assert(TamperGuard.Check(system).Count == 0, "repaired stays quiet");
+        // A repair that fails is still reported, saying so.
+        system.Start = 3;
+        system.RefuseRepair = true;
+        Assert(
+            TamperGuard.Check(system).Single().Detail.EndsWith("未能恢复（UnauthorizedAccessException）"),
+            "refused"
+        );
+        // An install the earlier scripts made has no Run value to keep.
+        system = new FakeTamperSystem { Expected = null, Tray = null };
+        Assert(TamperGuard.Check(system).Count == 0, "script installs are left alone");
+        return Task.CompletedTask;
+    }
+);
+
+await Check(
+    "a service run that did not stop in the same boot is reported once; one from an earlier boot is not",
+    () =>
+    {
+        var dir = Directory.CreateTempSubdirectory("tamper-").FullName;
+        try
+        {
+            var boot = new DateTimeOffset(2026, 10, 26, 8, 0, 0, TimeSpan.Zero);
+            Assert(TamperGuard.MarkRunning(dir, boot) is null, "first start");
+            var killed = TamperGuard.MarkRunning(dir, boot.AddSeconds(1));
+            Assert(killed?.ObjectKey == "tamper:service-killed", "ended without stopping");
+            TamperGuard.ClearRunning(dir);
+            Assert(TamperGuard.MarkRunning(dir, boot) is null, "stopped normally");
+            Assert(TamperGuard.MarkRunning(dir, boot.AddHours(9)) is null, "the power went off");
+
+            // Notes the uninstall check leaves are reported once and removed; anything else is dropped.
+            TamperGuard.LeaveNote(dir, new("tamper:uninstall-refused", "有人尝试卸载客户端，因未提供卸载密码已阻止"));
+            File.WriteAllText(Path.Combine(dir, TamperGuard.NotesDirectory, "other.txt"), "agent:x\nnot ours");
+            var taken = new List<TamperFinding>();
+            TamperGuard
+                .TakeNotesAsync(
+                    dir,
+                    f =>
+                    {
+                        taken.Add(f);
+                        return Task.CompletedTask;
+                    }
+                )
+                .GetAwaiter()
+                .GetResult();
+            Assert(taken.Single().ObjectKey == "tamper:uninstall-refused", "the note");
+            Assert(Directory.GetFiles(Path.Combine(dir, TamperGuard.NotesDirectory)).Length == 0, "notes removed");
+            Assert(!UninstallCheck.Authorized(dir), "no password check passed");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+        return Task.CompletedTask;
+    }
+);
+
 foreach (var error in failures)
     Console.Error.WriteLine(error);
 return failures.Count == 0 ? 0 : 1;
@@ -3219,5 +3294,46 @@ sealed class FakeBlocklist : IBlocklistStore
             throw new UnauthorizedAccessException(browser + " refused");
         Writes++;
         Values[browser] = [.. values];
+    }
+}
+
+sealed class FakeTamperSystem : ITamperSystem
+{
+    public int? Start = 2;
+    public string? Expected = "\"C:\\Program Files\\ComplianceAgent\\Compliance.Tray.exe\"";
+    public string? Tray = "\"C:\\Program Files\\ComplianceAgent\\Compliance.Tray.exe\"";
+    public bool TrayDisabled;
+    public bool RefuseRepair;
+
+    void Repair()
+    {
+        if (RefuseRepair)
+            throw new UnauthorizedAccessException();
+    }
+
+    public int? ServiceStartType() => Start;
+
+    public void SetServiceAutoStart()
+    {
+        Repair();
+        Start = 2;
+    }
+
+    public string? ExpectedTrayCommand() => Expected;
+
+    public string? TrayCommand() => Tray;
+
+    public void SetTrayCommand(string command)
+    {
+        Repair();
+        Tray = command;
+    }
+
+    public bool TrayStartupDisabled() => TrayDisabled;
+
+    public void EnableTrayStartup()
+    {
+        Repair();
+        TrayDisabled = false;
     }
 }

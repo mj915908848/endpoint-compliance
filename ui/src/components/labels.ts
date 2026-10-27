@@ -12,6 +12,7 @@ export const onlineLabel = lookup({
   Online: "在线",
   SuspectedOffline: "疑似失联",
   Offline: "失联",
+  Shutdown: "已关机",
 });
 
 /** Security baseline checks; keep in sync with Baseline.Checks in src/Compliance.Core/Baseline.cs. */
@@ -100,6 +101,7 @@ export const alertTypeLabel = lookup({
   Clue: "待核查线索",
   SensitiveFile: "敏感文件",
   Baseline: "安全基线",
+  Tamper: "防篡改",
 });
 
 export const auditActionLabel = lookup({

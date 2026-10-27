@@ -46,6 +46,7 @@ public static class Migrations
                 tx.Execute("CREATE INDEX IF NOT EXISTS policy_releases_policy ON policy_releases(policy_key, version)")
         ),
         new(16, "archived devices, client health and upgrade outcomes", ArchiveHealthUpgrades),
+        new(17, "device shutdowns", tx => tx.Execute("ALTER TABLE devices ADD COLUMN shutdown_at BIGINT NULL")),
     ];
 
     public static async Task<bool> Apply(Transaction tx)

@@ -106,6 +106,45 @@ public class DeviceLifecycleTests
     }
 
     [Fact]
+    public async Task Tamper_events_alert_and_a_shut_down_device_is_not_reported_offline()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        await Enroll(f);
+        var r = await f.Agent(
+            "POST",
+            "/api/agent/events",
+            new EventBatch([
+                new("t1", 1, f.Clock.Now, "Tamper", "tamper:service-start", Detail: "启动类型被改为“禁用”，已恢复"),
+                new("t2", 2, f.Clock.Now, "Shutdown", "agent:power", Detail: "系统关机或重启"),
+            ])
+        );
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var alert = Assert.Single(await Alerts(f));
+        Assert.Equal(("Tamper", "tamper:service-start", "Active"), (alert.Type, alert.ObjectKey, alert.State));
+        Assert.Equal("Shutdown", Assert.Single(await Devices(f)).OnlineState);
+
+        // Off for the night: no offline alert. Started again, it is online, and silence is an outage again.
+        var service = f.Services.GetRequiredService<ComplianceService>();
+        async Task Housekeeping() =>
+            await service.Tx(async tx =>
+            {
+                await service.Housekeeping.UpdateOffline(tx);
+                return true;
+            });
+        f.Clock.Now += TimeSpan.FromHours(10);
+        await Housekeeping();
+        await f.Login(); // the session timed out overnight
+        Assert.DoesNotContain(await Alerts(f), a => a.Type == "Offline");
+        await Heartbeat(f);
+        Assert.Equal("Online", Assert.Single(await Devices(f)).OnlineState);
+        f.Clock.Now += TimeSpan.FromMinutes(10);
+        await Housekeeping();
+        Assert.Contains(await Alerts(f), a => a.Type == "Offline" && a.State == "Active");
+        Assert.Equal("Offline", Assert.Single(await Devices(f)).OnlineState);
+    }
+
+    [Fact]
     public async Task Devices_silent_for_the_chosen_days_are_archived_by_maintenance()
     {
         await using var f = new Fixture();

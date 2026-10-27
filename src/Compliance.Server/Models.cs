@@ -69,7 +69,8 @@ public sealed record DeviceRecord(
     string SourceAddress = "",
     StoredVerdict? Verdict = null,
     DateTimeOffset? ArchivedAt = null,
-    ClientHealth? Health = null
+    ClientHealth? Health = null,
+    DateTimeOffset? ShutdownAt = null
 );
 
 /// <summary>
@@ -113,13 +114,21 @@ public sealed record VerdictChange(
 
 public static class DeviceStatus
 {
-    /// <summary>Online until 3 minutes without a heartbeat, then suspected offline, and offline from 5 minutes.</summary>
+    /// <summary>
+    /// Online until 3 minutes without a heartbeat, then suspected offline, and offline from 5 minutes; shut down once
+    /// the client said Windows is shutting down, until its next heartbeat.
+    /// </summary>
     public static string Online(DeviceRecord device, DateTimeOffset now)
     {
+        if (IsShutDown(device))
+            return "Shutdown";
         if (device.LastHeartbeat is null || now - device.LastHeartbeat >= TimeSpan.FromMinutes(5))
             return "Offline";
         return now - device.LastHeartbeat >= TimeSpan.FromMinutes(3) ? "SuspectedOffline" : "Online";
     }
+
+    public static bool IsShutDown(DeviceRecord device) =>
+        device.ShutdownAt is { } at && device.LastHeartbeat is { } heartbeat && at >= heartbeat;
 }
 
 public sealed record SnapshotIncident(string Id, string DeviceId, string Scope, string[] Modules);

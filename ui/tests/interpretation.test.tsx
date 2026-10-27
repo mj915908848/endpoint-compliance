@@ -42,6 +42,14 @@ describe("plain-language result explanation", () => {
     expect(screen.getByText(/客户端服务正在运行/)).toBeTruthy();
   });
 
+  it("says a device that shut down is off, not lost", () => {
+    const off = { ...device, onlineState: "Shutdown", currentVerdict: "UNKNOWN" as const };
+    render(<DeviceGuide device={off} />);
+    expect(screen.getByText("终端已关机")).toBeTruthy();
+    render(<OverviewGuide devices={[off]} />);
+    expect(screen.getByText(/另有 1 台终端已关机/)).toBeTruthy();
+  });
+
   it("explains coverage gaps without treating them as new violations", () => {
     const modules: ModuleResult[] = [
       {

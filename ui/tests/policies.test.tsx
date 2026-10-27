@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultBaseline, defaultSensitiveFiles, describeChanges } from "../src/components";
+import {
+  defaultBaseline,
+  defaultSensitiveFiles,
+  defaultTamper,
+  describeChanges,
+} from "../src/components";
+import { hashUninstallPassword } from "../src/uninstallPassword";
 import { Policies } from "../src/pages/Policies";
 import { Providers } from "../src/providers";
 import type { Policy } from "../src/types";
@@ -33,6 +39,7 @@ const base: Policy = {
   lightweightFreshMinutes: 10,
   sensitiveFiles: defaultSensitiveFiles,
   baseline: defaultBaseline,
+  tamper: defaultTamper,
   products: [
     {
       id: "cursor",
@@ -397,6 +404,48 @@ describe("baseline checks", () => {
       limit: 14,
       exempt: [],
     });
+  });
+});
+
+describe("uninstall password", () => {
+  it("hashes like the server checks it, so a policy from the browser verifies on the client", async () => {
+    // The same value is verified in tests/Compliance.Core.Tests (UninstallPassword.Verify).
+    expect(
+      await hashUninstallPassword(
+        "卸载-Pass1",
+        Uint8Array.from({ length: 16 }, (_, i) => i),
+      ),
+    ).toBe(
+      "pbkdf2-sha256$100000$AAECAwQFBgcICQoLDA0ODw==$7InOAJONupobuIcPJmOTXsIqbTjfORptMJj7iFb/F5A=",
+    );
+  });
+
+  it("publishes only the hash of a password typed twice", async () => {
+    const posts = stub(base, base);
+    renderPage();
+    expect(await screen.findByText("未设置")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "设置卸载密码" }));
+    await screen.findByText("设置后需要发布策略才会生效。请把密码交给负责卸载的管理员保管。");
+    const dialog = screen.getAllByRole("dialog").at(-1)!;
+    await userEvent.type(within(dialog).getByLabelText("卸载密码"), "it-only-2026");
+    await userEvent.type(within(dialog).getByLabelText("再次输入卸载密码"), "it-only-2025");
+    expect(within(dialog).getByText("两次输入的密码不一致")).toBeTruthy();
+    await userEvent.clear(within(dialog).getByLabelText("再次输入卸载密码"));
+    await userEvent.type(within(dialog).getByLabelText("再次输入卸载密码"), "it-only-2026");
+    await userEvent.click(within(dialog).getByRole("button", { name: "确定" }));
+    expect(await screen.findByText("已设置")).toBeTruthy();
+    const bar = screen.getByRole("region", { name: "未发布的修改" });
+    await userEvent.click(within(bar).getByRole("button", { name: "保存并发布" }));
+    expect(
+      (await screen.findAllByText("卸载密码：设置，卸载客户端需要密码")).length,
+    ).toBeGreaterThan(0);
+    await userEvent.click(
+      within(screen.getAllByRole("dialog").at(-1)!).getByRole("button", { name: "发布" }),
+    );
+    await waitFor(() => expect(posts).toHaveLength(1));
+    const stored = posts[0].tamper.uninstallPassword;
+    expect(stored).toMatch(/^pbkdf2-sha256\$100000\$[A-Za-z0-9+/=]{24}\$[A-Za-z0-9+/=]{44}$/);
+    expect(JSON.stringify(posts[0])).not.toContain("it-only-2026");
   });
 });
 

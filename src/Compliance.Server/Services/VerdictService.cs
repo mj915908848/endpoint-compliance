@@ -23,11 +23,14 @@ public sealed class VerdictService(Store store, PolicyService policies, TimeProv
         );
         if (Online(device) == "Online")
             return report;
+        var shutDown = DeviceStatus.IsShutDown(device);
         return report with
         {
             Verdict = Verdict.UNKNOWN,
-            Summary = "终端失联或疑似失联，当前无法判断；以下为上次检查结果，仅供参考",
-            CoverageGaps = report.CoverageGaps.Append("终端最近没有上报心跳").ToArray(),
+            Summary = shutDown
+                ? "终端已关机，当前无法判断；以下为关机前最后一次检查结果，仅供参考"
+                : "终端失联或疑似失联，当前无法判断；以下为上次检查结果，仅供参考",
+            CoverageGaps = report.CoverageGaps.Append(shutDown ? "终端已关机" : "终端最近没有上报心跳").ToArray(),
         };
     }
 

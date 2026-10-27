@@ -110,6 +110,7 @@ public static class Labels
             "Clue" => "待核查线索",
             "SensitiveFile" => "敏感文件",
             "Baseline" => "安全基线",
+            "Tamper" => "防篡改",
             _ => type,
         };
 }

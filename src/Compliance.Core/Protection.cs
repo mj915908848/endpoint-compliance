@@ -122,6 +122,7 @@ public static class PolicyCrypto
             throw new ArgumentException("已批准网卡无效：最多 100 项，每项 3–64 个字符");
         SensitiveFiles.Validate(doc.SensitiveFiles);
         Baseline.Validate(doc.Baseline);
+        UninstallPassword.Validate(doc.Tamper);
         DomainRules.CompileEdge(doc.BlockDomains);
         foreach (var rule in doc.ApplicationRules)
             if (
