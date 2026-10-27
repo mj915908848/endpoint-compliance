@@ -159,6 +159,44 @@ public sealed partial class Transaction
             );
     }
 
+    /// <summary>Alerts whose state, or activation while active, changed since it was last sent to syslog.</summary>
+    public Task<List<(AlertSummary Alert, string Note, long Activation)>> PendingForwards(int limit) =>
+        Query(
+            $"""
+            SELECT {string.Join(", ", AlertColumns.Split(", ").Select(c => "a." + c))}, COALESCE(d.note, ''),
+                a.activations
+            FROM alerts a LEFT JOIN devices d ON d.id = a.device_id
+            WHERE a.forwarded_state <> a.state OR (a.state = 'Active' AND a.forwarded_activation <> a.activations)
+            ORDER BY a.last_seen, a.id LIMIT @limit
+            """,
+            r => (ReadAlert(r), r.GetString(11), r.GetInt64(12)),
+            ("limit", (long)limit)
+        );
+
+    /// <summary>Records what was sent of each alert; an alert that changed again since stays pending.</summary>
+    public async Task MarkForwarded(IEnumerable<(string Id, string State, long Activation)> alerts)
+    {
+        foreach (var (id, state, activation) in alerts)
+            await Execute(
+                """
+                UPDATE alerts SET forwarded_state = @state, forwarded_activation = @activation
+                WHERE id = @id AND state = @state AND activations = @activation
+                """,
+                ("id", id),
+                ("state", state),
+                ("activation", activation)
+            );
+    }
+
+    /// <summary>Marks every alert as sent, while forwarding is off, so turning it on does not send a backlog.</summary>
+    public Task<int> MarkAllForwarded() =>
+        Execute(
+            """
+            UPDATE alerts SET forwarded_state = state, forwarded_activation = activations
+            WHERE forwarded_state <> state OR forwarded_activation <> activations
+            """
+        );
+
     public Task AcknowledgeAlert(string id) => Execute("UPDATE alerts SET acknowledged = 1 WHERE id = @id", ("id", id));
 
     /// <summary>Resolves every active alert of a device, as when it is archived.</summary>

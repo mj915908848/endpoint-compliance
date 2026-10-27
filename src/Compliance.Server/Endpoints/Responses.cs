@@ -134,3 +134,6 @@ public record HeartbeatReply(
     long? PolicySerial = null,
     string? PolicyKeyId = null
 );
+
+/// <param name="Last">The last attempt to send since the server started; null before one.</param>
+public record LogForwardingView(LogForwardingSettings Settings, LogForwardingResult? Last);

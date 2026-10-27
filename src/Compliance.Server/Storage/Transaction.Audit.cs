@@ -46,6 +46,21 @@ public sealed partial class Transaction
             ("limit", (long)limit)
         );
 
+    /// <summary>Oldest first, the records after (<paramref name="at"/>, <paramref name="id"/>) up to <paramref name="until"/>.</summary>
+    public Task<List<AuditRecord>> AuditAfter(DateTimeOffset at, string id, DateTimeOffset until, int limit) =>
+        Query(
+            """
+            SELECT id, actor, action, target, at FROM audit
+            WHERE (at > @at OR (at = @at AND id > @id)) AND at <= @until
+            ORDER BY at, id LIMIT @limit
+            """,
+            r => new AuditRecord(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), Time(r, 4)),
+            ("at", at),
+            ("id", id),
+            ("until", until),
+            ("limit", (long)limit)
+        );
+
     /// <summary>
     /// False for a nonce seen in the last 10 minutes. Expired ones are removed by <see cref="PruneNonces"/>, not on
     /// every request; until then an expired row counts as unseen.

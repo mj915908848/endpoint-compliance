@@ -2062,6 +2062,99 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/settings/log-forwarding": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["LogForwardingView"];
+          };
+        };
+      };
+    };
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["LogForwardingRequest"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Done"];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/settings/log-forwarding/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["NotificationTested"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/client-packages": {
     parameters: {
       query?: never;
@@ -2667,6 +2760,54 @@ export interface components {
       hostName: string;
       /** Format: date-time */
       lastHeartbeat: null | string;
+    };
+    LogForwardingRequest: {
+      enabled: boolean;
+      host: null | string;
+      /**
+       * Format: int32
+       * @default 514
+       */
+      port: number;
+      /** @default Udp */
+      protocol: string;
+      /** @default Json */
+      format: string;
+      /**
+       * Format: int32
+       * @default 16
+       */
+      facility: number;
+      /** @default true */
+      alerts: boolean;
+      /** @default true */
+      audit: boolean;
+      caCertificate?: null | string;
+    };
+    LogForwardingResult: {
+      /** Format: date-time */
+      at: string;
+      ok: boolean;
+      error: string;
+      /** Format: int32 */
+      sent: number;
+    };
+    LogForwardingSettings: {
+      enabled: boolean;
+      host: string;
+      /** Format: int32 */
+      port: number;
+      protocol: string;
+      format: string;
+      /** Format: int32 */
+      facility: number;
+      alerts: boolean;
+      audit: boolean;
+      caCertificate: string;
+    };
+    LogForwardingView: {
+      settings: components["schemas"]["LogForwardingSettings"];
+      last: null | components["schemas"]["LogForwardingResult"];
     };
     LoginRequest: {
       username: string;

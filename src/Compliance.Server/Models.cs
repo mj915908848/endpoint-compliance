@@ -47,7 +47,7 @@ public sealed record UserRecord(
 
 public static class UserRoles
 {
-    /// <summary>Manages accounts and whether two-step sign-in is required.</summary>
+    /// <summary>Manages accounts, whether two-step sign-in is required and where logs are forwarded.</summary>
     public const string Admin = "Admin";
 
     public static readonly string[] All = ["Reader", "Operator", "Publisher", "Reviewer", Admin];

@@ -1605,6 +1605,71 @@
         }
       }
     },
+    "/api/settings/log-forwarding": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogForwardingView"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogForwardingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Done"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/log-forwarding/test": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTested"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/client-packages": {
       "get": {
         "tags": [
@@ -3034,6 +3099,148 @@
               "string"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "LogForwardingRequest": {
+        "required": [
+          "enabled",
+          "host"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "default": 514
+          },
+          "protocol": {
+            "type": "string",
+            "default": "Udp"
+          },
+          "format": {
+            "type": "string",
+            "default": "Json"
+          },
+          "facility": {
+            "type": "integer",
+            "format": "int32",
+            "default": 16
+          },
+          "alerts": {
+            "type": "boolean",
+            "default": true
+          },
+          "audit": {
+            "type": "boolean",
+            "default": true
+          },
+          "caCertificate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "LogForwardingResult": {
+        "required": [
+          "at",
+          "ok",
+          "error",
+          "sent"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "sent": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "LogForwardingSettings": {
+        "required": [
+          "enabled",
+          "host",
+          "port",
+          "protocol",
+          "format",
+          "facility",
+          "alerts",
+          "audit",
+          "caCertificate"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "facility": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "alerts": {
+            "type": "boolean"
+          },
+          "audit": {
+            "type": "boolean"
+          },
+          "caCertificate": {
+            "type": "string"
+          }
+        }
+      },
+      "LogForwardingView": {
+        "required": [
+          "settings",
+          "last"
+        ],
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/LogForwardingSettings"
+          },
+          "last": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LogForwardingResult"
+              }
+            ]
           }
         }
       },

@@ -16,6 +16,7 @@ static partial class Endpoints
         MapPolicies(app, s);
         MapAgent(app, s);
         MapSettings(app, s, notifier);
+        MapLogForwarding(app, s, app.Services.GetRequiredService<LogForwarder>());
         MapPackages(app, s);
         MapSigningKey(app, s);
     }
