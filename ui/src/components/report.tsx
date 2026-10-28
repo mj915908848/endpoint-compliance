@@ -291,6 +291,8 @@ export function ReportFindings({ report: r }: { report: Report }) {
       values: installation,
       tone: "danger",
       none: "未发现",
+      // Products found but allowed for now by an approved exception.
+      notes: r.exceptionNotes ?? [],
     },
     { key: "proxy", label: "代理设置", values: proxy, tone: "danger", none: "未发现" },
     ...(sensitive.length > 0 || sensitiveNotes.length > 0 || sensitiveScopes.length > 0

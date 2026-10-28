@@ -195,6 +195,25 @@ public static class ReportEngine
             SensitiveFiles.HasViolationRules(policy) || policy.RequiredModules.Contains(SensitiveFiles.Module);
         if (sensitiveRequired)
             gaps.AddRange(sensitiveIssues);
+        // Products an exception allows on this device stay in the report, as allowed, until the exception ends.
+        var excepted = PolicyExceptions
+            .Active(policy, snapshot.DeviceId, now)
+            .Where(e => e.Kind == PolicyExceptions.Product)
+            .ToArray();
+        foreach (var e in excepted)
+            Note(e.ExpiresAt, TimeSpan.Zero);
+        var exceptedIds = excepted.Select(e => e.Target).ToHashSet(StringComparer.Ordinal);
+        var exceptionNotes = snapshot
+            .Evidence.Where(e => e.Confirmed && exceptedIds.Contains(e.ProductId))
+            .Select(e => e.ProductId)
+            .Distinct()
+            .Select(id =>
+            {
+                var x = excepted.Where(e => e.Target == id).MaxBy(e => e.ExpiresAt)!;
+                var name = policy.Products.FirstOrDefault(p => p.Id == id)?.Name ?? x.Label;
+                return $"{name}：已批准例外，有效至 {x.ExpiresAt.ToLocalTime():yyyy-MM-dd HH:mm}，期间不判违规";
+            })
+            .ToArray();
         var confirmedAt = snapshot
             .Evidence.Select((e, i) => (e, i))
             .Where(x =>
@@ -209,6 +228,7 @@ public static class ReportEngine
                                 or EvidenceKind.Extension
                                 or EvidenceKind.Proxy
                         && (e.Kind == EvidenceKind.Proxy || knownIds.Contains(e.ProductId))
+                        && !exceptedIds.Contains(e.ProductId)
                     || current
                         && e.Kind == EvidenceKind.SensitiveFile
                         && e.Confirmed
@@ -248,6 +268,7 @@ public static class ReportEngine
         {
             SensitiveFileNotes = sensitiveRequired ? [] : sensitiveIssues.Distinct().ToArray(),
             BaselineNotes = baselineNotes.Distinct().ToArray(),
+            ExceptionNotes = exceptionNotes,
             PolicyName = policy.PolicyId,
             PolicyVersion = policy.Version,
             ValidUntil = validUntil == DateTimeOffset.MaxValue ? null : validUntil,

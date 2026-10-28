@@ -22,6 +22,7 @@ const base: Policy = {
   mode: "Audit",
   targetDeviceIds: [],
   targetGroups: [],
+  exceptions: [],
   issuedAt: "2026-10-14T00:00:00Z",
   expiresAt: "2027-10-14T00:00:00Z",
   denyInstalled: true,

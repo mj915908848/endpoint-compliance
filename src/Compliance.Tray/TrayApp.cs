@@ -86,6 +86,7 @@ public sealed class TrayApp : ApplicationContext
         enrollItem = menu.Items.Add("登记到管理端…", null, (_, _) => ShowSetup(null));
         enrollItem.Visible = false;
         menu.Items.Add("打开通知中心", null, (_, _) => ShowWindow());
+        menu.Items.Add("申请例外…", null, (_, _) => ShowException());
         menu.Items.Add("运行日志", null, (_, _) => LogWindow.Open());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出托盘", null, (_, _) => ExitThread());
@@ -141,6 +142,19 @@ public sealed class TrayApp : ApplicationContext
         window.Show();
         window.Activate();
         _ = RefreshAsync();
+    }
+
+    private ExceptionWindow? exception;
+
+    private void ShowException()
+    {
+        if (exception is null)
+        {
+            exception = new ExceptionWindow();
+            exception.FormClosed += (_, _) => exception = null;
+        }
+        exception.Show();
+        exception.Activate();
     }
 
     private void ShowSetup(string? source)

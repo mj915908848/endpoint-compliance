@@ -20,6 +20,7 @@ import {
   InfoCircleOutlined,
   KeyOutlined,
   LockOutlined,
+  SafetyCertificateOutlined,
   LogoutOutlined,
   SafetyOutlined,
   MenuOutlined,
@@ -41,6 +42,7 @@ import { Alerts } from "./pages/Alerts";
 import { AssetsPage } from "./pages/Assets";
 import { AuditPage } from "./pages/Audit";
 import { DeviceDetailPage } from "./pages/DeviceDetail";
+import { ExceptionsPage } from "./pages/Exceptions";
 import { Devices } from "./pages/Devices";
 import { Overview } from "./pages/Overview";
 import { Policies } from "./pages/Policies";
@@ -53,6 +55,7 @@ const pages: { path: string; label: string; icon: ReactNode }[] = [
   { path: "/devices", label: "终端设备", icon: <DesktopOutlined /> },
   { path: "/assets", label: "资产清单", icon: <DatabaseOutlined /> },
   { path: "/alerts", label: "告警中心", icon: <AlertOutlined /> },
+  { path: "/exceptions", label: "例外审批", icon: <SafetyCertificateOutlined /> },
   { path: "/policies", label: "策略管理", icon: <FileProtectOutlined /> },
   { path: "/registration", label: "终端登记", icon: <KeyOutlined /> },
   { path: "/audit", label: "审计记录", icon: <AuditOutlined /> },
@@ -396,6 +399,15 @@ export function App() {
                   path="/alerts"
                   element={
                     <Alerts session={session} openDevice={(id) => navigate(devicePath(id))} />
+                  }
+                />
+                <Route
+                  path="/exceptions"
+                  element={
+                    <ExceptionsPage
+                      session={session}
+                      openDevice={(id) => navigate(devicePath(id))}
+                    />
                   }
                 />
                 <Route path="/policies" element={<Policies session={session} />} />

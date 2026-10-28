@@ -1062,6 +1062,54 @@ Test(
     }
 );
 Test(
+    "an approved exception keeps a product from failing the device until it expires, and only on its own device",
+    () =>
+    {
+        var found = clean with { Evidence = [violation] };
+        Eq(Verdict.FAIL, ReportEngine.Evaluate(p, found, now).Verdict);
+        var excepted = p with
+        {
+            Exceptions =
+            [
+                new("r-1", "dev1", PolicyExceptions.Product, "cursor", now.AddHours(3)) { Label = "Cursor" },
+                new("r-2", "dev1", PolicyExceptions.Usb, "PROD_IRONKEY", now.AddHours(1)),
+                new("r-3", "dev2", PolicyExceptions.Product, "other", now.AddHours(3)),
+            ],
+        };
+        PolicyCrypto.Validate(excepted);
+        var r = ReportEngine.Evaluate(excepted, found, now);
+        Eq(Verdict.PASS, r.Verdict);
+        Yes(r.ExceptionNotes.Single().StartsWith("Cursor：已批准例外"));
+        Yes(r.ValidUntil <= now.AddHours(3));
+        var expired = excepted with { Exceptions = [excepted.Exceptions[0] with { ExpiresAt = now }] };
+        Eq(Verdict.FAIL, ReportEngine.Evaluate(expired, found, now).Verdict);
+        Eq(Verdict.FAIL, ReportEngine.Evaluate(excepted, found with { DeviceId = "dev2" }, now).Verdict);
+
+        var enforced = PolicyExceptions.ForEnforcement(
+            excepted with
+            {
+                Usb = new() { Storage = UsbStorage.Block },
+            },
+            "dev1",
+            now
+        );
+        Eq(0, enforced.Products.Length);
+        Eq(UsbStorage.Allow, UsbStorage.Access(enforced.Usb, @"USBSTOR\DISK&VEN_KINGSTON&PROD_IRONKEY\1&0"));
+        Eq(1, PolicyExceptions.ForEnforcement(excepted, "dev1", now.AddHours(4)).Products.Length);
+        Throws(() => PolicyExceptions.Validate([new("r-4", "dev1", "Domain", "x", now)]));
+
+        var asked = new ExceptionRequest(PolicyExceptions.Product, "cursor", "Cursor", "  试用  ", 7, "zhang");
+        Eq("试用", PolicyExceptions.Check(asked)!.Reason);
+        Yes(PolicyExceptions.Check(asked with { Days = 91 }) is null);
+        Yes(PolicyExceptions.Check(asked with { Reason = " " }) is null);
+        // Chinese text is not escaped, so a reason of the longest length fits in an event.
+        Yes(
+            PolicyExceptions.Serialize(asked with { Reason = new string('理', PolicyExceptions.MaxReason) }) is not null
+        );
+        Eq("试用", Wire.Read<ExceptionRequest>(PolicyExceptions.Serialize(asked)!).Reason.Trim());
+    }
+);
+Test(
     "asset inventories are normalized and their changes say what was installed, removed, updated or replaced",
     () =>
     {

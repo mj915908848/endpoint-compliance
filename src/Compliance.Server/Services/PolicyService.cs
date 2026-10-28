@@ -184,6 +184,51 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
         }
     }
 
+    /// <summary>
+    /// Approved exceptions in force now, of every device: each release carries all of them, so a device keeps its
+    /// exceptions whichever policy it moves to, and applies only its own.
+    /// </summary>
+    async Task<PolicyException[]> ActiveExceptions(Transaction tx) =>
+        [
+            .. (await tx.ApprovedExceptions(Now))
+                .Take(PolicyExceptions.MaxExceptions)
+                .Select(x => new PolicyException(x.Id, x.DeviceId, x.Kind, x.Target, x.ExpiresAt!.Value)
+                {
+                    Label = x.Label,
+                    GrantedAt = x.DecidedAt ?? Now,
+                }),
+        ];
+
+    /// <summary>
+    /// Under <see cref="PolicyLock"/>: re-issues every policy whose exceptions differ from those in force now, after
+    /// one is approved or revoked, or has expired. The content administrators edit is unchanged, so is the version.
+    /// Returns how many policies were re-issued.
+    /// </summary>
+    public async Task<int> RefreshExceptions(Transaction tx)
+    {
+        var active = await ActiveExceptions(tx);
+        var ids = active.Select(e => e.Id).ToHashSet(StringComparer.Ordinal);
+        var reissued = 0;
+        foreach (var p in await All(tx))
+        {
+            var held = p.Document.Exceptions ?? [];
+            if (held.Length == ids.Count && held.All(e => ids.Contains(e.Id)))
+                continue;
+            var doc = p.Document with
+            {
+                Exceptions = active,
+                Sequence = await NextSerial(tx),
+                IssuedAt = Now,
+                ExpiresAt = Now + PolicyValidity,
+            };
+            await tx.InsertRelease(doc.Serial, Sign(doc), Now, p.Key);
+            reissued++;
+        }
+        if (reissued > 0)
+            await Reassign(tx);
+        return reissued;
+    }
+
     /// <summary>Releases are stored under their serial, so the newest release overall holds the highest.</summary>
     async Task<long> NextSerial(Transaction tx) =>
         Wire.Read<PolicyDocument>((await tx.CurrentRelease())!.Payload).Serial + 1;
@@ -260,6 +305,8 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
             InventoryFreshMinutes = submitted.FullCheckMinutes * 2,
             TargetDeviceIds = isDefault ? [] : (submitted.TargetDeviceIds ?? []).Distinct().ToArray(),
             TargetGroups = isDefault ? [] : (submitted.TargetGroups ?? []).Select(g => (g ?? "").Trim()).ToArray(),
+            // Exceptions are approved on their own page; the editor's copy may be out of date.
+            Exceptions = await ActiveExceptions(tx),
         };
         if (
             doc.RequiredModules == null

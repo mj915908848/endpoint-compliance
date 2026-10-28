@@ -101,8 +101,9 @@ export const baselineRequirement = (r: BaselineRule) =>
     String(limitOf(r)),
   );
 
-/** The part of a policy an administrator edits; the server assigns version and validity on publish. */
-const content = ({ schemaVersion, version, issuedAt, expiresAt, ...rest }: Policy) => rest;
+/** The part of a policy an administrator edits; the server assigns version, validity and exceptions on publish. */
+const content = ({ schemaVersion, version, issuedAt, expiresAt, exceptions, ...rest }: Policy) =>
+  rest;
 export const sameContent = (a: Policy, b: Policy) =>
   JSON.stringify(content(a)) === JSON.stringify(content(b));
 

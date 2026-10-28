@@ -74,6 +74,7 @@ const pushTypes = [
   "Health",
   "BlockedAttempt",
   "UsbBlocked",
+  "ExceptionRequest",
   "Offline",
 ];
 

@@ -3039,7 +3039,16 @@ if (OperatingSystem.IsWindows())
                 var sid = System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value;
                 await store.AddAsync("n-1", sid, "Violation: Cursor：已安装", CancellationToken.None);
                 await store.AddAsync("n-2", null, "本机的检查未能完全覆盖", CancellationToken.None);
-                var server = new NotificationPipe(store).RunAsync(stop.Token);
+                ExceptionRequest? asked = null;
+                var desk = new ExceptionDesk(
+                    () => [new(PolicyExceptions.Product, "cursor", "Cursor")],
+                    (who, r, _) =>
+                    {
+                        asked = who == sid ? r : null;
+                        return Task.FromResult(r.Days > 30 ? "too long" : null);
+                    }
+                );
+                var server = new NotificationPipe(store, desk).RunAsync(stop.Token);
                 await Task.Delay(500);
                 if (server.IsCompleted)
                     await server; // surfaces why the pipe was not created
@@ -3079,6 +3088,16 @@ if (OperatingSystem.IsWindows())
                     "tray client: " + after
                 );
                 Assert(await TrayPipe.AcknowledgeAsync("n-2"), "tray client acknowledgment");
+                // Exception requests: what may be asked, and asking, as the caller's account.
+                var options = await TrayPipe.ExceptionOptionsAsync();
+                Assert(options is [{ Target: "cursor", Label: "Cursor" }], "exception options");
+                var request = new ExceptionRequest(PolicyExceptions.Product, "cursor", "", "试用", 7, "");
+                Assert(await TrayPipe.RequestExceptionAsync(request) is null, "exception request taken");
+                Assert(asked is { Reason: "试用", Days: 7 }, "request reached the desk as the caller");
+                Assert(
+                    await TrayPipe.RequestExceptionAsync(request with { Days = 60 }) == "too long",
+                    "refusal passed back"
+                );
                 stop.Cancel();
                 try
                 {

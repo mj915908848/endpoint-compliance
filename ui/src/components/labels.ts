@@ -103,6 +103,7 @@ export const alertTypeLabel = lookup({
   Baseline: "安全基线",
   Tamper: "防篡改",
   UsbBlocked: "移动存储拦截",
+  ExceptionRequest: "例外申请",
 });
 
 export const auditActionLabel = lookup({
@@ -151,6 +152,10 @@ export const auditActionLabel = lookup({
   ExportAssets: "导出硬件资产",
   ExportSoftware: "导出软件清单",
   ExportUsbEvents: "导出移动存储记录",
+  CreateException: "新增例外",
+  ApproveException: "批准例外申请",
+  RejectException: "驳回例外申请",
+  RevokeException: "撤销例外",
   ArchiveDevice: "归档终端",
   RestoreDevice: "取消归档终端",
   SetArchiveDays: "修改自动归档期限",

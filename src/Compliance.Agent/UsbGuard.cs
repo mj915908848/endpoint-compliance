@@ -48,6 +48,7 @@ public sealed class UsbGuard(IUsbStorage storage, string statePath)
     record Owned(List<string> Disabled, List<string> ReadOnly, Dictionary<string, UsbDisk> Seen);
 
     Owned? state;
+    readonly object gate = new();
     string? lastFailure;
     int blockedCount;
     (string Name, DateTimeOffset At)? lastBlocked;
@@ -91,8 +92,21 @@ public sealed class UsbGuard(IUsbStorage storage, string statePath)
         return facts.Any() ? $"{name}（{string.Join("，", facts)}）" : name;
     }
 
+    /// <summary>The disks attached at the last check.</summary>
+    public UsbDisk[] Seen()
+    {
+        lock (gate)
+            return [.. (state ??= Load()).Seen.Values];
+    }
+
     /// <summary>Applies the policy to the attached disks and returns what happened since the last call.</summary>
     public List<UsbEvent> Sweep(PolicyDocument policy)
+    {
+        lock (gate)
+            return SweepLocked(policy);
+    }
+
+    List<UsbEvent> SweepLocked(PolicyDocument policy)
     {
         var events = new List<UsbEvent>();
         var enforced = Controls.Enforced(policy, Controls.Usb) && storage.CanControl;
