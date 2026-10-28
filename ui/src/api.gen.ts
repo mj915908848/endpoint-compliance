@@ -1428,6 +1428,80 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/usb-events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          days?: number;
+          deviceId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["UsbEventRow"][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/usb-events/export.csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          days?: number;
+          deviceId?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/alerts": {
     parameters: {
       query?: never;
@@ -3303,6 +3377,7 @@ export interface components {
       sensitiveFiles: components["schemas"]["SensitiveFilePolicy"];
       baseline: components["schemas"]["BaselinePolicy"];
       tamper: components["schemas"]["TamperPolicy"];
+      usb: components["schemas"]["UsbPolicy"];
     };
     PolicyHistoryItem: {
       /** Format: int64 */
@@ -3483,6 +3558,25 @@ export interface components {
     UpgradeRollout: {
       /** Format: int32 */
       queued: number;
+    };
+    UsbAllowedDevice: {
+      id: string;
+      note: string;
+    };
+    UsbEventRow: {
+      deviceId: string;
+      hostName: string;
+      note: string;
+      group: string;
+      /** Format: date-time */
+      at: string;
+      type: string;
+      instanceId: string;
+      detail: string;
+    };
+    UsbPolicy: {
+      storage: string;
+      allowedDevices: components["schemas"]["UsbAllowedDevice"][];
     };
     UserAccount: {
       sid: string;

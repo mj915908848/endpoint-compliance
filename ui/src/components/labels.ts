@@ -102,6 +102,7 @@ export const alertTypeLabel = lookup({
   SensitiveFile: "敏感文件",
   Baseline: "安全基线",
   Tamper: "防篡改",
+  UsbBlocked: "移动存储拦截",
 });
 
 export const auditActionLabel = lookup({
@@ -149,6 +150,7 @@ export const auditActionLabel = lookup({
   ExportDevices: "导出终端列表",
   ExportAssets: "导出硬件资产",
   ExportSoftware: "导出软件清单",
+  ExportUsbEvents: "导出移动存储记录",
   ArchiveDevice: "归档终端",
   RestoreDevice: "取消归档终端",
   SetArchiveDays: "修改自动归档期限",
@@ -169,6 +171,7 @@ export const categoryLabel = lookup({
 export const controlLabel = lookup({
   process: "发现即结束进程",
   browser: "浏览器网址拦截",
+  usb: "移动存储管控",
   application: "应用程序拦截（旧）",
   edge: "Edge 浏览器策略（旧）",
   network: "网络访问拦截（旧）",
@@ -211,4 +214,16 @@ export const inventoryChangeLabel = lookup({
   SoftwareUpdated: "软件更新",
   HardwareChanged: "硬件变化",
   SystemUpdated: "系统更新",
+});
+
+export const usbStorageLabel = lookup({
+  Allow: "允许使用",
+  ReadOnly: "只读",
+  Block: "禁止使用",
+});
+
+export const usbEventLabel = lookup({
+  UsbConnected: "接入",
+  UsbRemoved: "拔出",
+  UsbBlocked: "已拦截",
 });

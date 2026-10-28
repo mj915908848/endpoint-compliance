@@ -169,6 +169,31 @@ public record PolicyDocument
 
     /// <summary>Uninstall protection; the client reports stops, removals and changes to its start-up either way.</summary>
     public TamperPolicy Tamper { get; init; } = new();
+
+    /// <summary>USB disks and sticks; the client records them being plugged in and removed either way.</summary>
+    public UsbPolicy Usb { get; init; } = new();
+}
+
+/// <summary>
+/// What users may do with USB storage. The client enforces <see cref="Storage"/> only in enforce mode with the "usb"
+/// measure required; otherwise it reports what the policy would have done.
+/// </summary>
+public record UsbPolicy
+{
+    /// <summary>"Allow", "ReadOnly" (files can be read but not written) or "Block" (the disk is switched off).</summary>
+    public string Storage { get; init; } = "Allow";
+
+    /// <summary>Devices exempt from <see cref="Storage"/>, such as the company's encrypted sticks.</summary>
+    public UsbAllowedDevice[] AllowedDevices { get; init; } = [];
+}
+
+/// <param name="Id">
+/// Part of the device's Windows instance id, matched case-insensitively: a serial number for one stick, or a
+/// vendor and product such as VEN_KINGSTON&amp;PROD_IRONKEY for a model.
+/// </param>
+public record UsbAllowedDevice(string Id)
+{
+    public string Note { get; init; } = "";
 }
 
 public record TamperPolicy

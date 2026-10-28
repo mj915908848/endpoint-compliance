@@ -5,6 +5,7 @@ import {
   defaultBaseline,
   defaultSensitiveFiles,
   defaultTamper,
+  defaultUsb,
   describeChanges,
 } from "../src/components";
 import { hashUninstallPassword } from "../src/uninstallPassword";
@@ -50,6 +51,7 @@ const base: Policy = {
   sensitiveFiles: defaultSensitiveFiles,
   baseline: defaultBaseline,
   tamper: defaultTamper,
+  usb: defaultUsb,
   products: [
     {
       id: "cursor",

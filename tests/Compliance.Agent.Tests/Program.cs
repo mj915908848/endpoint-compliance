@@ -2396,6 +2396,112 @@ await Check(
     }
 );
 await Check(
+    "USB disks get the access the policy allows, allowed ones are left alone and only own changes are undone",
+    async () =>
+    {
+        var state = Path.Combine(Path.GetTempPath(), "compliance-usb-" + Guid.NewGuid() + ".json");
+        try
+        {
+            const string stick = @"USBSTOR\DISK&VEN_SANDISK&PROD_ULTRA&REV_1.00\4C530001&0";
+            const string ironkey = @"USBSTOR\DISK&VEN_KINGSTON&PROD_IRONKEY&REV_1.00\IK0042&0";
+            var usb = new FakeUsb();
+            usb.Plug(stick, "SanDisk Ultra USB Device", "4C530001");
+            var guard = new UsbGuard(usb, state);
+            var audit = PolicySeed.Create() with
+            {
+                Version = 3,
+                Usb = new()
+                {
+                    Storage = UsbStorage.Block,
+                    AllowedDevices = [new("PROD_IRONKEY") { Note = "公司加密盘" }],
+                },
+            };
+            var events = guard.Sweep(audit);
+            Assert(
+                events.Single() is { Type: UsbStorage.Connected } e
+                    && e.Detail
+                        == "SanDisk Ultra USB Device（30 GB，序列号 4C530001），可读写，策略为“禁止使用”，未启用强制执行"
+                    && e.Notice is null,
+                "audit mode reports the disk and what the policy would do: " + events.Single().Detail
+            );
+            Assert(!usb.Disks[stick].Disabled, "audit mode switches nothing");
+            Assert(guard.State(audit) is { State: "Ready", Verified: true }, "audit mode reports ready");
+            Assert(guard.Sweep(audit).Count == 0, "an attached disk is reported once");
+
+            var enforce = audit with { Mode = "Enforce", RequiredControls = ["usb"], TargetDeviceIds = ["d"] };
+            events = guard.Sweep(enforce);
+            Assert(
+                events.Single() is { Type: UsbStorage.Blocked, Notice: not null } && usb.Disks[stick].Disabled,
+                "turning enforcement on switches the attached disk off and says so"
+            );
+            usb.Plug(ironkey, "Kingston IronKey", "IK0042");
+            events = guard.Sweep(enforce);
+            Assert(
+                events.Single() is { Type: UsbStorage.Connected } k
+                    && k.Detail.EndsWith("，可读写，已放行（公司加密盘）"),
+                "the allowed stick stays usable: " + events.Single().Detail
+            );
+            Assert(guard.State(enforce).State == "Applied", "in effect");
+
+            // Removed and plugged in again: still switched off from before, still blocked, still an alert.
+            usb.Disks.Remove(stick);
+            events = guard.Sweep(enforce);
+            Assert(events.Single() is { Type: UsbStorage.Removed }, "removal is reported");
+            usb.Plug(stick, "SanDisk Ultra USB Device", "4C530001");
+            usb.Disks[stick] = usb.Disks[stick] with { Disabled = true };
+            Assert(
+                guard.Sweep(enforce).Single().Type == UsbStorage.Blocked,
+                "a disk plugged in again is blocked again"
+            );
+
+            // Read-only: the stick is switched back on and made read-only; a restarted client remembers what it did.
+            var readOnly = enforce with
+            {
+                Usb = enforce.Usb with { Storage = UsbStorage.ReadOnly },
+            };
+            guard = new UsbGuard(usb, state);
+            Assert(guard.Sweep(readOnly).Count == 0, "a restart does not report attached disks again");
+            Assert(usb.Disks[stick] is { Disabled: false, ReadOnly: true }, "switched on again and made read-only");
+            Assert(!usb.Disks[ironkey].ReadOnly, "the allowed stick stays writable");
+
+            // Someone else switched a disk off in Device Manager: the client leaves it so.
+            const string other = @"USBSTOR\DISK&VEN_WD&PROD_PASSPORT&REV_1.00\WX01&0";
+            usb.Plug(other, "WD My Passport", "WX01");
+            usb.Disks[other] = usb.Disks[other] with { Disabled = true };
+            var allow = audit with { Usb = new() };
+            guard.Sweep(allow);
+            Assert(usb.Disks[stick] is { Disabled: false, ReadOnly: false }, "allowing undoes read-only");
+            Assert(usb.Disks[other].Disabled, "a disk switched off by someone else stays off");
+            Assert(guard.State(allow).State == "Uncovered", "nothing to control when everything is allowed");
+
+            // A disk in use cannot be switched off: reported, and tried again on the next check.
+            usb.InUse = stick;
+            guard.Sweep(enforce);
+            Assert(guard.State(enforce).State == "Error", "a refused switch is reported");
+            usb.InUse = null;
+            Assert(guard.Sweep(enforce).Any(x => x.Type == UsbStorage.Blocked), "blocked on the next check");
+            Assert(new UsbGuard(usb, state).RemoveOwn() is null, "uninstalling undoes its own changes");
+            Assert(!usb.Disks[stick].Disabled && usb.Disks[other].Disabled, "only its own");
+
+            Assert(
+                new UsbGuard(new FakeUsb { CanControl = false }, state).State(enforce).State == "Uncovered",
+                "without SYSTEM rights the measure is not available"
+            );
+            Assert(
+                WindowsUsbStorage.Serial(stick, @"USB\VID_0781&PID_5581\4C530001") == "4C530001"
+                    && WindowsUsbStorage.Serial(@"USBSTOR\DISK&VEN_X\7&2A1B3C&0&01&0", @"USB\VID_1&PID_2\6&1F&0&3")
+                        == "",
+                "serial numbers Windows made up are dropped"
+            );
+        }
+        finally
+        {
+            File.Delete(state);
+        }
+        await Task.CompletedTask;
+    }
+);
+await Check(
     "an upgrade installs only a package the server's key signed and the download matches",
     async () =>
     {
@@ -3369,4 +3475,27 @@ sealed class FakeTamperSystem : ITamperSystem
         Repair();
         TrayDisabled = false;
     }
+}
+
+sealed class FakeUsb : IUsbStorage
+{
+    public Dictionary<string, UsbDisk> Disks { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool CanControl { get; set; } = true;
+    public string? InUse { get; set; }
+
+    public void Plug(string id, string name, string serial) => Disks[id] = new(id, name, serial, 32_000_000_000);
+
+    public IReadOnlyList<UsbDisk> Attached() => [.. Disks.Values];
+
+    public void Disable(string instanceId)
+    {
+        if (instanceId == InUse)
+            throw new InvalidOperationException("设备正在使用中");
+        Disks[instanceId] = Disks[instanceId] with { Disabled = true, ReadOnly = false };
+    }
+
+    public void Enable(string instanceId) => Disks[instanceId] = Disks[instanceId] with { Disabled = false };
+
+    public void SetReadOnly(string instanceId, bool readOnly) =>
+        Disks[instanceId] = Disks[instanceId] with { ReadOnly = readOnly };
 }

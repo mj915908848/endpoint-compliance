@@ -73,6 +73,7 @@ const pushTypes = [
   "Tamper",
   "Health",
   "BlockedAttempt",
+  "UsbBlocked",
   "Offline",
 ];
 

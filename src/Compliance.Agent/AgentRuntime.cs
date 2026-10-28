@@ -383,6 +383,7 @@ public sealed class AgentRuntime(
     private int reportedSensitiveRevision;
     private ProcessEnforcer? processes;
     private BrowserBlocklist? browsers;
+    private UsbGuard? usb;
 
     // The asset inventory last accepted by the server, without its collection time, and when.
     private string? sentInventory;
@@ -557,7 +558,14 @@ public sealed class AgentRuntime(
                 new WindowsBlocklistStore(),
                 Path.Combine(config.DataDirectory, "browser-blocklist.json")
             );
+            usb = new UsbGuard(new WindowsUsbStorage(), Path.Combine(config.DataDirectory, "usb-control.json"));
         }
+        else if (simulated && fixturePath is not null)
+            // A demo plugs disks in and out by editing usb.json; nothing is switched, and checks report them.
+            usb = new UsbGuard(
+                new FixtureUsbStorage(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(fixturePath))!, "usb.json")),
+                Path.Combine(config.DataDirectory, "usb-control.json")
+            );
         if (once)
         {
             waitForSensitiveFiles = true;
@@ -906,6 +914,7 @@ public sealed class AgentRuntime(
             await Task.Delay(TimeSpan.FromSeconds(2), ct);
             if (policy is not { } current || processes is null)
                 continue;
+            await UsbAsync(current, queue, notices, ct);
             List<BlockedProcess> blocked;
             try
             {
@@ -945,6 +954,54 @@ public sealed class AgentRuntime(
                 {
                     Console.Error.WriteLine($"拦截记录入队失败：{e.GetType().Name}: {e.Message}");
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gives USB disks the access the policy allows and reports them coming and going; blocked disks are alerts, and
+    /// the user is told when a disk is switched off or made read-only.
+    /// </summary>
+    private async Task UsbAsync(
+        PolicyDocument current,
+        EventOutbox queue,
+        NotificationStore notices,
+        CancellationToken ct
+    )
+    {
+        if (usb is null)
+            return;
+        List<UsbEvent> events;
+        try
+        {
+            events = usb.Sweep(current);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            Console.Error.WriteLine($"检查移动存储设备时出错：{e.GetType().Name}: {e.Message}");
+            return;
+        }
+        foreach (var e in events)
+        {
+            Console.WriteLine($"移动存储{UsbStorage.EventLabel(e.Type)}：{e.Detail}");
+            // As with ended programs, failing to record it must not stop the next check.
+            if (e.Notice is not null)
+                try
+                {
+                    await notices.AddAsync(Guid.NewGuid().ToString("D"), null, e.Notice, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"移动存储提示写入失败：{ex.GetType().Name}: {ex.Message}");
+                }
+            var key = UsbStorage.KeyPrefix + e.InstanceId;
+            try
+            {
+                await TryEnqueueAsync(queue, notices, e.Type, key.Length > 256 ? key[..256] : key, null, e.Detail, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"移动存储记录入队失败：{ex.GetType().Name}: {ex.Message}");
             }
         }
     }
@@ -1250,9 +1307,11 @@ public sealed class AgentRuntime(
                 scan = scan with { Evidence = [.. scan.Evidence, .. found], Modules = [.. scan.Modules, .. results] };
             }
             browsers?.Apply(policy);
+            if (simulated)
+                await UsbAsync(policy, queue, notices, ct);
             ControlState[] controls =
-                processes is not null && browsers is not null
-                    ? [processes.State(policy), browsers.State(policy)]
+                processes is not null && browsers is not null && usb is not null
+                    ? [processes.State(policy), browsers.State(policy), usb.State(policy)]
                     : UnavailableControls.For(
                         policy,
                         simulated ? "模拟终端不执行防护措施" : "非 Windows 环境无法执行防护措施"

@@ -71,7 +71,24 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
                 await SnapshotAlerts(tx, d, e.Sequence);
             }
 
-            if (e.Type == "Shutdown")
+            if (UsbStorage.EventTypes.Contains(e.Type))
+            {
+                var key = safe.ObjectKey;
+                await tx.InsertUsbEvent(
+                    deviceId + ":" + e.EventId,
+                    deviceId,
+                    e.SourceTime,
+                    e.Type,
+                    key.StartsWith(UsbStorage.KeyPrefix, StringComparison.Ordinal)
+                        ? key[UsbStorage.KeyPrefix.Length..]
+                        : key,
+                    safe.Detail ?? ""
+                );
+            }
+
+            // Disks plugged in and removed are records, not alerts; a blocked one is both.
+            if (e.Type is UsbStorage.Connected or UsbStorage.Removed) { }
+            else if (e.Type == "Shutdown")
             {
                 // Not an alert: the device says it is off, so going silent is expected. Server time, as heartbeats.
                 await tx.SetShutdown(deviceId, Now);
@@ -134,6 +151,9 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
                     or "BlockedAttempt"
                     or "Tamper"
                     or "Shutdown"
+                    or UsbStorage.Connected
+                    or UsbStorage.Removed
+                    or UsbStorage.Blocked
                 )
         )
             throw new ApiError(400, "Invalid event");

@@ -1039,6 +1039,29 @@ Test(
     }
 );
 Test(
+    "USB storage settings are checked, allowed devices match part of the instance id, and older policies allow all",
+    () =>
+    {
+        const string ironkey = @"USBSTOR\DISK&VEN_KINGSTON&PROD_IRONKEY&REV_1.00\IK0042&0";
+        var policy = new UsbPolicy
+        {
+            Storage = UsbStorage.Block,
+            AllowedDevices = [new("prod_ironkey") { Note = "公司加密盘" }],
+        };
+        UsbStorage.Validate(policy);
+        Yes(UsbStorage.Access(policy, ironkey) == UsbStorage.Allow);
+        Yes(UsbStorage.Access(policy, @"USBSTOR\DISK&VEN_SANDISK\1&0") == UsbStorage.Block);
+        Throws(() => UsbStorage.Validate(policy with { Storage = "block" }));
+        Throws(() => UsbStorage.Validate(policy with { AllowedDevices = [new("IK0")] }));
+        Throws(() => UsbStorage.Validate(policy with { AllowedDevices = [new(" IK0042")] }));
+        Throws(() => UsbStorage.Validate(policy with { AllowedDevices = [new("IK0042"), new("ik0042")] }));
+        Throws(() => UsbStorage.Validate(null));
+        var old = Wire.Read<PolicyDocument>("{\"policyId\":\"Default\"}");
+        Yes(old.Usb is { Storage: UsbStorage.Allow, AllowedDevices.Length: 0 });
+        Yes(Controls.Normalize(["usb", "process"]).SequenceEqual(["process", "usb"]));
+    }
+);
+Test(
     "asset inventories are normalized and their changes say what was installed, removed, updated or replaced",
     () =>
     {

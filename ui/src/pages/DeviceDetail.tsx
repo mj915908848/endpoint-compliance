@@ -14,6 +14,7 @@ import {
   CoverageGuide,
   CoverageTable,
   InventoryView,
+  UsbEventTable,
   AgentVersion,
   ago,
   DeviceGuide,
@@ -37,6 +38,7 @@ import type {
   Report,
   Session,
   VerdictChange,
+  UsbEventRow,
 } from "../types";
 
 export function DeviceDetailPage({
@@ -58,6 +60,9 @@ export function DeviceDetailPage({
   // Read when its tab is first opened: a device can list thousands of programs.
   const inventory = useResource<DeviceInventory>(
     tab === "assets" ? `/api/devices/${encoded}/inventory` : null,
+  );
+  const usbEvents = useResource<UsbEventRow[]>(
+    tab === "usb" ? `/api/usb-events?days=365&deviceId=${encoded}` : null,
   );
   const [busy, setBusy] = useState(false);
   const d = detail.data?.device;
@@ -328,6 +333,15 @@ export function DeviceDetailPage({
                     children: (
                       <Fresh error={inventory.error} loading={inventory.loading}>
                         {inventory.data && <InventoryView data={inventory.data} />}
+                      </Fresh>
+                    ),
+                  },
+                  {
+                    key: "usb",
+                    label: "移动存储",
+                    children: (
+                      <Fresh error={usbEvents.error} loading={usbEvents.loading}>
+                        {usbEvents.data && <UsbEventTable rows={usbEvents.data} />}
                       </Fresh>
                     ),
                   },

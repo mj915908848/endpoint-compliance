@@ -16,8 +16,16 @@ import {
   systemText,
   time,
   UpdatedAt,
+  usbEventLabel,
+  UsbEventTable,
 } from "../components";
-import type { AssetRow, InventoryChangeRow, SoftwareInstall, SoftwareSummary } from "../types";
+import type {
+  AssetRow,
+  InventoryChangeRow,
+  SoftwareInstall,
+  SoftwareSummary,
+  UsbEventRow,
+} from "../types";
 
 const stamp = () => {
   const d = new Date();
@@ -60,7 +68,7 @@ export function AssetsPage({ openDevice }: { openDevice: (id: string) => void })
         extra={<UpdatedAt at={assets.updatedAt} refreshing={assets.refreshing} />}
         action={
           <Space>
-            {tab !== "changes" && (
+            {(tab === "hardware" || tab === "software") && (
               <Button icon={<DownloadOutlined />} loading={exporting} onClick={exportCsv}>
                 {tab === "software" ? "导出软件清单" : "导出硬件资产"}
               </Button>
@@ -88,6 +96,7 @@ export function AssetsPage({ openDevice }: { openDevice: (id: string) => void })
             },
             { key: "software", label: "软件", children: <SoftwareTab openDevice={openDevice} /> },
             { key: "changes", label: "变更记录", children: <ChangesTab openDevice={openDevice} /> },
+            { key: "usb", label: "移动存储记录", children: <UsbTab openDevice={openDevice} /> },
           ]}
         />
       </div>
@@ -407,6 +416,67 @@ function ChangesTab({ openDevice }: { openDevice: (id: string) => void }) {
             { title: "详情", dataIndex: "detail" },
           ]}
         />
+      </Fresh>
+    </Space>
+  );
+}
+
+/** U 盘和移动硬盘 plugged into devices in use, with the ones the policy blocked. */
+function UsbTab({ openDevice }: { openDevice: (id: string) => void }) {
+  const { message } = App.useApp();
+  const [days, setDays] = useState(30);
+  const [type, setType] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const events = useResource<UsbEventRow[]>(`/api/usb-events?days=${days}`);
+  const rows = (events.lastData ?? []).filter((e) => !type || e.type === type);
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      await downloadFile(
+        `/api/usb-events/export.csv?days=${days}`,
+        `移动存储记录-${stamp()}.csv`,
+        "移动存储记录",
+      );
+    } catch (e) {
+      void message.error(errorText(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+  return (
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Space wrap>
+        <Select
+          aria-label="时间范围"
+          value={days}
+          onChange={setDays}
+          style={{ width: 130 }}
+          options={[7, 30, 90, 365].map((d) => ({ value: d, label: `最近 ${d} 天` }))}
+        />
+        <Select
+          aria-label="事件类型"
+          allowClear
+          placeholder="全部事件"
+          value={type}
+          onChange={(v) => setType(v ?? null)}
+          style={{ width: 130 }}
+          options={["UsbConnected", "UsbRemoved", "UsbBlocked"].map((t) => ({
+            value: t,
+            label: usbEventLabel(t),
+          }))}
+        />
+        <Button icon={<DownloadOutlined />} loading={exporting} onClick={exportCsv}>
+          导出记录
+        </Button>
+      </Space>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        要放行某个设备，复制它的设备实例 ID 中的序列号，加到策略“移动存储”的放行设备中。
+      </Typography.Text>
+      <Fresh
+        error={events.error && !events.lastData ? events.error : null}
+        loading={events.loading}
+      >
+        <UsbEventTable rows={rows} openDevice={openDevice} />
       </Fresh>
     </Space>
   );

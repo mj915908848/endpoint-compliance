@@ -62,6 +62,7 @@ public static class Labels
         {
             "process" => "发现即结束进程",
             "browser" => "浏览器网址拦截",
+            "usb" => "移动存储管控",
             "application" => "应用程序拦截（旧）",
             "edge" => "Edge 浏览器策略（旧）",
             "network" => "网络访问拦截（旧）",
@@ -112,6 +113,7 @@ public static class Labels
             "SensitiveFile" => "敏感文件",
             "Baseline" => "安全基线",
             "Tamper" => "防篡改",
+            "UsbBlocked" => "移动存储拦截",
             _ => type,
         };
 }
