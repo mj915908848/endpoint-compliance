@@ -51,6 +51,7 @@ public static class Migrations
         new(19, "accounts and two-step sign-in", Accounts),
         new(20, "log forwarding", LogForwarding),
         new(21, "asset inventory", AssetInventory),
+        new(22, "usb storage events", UsbEvents),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -270,6 +271,23 @@ public static class Migrations
         );
         await tx.Execute("CREATE INDEX IF NOT EXISTS inventory_changes_device ON inventory_changes(device_id, at)");
         await tx.Execute("CREATE INDEX IF NOT EXISTS inventory_changes_at ON inventory_changes(at)");
+    }
+
+    static async Task UsbEvents(Transaction tx)
+    {
+        await tx.Execute(
+            """
+            CREATE TABLE IF NOT EXISTS usb_events(
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                at BIGINT NOT NULL,
+                type TEXT NOT NULL,
+                instance_id TEXT NOT NULL,
+                detail TEXT NOT NULL)
+            """
+        );
+        await tx.Execute("CREATE INDEX IF NOT EXISTS usb_events_device ON usb_events(device_id, at)");
+        await tx.Execute("CREATE INDEX IF NOT EXISTS usb_events_at ON usb_events(at)");
     }
 
     static async Task DeviceGroups(Transaction tx)

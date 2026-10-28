@@ -5,7 +5,8 @@ public static class Controls
 {
     public const string Process = "process";
     public const string Browser = "browser";
-    public static readonly string[] All = [Process, Browser];
+    public const string Usb = "usb";
+    public static readonly string[] All = [Process, Browser, Usb];
 
     /// <summary>Earlier policies named measures that were never implemented; they map onto the two real ones.</summary>
     public static string[] Normalize(IEnumerable<string>? ids) =>

@@ -35,6 +35,7 @@ public sealed record NotificationSettings
         "Tamper",
         "Health",
         "BlockedAttempt",
+        "UsbBlocked",
         "Offline",
     ];
 

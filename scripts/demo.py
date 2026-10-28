@@ -107,11 +107,17 @@ try:
                          for n, v, p, s in programs],
         }
 
-    def endpoint(name, host, evidence, inventory):
+    def usb(vendor, product, serial, name, size_gb):
+        return {"instanceId": f"USBSTOR\\DISK&VEN_{vendor}&PROD_{product}&REV_1.00\\{serial}&0", "name": name,
+                "serial": serial, "sizeBytes": size_gb * 1000 ** 3}
+
+    def endpoint(name, host, evidence, inventory, disks=()):
         folder = data / "agents" / name
         folder.mkdir(parents=True, exist_ok=True)
         now = datetime.now(timezone.utc).isoformat()
         (folder / "inventory.json").write_text(json.dumps(inventory, ensure_ascii=False))
+        # USB disks plugged in; edit the file and run the agent again to plug and remove them.
+        (folder / "usb.json").write_text(json.dumps(list(disks), ensure_ascii=False))
         modules = ["installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli"]
         (folder / "snapshot.json").write_text(json.dumps({
             "deviceId": "fixture", "hostName": host, "platform": "Windows", "simulated": True,
@@ -141,7 +147,8 @@ try:
                      ("微信", "3.9.12.17", "腾讯科技(深圳)有限公司", "zhangsan"),
                      ("7-Zip 24.08 (x64)", "24.08", "Igor Pavlov", "machine"),
                      ("Microsoft 365 企业应用版 - zh-cn", "16.0.18129.20158", "Microsoft Corporation", "machine"),
-                 ]))
+                 ]), [usb("SANDISK", "ULTRA", "4C530001DEMO", "SanDisk Ultra USB Device", 32),
+                      usb("KINGSTON", "IRONKEY", "IK0042DEMO", "Kingston IronKey USB Device", 16)])
     endpoint("clean", "DEMO-PC-02", [], inventory(
         "Dell Inc.", "OptiPlex 7010", "8XKDEMO2", "13th Gen Intel(R) Core(TM) i5-13500", 14, 20, 16,
         "KIOXIA KBG50ZNV512G", 512, [
@@ -149,7 +156,7 @@ try:
             ("钉钉", "7.6.15", "钉钉(中国)信息技术有限公司", "lisi"),
             ("WPS Office", "12.1.0.18608", "Kingsoft Corp.", "machine"),
             ("7-Zip 24.08 (x64)", "24.08", "Igor Pavlov", "machine"),
-        ]))
+        ]), [usb("WD", "MY_PASSPORT_25E2", "575836314142DEMO", "WD My Passport 25E2 USB Device", 2000)])
 
     print(f"""
 Demo running at {base}

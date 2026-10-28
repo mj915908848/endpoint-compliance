@@ -182,3 +182,16 @@ public record InventoryChangeRow(
     string Subject,
     string Detail
 );
+
+/// <param name="Type">One of <see cref="UsbStorage.EventTypes"/>.</param>
+/// <param name="InstanceId">The disk's Windows instance id, which the policy's allowed devices match.</param>
+public record UsbEventRow(
+    string DeviceId,
+    string HostName,
+    string Note,
+    string Group,
+    DateTimeOffset At,
+    string Type,
+    string InstanceId,
+    string Detail
+);

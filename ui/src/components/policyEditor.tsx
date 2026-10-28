@@ -28,9 +28,17 @@ import type {
   SensitiveFilePolicy,
   SensitiveFileRule,
   TamperPolicy,
+  UsbPolicy,
 } from "../types";
 import { canHashUninstallPassword, hashUninstallPassword } from "../uninstallPassword";
-import { baselineChecks, baselineName, categoryLabel, controlLabel, moduleLabel } from "./labels";
+import {
+  baselineChecks,
+  baselineName,
+  categoryLabel,
+  controlLabel,
+  moduleLabel,
+  usbStorageLabel,
+} from "./labels";
 import { deviceName, Empty, usePageScroll } from "./common";
 import { groupsOf } from "./groups";
 import { Panel } from "./layout";
@@ -50,11 +58,14 @@ export const modules = [
   "cli",
   "programs",
 ];
-const controls = ["process", "browser"];
+const controls = ["process", "browser", "usb"];
 /** Earlier policies named measures that were never implemented; show them as the ones that replaced them. */
 const currentControls = (ids: string[]) =>
   controls.filter((c) =>
-    ids.some((id) => id === c || (c === "process" ? id === "application" : id === "edge")),
+    ids.some(
+      (id) =>
+        id === c || (c === "process" && id === "application") || (c === "browser" && id === "edge"),
+    ),
   );
 
 /** Matches the server default; policies published before sensitive file scanning omit the section. */
@@ -80,6 +91,9 @@ const limitOf = (r: BaselineRule) =>
 /** Policies published before uninstall passwords omit the section. */
 export const defaultTamper: TamperPolicy = { uninstallPassword: "" };
 const tamperOf = (p: Policy) => p.tamper ?? defaultTamper;
+/** Policies published before USB storage control omit the section. */
+export const defaultUsb: UsbPolicy = { storage: "Allow", allowedDevices: [] };
+const usbOf = (p: Policy) => p.usb ?? defaultUsb;
 /** "最近 30 天内成功安装过系统更新" */
 export const baselineRequirement = (r: BaselineRule) =>
   (baselineChecks.find((c) => c.id === r.id)?.requirement ?? r.id).replace(
@@ -195,6 +209,12 @@ export function describeChanges(before: Policy, after: Policy): string[] {
     changes.push(
       `卸载密码：${!pa ? "取消，卸载客户端不再需要密码" : pb ? "更改" : "设置，卸载客户端需要密码"}`,
     );
+  const ub = usbOf(before),
+    ua = usbOf(after);
+  if (ub.storage !== ua.storage)
+    changes.push(`U 盘和移动硬盘：${usbStorageLabel(ub.storage)} → ${usbStorageLabel(ua.storage)}`);
+  const deviceIds = (x: UsbPolicy) => x.allowedDevices.map((d) => d.id);
+  diff("移动存储放行设备", deviceIds(ub), deviceIds(ua), same);
   if (
     sb.scanUserProfiles !== sa.scanUserProfiles ||
     sb.scanOtherFixedDrives !== sa.scanOtherFixedDrives ||
@@ -502,6 +522,13 @@ export function PolicyEditor({
         onChange={(tamper) => set({ tamper })}
       />
 
+      <UsbPanel
+        value={usbOf(value)}
+        readOnly={readOnly}
+        enforced={value.mode === "Enforce" && value.requiredControls.includes("usb")}
+        onChange={(usb) => set({ usb })}
+      />
+
       <Panel title="检查要求">
         <Field label="检查频率">
           <Space wrap>
@@ -563,13 +590,151 @@ export function PolicyEditor({
               <Hint>
                 仅在强制模式下执行：“发现即结束进程”每 2
                 秒结束一次已核实的禁用程序并通知用户；“浏览器网址拦截”把禁止访问的域名写入 Edge 和
-                Chrome 的拦截策略。发布前会核对试点终端已报告“可启用”，生效后报告“已生效”。
+                Chrome 的拦截策略；“移动存储管控”按“移动存储”中的设置停用 U
+                盘或设为只读。发布前会核对试点终端已报告“可启用”，生效后报告“已生效”。
               </Hint>
             </Field>
           </Col>
         </Row>
       </Panel>
     </Space>
+  );
+}
+
+function UsbPanel({
+  value,
+  onChange,
+  readOnly,
+  enforced,
+}: {
+  value: UsbPolicy;
+  onChange: (v: UsbPolicy) => void;
+  readOnly: boolean;
+  /** Whether this policy enforces the setting: enforce mode with the measure chosen. */
+  enforced: boolean;
+}) {
+  const [id, setId] = useState("");
+  const [note, setNote] = useState("");
+  const trimmed = id.trim();
+  const problem =
+    trimmed.length < 4
+      ? "设备标识至少 4 个字符"
+      : value.allowedDevices.some((d) => d.id.toLowerCase() === trimmed.toLowerCase())
+        ? "已放行该设备"
+        : null;
+  const add = () => {
+    onChange({
+      ...value,
+      allowedDevices: [...value.allowedDevices, { id: trimmed, note: note.trim() }],
+    });
+    setId("");
+    setNote("");
+  };
+  return (
+    <Panel title="移动存储">
+      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Field label="U 盘和移动硬盘">
+          <Radio.Group
+            aria-label="U 盘和移动硬盘"
+            value={value.storage}
+            disabled={readOnly}
+            onChange={(e) => onChange({ ...value, storage: e.target.value as string })}
+            options={[
+              { value: "Allow", label: "允许使用" },
+              { value: "ReadOnly", label: "只读：可以打开和复制出文件，不能写入" },
+              { value: "Block", label: "禁止使用：插入后停用该设备" },
+            ]}
+          />
+          {value.storage !== "Allow" && !enforced && (
+            <Alert
+              style={{ marginTop: 8 }}
+              type="info"
+              showIcon
+              title="当前只记录不执行：在强制模式下勾选防护措施“移动存储管控”后才会停用设备或设为只读。"
+            />
+          )}
+          <Hint>
+            无论如何设置，客户端都会上报 U 盘和移动硬盘的插入和拔出，在“资产清单 →
+            移动存储记录”中查看；被停用的设备会产生“移动存储拦截”告警，并提示电脑前的用户。插入后约
+            2 秒内生效。
+          </Hint>
+        </Field>
+        <Field label="放行的设备">
+          {value.allowedDevices.length > 0 && (
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="id"
+              dataSource={value.allowedDevices}
+              style={{ marginBottom: 8 }}
+              columns={[
+                {
+                  title: "设备标识",
+                  dataIndex: "id",
+                  render: (v: string) => <Typography.Text code>{v}</Typography.Text>,
+                },
+                { title: "备注", dataIndex: "note" },
+                ...(readOnly
+                  ? []
+                  : [
+                      {
+                        title: "",
+                        key: "remove",
+                        width: 64,
+                        render: (_: unknown, d: { id: string }) => (
+                          <Button
+                            type="link"
+                            size="small"
+                            danger
+                            onClick={() =>
+                              onChange({
+                                ...value,
+                                allowedDevices: value.allowedDevices.filter((x) => x.id !== d.id),
+                              })
+                            }
+                          >
+                            移除
+                          </Button>
+                        ),
+                      },
+                    ]),
+              ]}
+            />
+          )}
+          {!readOnly && (
+            <Space.Compact style={{ width: "100%" }}>
+              <Input
+                aria-label="放行设备标识"
+                placeholder="序列号或型号，例如 4C530001 或 PROD_IRONKEY"
+                value={id}
+                maxLength={200}
+                onChange={(e) => setId(e.target.value)}
+              />
+              <Input
+                aria-label="放行设备备注"
+                placeholder="备注，例如 公司加密 U 盘"
+                value={note}
+                maxLength={200}
+                onChange={(e) => setNote(e.target.value)}
+              />
+              <Button icon={<PlusOutlined />} disabled={!!problem} onClick={add}>
+                放行
+              </Button>
+            </Space.Compact>
+          )}
+          {!readOnly && trimmed && problem && (
+            <Typography.Text type="danger" style={{ fontSize: 12 }}>
+              {problem}
+            </Typography.Text>
+          )}
+          <Hint>
+            放行的设备不受上面的限制。填写设备实例 ID
+            中的一段（不区分大小写）：序列号放行一个设备，“PROD_型号”放行同一型号的所有设备。设备实例
+            ID 可以从移动存储记录中复制。
+          </Hint>
+        </Field>
+      </Space>
+    </Panel>
   );
 }
 

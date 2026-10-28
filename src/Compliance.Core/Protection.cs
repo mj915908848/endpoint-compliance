@@ -124,6 +124,7 @@ public static class PolicyCrypto
         SensitiveFiles.Validate(doc.SensitiveFiles);
         Baseline.Validate(doc.Baseline);
         UninstallPassword.Validate(doc.Tamper);
+        UsbStorage.Validate(doc.Usb);
         DomainRules.CompileEdge(doc.BlockDomains);
         foreach (var rule in doc.ApplicationRules)
             if (

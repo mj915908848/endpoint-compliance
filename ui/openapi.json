@@ -1090,6 +1090,74 @@
         }
       }
     },
+    "/api/usb-events": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "deviceId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UsbEventRow"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/usb-events/export.csv": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "deviceId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/alerts": {
       "get": {
         "tags": [
@@ -4154,7 +4222,8 @@
           "approvedNetworkAdapters",
           "sensitiveFiles",
           "baseline",
-          "tamper"
+          "tamper",
+          "usb"
         ],
         "type": "object",
         "properties": {
@@ -4262,6 +4331,9 @@
           },
           "tamper": {
             "$ref": "#/components/schemas/TamperPolicy"
+          },
+          "usb": {
+            "$ref": "#/components/schemas/UsbPolicy"
           }
         }
       },
@@ -4972,6 +5044,79 @@
           "queued": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "UsbAllowedDevice": {
+        "required": [
+          "id",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "UsbEventRow": {
+        "required": [
+          "deviceId",
+          "hostName",
+          "note",
+          "group",
+          "at",
+          "type",
+          "instanceId",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "UsbPolicy": {
+        "required": [
+          "storage",
+          "allowedDevices"
+        ],
+        "type": "object",
+        "properties": {
+          "storage": {
+            "type": "string"
+          },
+          "allowedDevices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsbAllowedDevice"
+            }
           }
         }
       },

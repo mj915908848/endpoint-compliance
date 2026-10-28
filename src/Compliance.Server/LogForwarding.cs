@@ -159,7 +159,7 @@ public sealed class LogForwarder(ComplianceService service, ILogger<LogForwarder
             "Tamper" => 8,
             "Violation" => 7,
             "SensitiveFile" => 6,
-            "Baseline" or "BlockedAttempt" => 5,
+            "Baseline" or "BlockedAttempt" or "UsbBlocked" => 5,
             "Health" => 4,
             _ => 3,
         };

@@ -22,7 +22,7 @@ public sealed class Housekeeping(Store store, Settings settings, TimeProvider cl
     /// <summary>
     /// Removes what nothing reads any more, in short batches: snapshot events after a day (their rows only answer
     /// retries, which come within minutes), other events after <see cref="Settings.EventRetentionDays"/>, alerts
-    /// resolved for <see cref="Settings.AlertRetentionDays"/>, expired sessions (and replay nonces), commands expired for 30 days, asset inventory changes after a year, and audit records older than the period chosen in the settings
+    /// resolved for <see cref="Settings.AlertRetentionDays"/>, expired sessions (and replay nonces), commands expired for 30 days, asset inventory changes and USB storage records after a year, and audit records older than the period chosen in the settings
     /// page (kept forever by default; the removal itself is audited). Returns how many rows went.
     /// </summary>
     public async Task<int> Maintain(CancellationToken ct = default)
@@ -50,6 +50,7 @@ public sealed class Housekeeping(Store store, Settings settings, TimeProvider cl
         total += await Tx(tx => tx.PruneCommands(Now - ExpiredCommandRetention));
         await Repeat(tx => tx.PruneVerdictHistory(Now - VerdictService.VerdictHistoryRetention, PruneBatch));
         await Repeat(tx => tx.PruneInventoryChanges(Now - Endpoints.InventoryChangeRetention, PruneBatch));
+        await Repeat(tx => tx.PruneUsbEvents(Now - Endpoints.UsbEventRetention, PruneBatch));
         await ArchiveSilent(ct);
         var days = await Tx(AuditRetentionDays);
         if (days > 0)

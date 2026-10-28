@@ -341,6 +341,8 @@ public sealed partial class PolicyService(Settings settings, TimeProvider clock)
             throw new ApiError(409, "“发现即结束进程”需要至少一个填写了程序文件名的禁用产品");
         if (doc.RequiredControls.Contains(Controls.Browser) && doc.BlockDomains.Length == 0)
             throw new ApiError(409, "“浏览器网址拦截”需要至少一个禁止访问的域名");
+        if (doc.RequiredControls.Contains(Controls.Usb) && doc.Usb.Storage == UsbStorage.Allow)
+            throw new ApiError(409, "“移动存储管控”需要把 U 盘和移动硬盘设为只读或禁止使用");
         foreach (var id in doc.TargetDeviceIds)
         {
             var d = await tx.RequireDevice(id);
