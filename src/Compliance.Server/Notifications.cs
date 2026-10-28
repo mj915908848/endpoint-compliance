@@ -24,6 +24,14 @@ public sealed record NotificationSettings
     /// <summary>The management UI address put into messages, e.g. https://compliance.example.com.</summary>
     public string ConsoleUrl { get; init; } = "";
 
+    /// <summary>A summary report pushed every Monday for last week, or on the 1st for last month, at 09:00.</summary>
+    public string ReportSchedule { get; init; } = Off;
+
+    public const string Off = "Off";
+    public const string Weekly = "Weekly";
+    public const string Monthly = "Monthly";
+    public static readonly string[] ReportSchedules = [Off, Weekly, Monthly];
+
     public const string Key = "notifications";
 
     public static readonly string[] Channels = ["WeCom", "DingTalk", "Feishu"];
@@ -109,6 +117,74 @@ public sealed class AlertNotifier(ComplianceService service, IHttpClientFactory 
                 await tx.MarkNotified(send.Select(p => (p.Alert.Id, p.Activation)));
                 return true;
             });
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>The period last pushed as a report, so each is pushed once whichever server is running.</summary>
+    public const string ReportPushedKey = "report-pushed";
+
+    /// <summary>
+    /// The period whose report is due at <paramref name="now"/> (in the time zone <paramref name="offset"/>): last
+    /// week from Monday 09:00, or last month from the 1st 09:00, for one day; a report missed for longer is skipped.
+    /// </summary>
+    public static (DateOnly From, DateOnly To, string Title)? DueReport(
+        string schedule,
+        DateTimeOffset now,
+        TimeSpan offset
+    )
+    {
+        var local = now.ToOffset(offset);
+        var today = DateOnly.FromDateTime(local.DateTime);
+        DateOnly start;
+        (DateOnly, DateOnly, string) period;
+        switch (schedule)
+        {
+            case NotificationSettings.Weekly:
+                start = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+                period = (start.AddDays(-7), start.AddDays(-1), "上周合规周报");
+                break;
+            case NotificationSettings.Monthly:
+                start = new DateOnly(today.Year, today.Month, 1);
+                period = (start.AddMonths(-1), start.AddDays(-1), "上月合规月报");
+                break;
+            default:
+                return null;
+        }
+        var due = new DateTimeOffset(start.ToDateTime(new TimeOnly(9, 0)), offset);
+        return local >= due && local < due.AddDays(1) ? period : null;
+    }
+
+    /// <summary>Pushes the scheduled report when one is due and was not pushed yet; one attempt per period.</summary>
+    public async Task RunReports(CancellationToken ct = default)
+    {
+        var offset = TimeZoneInfo.Local.GetUtcOffset(service.Now);
+        await gate.WaitAsync(ct);
+        try
+        {
+            var due = await service.Tx(async tx =>
+            {
+                var settings = await Settings(tx);
+                if (!settings.Enabled || DueReport(settings.ReportSchedule, service.Now, offset) is not { } period)
+                    return null;
+                await tx.Lock(ReportPushedKey);
+                var key = $"{settings.ReportSchedule}:{period.From:yyyy-MM-dd}";
+                if (await tx.GetSetting(ReportPushedKey) == key)
+                    return null;
+                // Claimed before sending: another server, or a failed send, does not push the same period again.
+                await tx.PutSetting(ReportPushedKey, key);
+                var report = await Reports.Load(tx, service, period.From, period.To, offset);
+                return new { settings, Text = Reports.Summary(report, period.Title, settings.ConsoleUrl) };
+            });
+            if (due is null)
+                return;
+            var error = await Send(due.settings, due.Text, ct);
+            Last = new(service.Now, error == null, error ?? "", 0);
+            if (error != null)
+                logger.LogWarning("Pushing the scheduled report failed: {Error}", error);
         }
         finally
         {
@@ -250,6 +326,7 @@ public sealed class NotificationService(AlertNotifier notifier, ILogger<Notifica
             try
             {
                 await notifier.Run(stoppingToken);
+                await notifier.RunReports(stoppingToken);
             }
             catch (Exception e) when (!stoppingToken.IsCancellationRequested)
             {

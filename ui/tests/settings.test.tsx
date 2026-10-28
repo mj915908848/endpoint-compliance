@@ -24,6 +24,7 @@ const settings: AppSettings = {
     types: ["Violation", "SensitiveFile", "Health"],
     consoleUrl: "",
     version: "v1",
+    reportSchedule: "Off",
   },
   lastNotification: null,
   auditRetentionDays: 0,
@@ -79,6 +80,8 @@ describe("system settings", () => {
     );
     await userEvent.click(screen.getByLabelText("设备失联"));
     expect(screen.getByText(/员工下班关机/)).toBeTruthy();
+    await userEvent.click(screen.getByLabelText("定期报表"));
+    await userEvent.click(await screen.findByTitle("每周一 9:00 推送上周报表"));
     await userEvent.click(screen.getAllByRole("button", { name: "保存" })[0]);
     await waitFor(() =>
       expect(calls.find((c) => c.method === "PUT")?.body).toEqual({
@@ -88,6 +91,7 @@ describe("system settings", () => {
         secret: null,
         types: ["Violation", "SensitiveFile", "Health", "Offline"],
         consoleUrl: window.location.origin,
+        reportSchedule: "Weekly",
         version: "v1",
       }),
     );

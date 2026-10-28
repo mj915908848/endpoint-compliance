@@ -19,7 +19,9 @@ static partial class Endpoints
         string[]? Types,
         string? ConsoleUrl,
         // The version the form was filled from; null skips the check (older pages).
-        string? Version = null
+        string? Version = null,
+        // null keeps the saved schedule (older pages).
+        string? ReportSchedule = null
     );
 
     sealed record AuditRetentionRequest(int Days);
@@ -62,7 +64,8 @@ static partial class Endpoints
                             n.Secret.Length > 0,
                             n.Types,
                             n.ConsoleUrl,
-                            await NotificationsVersion(tx)
+                            await NotificationsVersion(tx),
+                            n.ReportSchedule
                         ),
                         notifier.Last,
                         await Housekeeping.AuditRetentionDays(tx),
@@ -107,8 +110,11 @@ static partial class Endpoints
                     var types = (r.Types ?? []).Distinct().ToArray();
                     if (types.Any(t => !NotificationSettings.AlertTypes.Contains(t)))
                         throw new ApiError(400, "告警类型无效");
-                    if (r.Enabled && types.Length == 0)
-                        throw new ApiError(400, "请至少选择一种要推送的告警");
+                    var schedule = r.ReportSchedule ?? saved.ReportSchedule;
+                    if (!NotificationSettings.ReportSchedules.Contains(schedule))
+                        throw new ApiError(400, "定期报表设置无效");
+                    if (r.Enabled && types.Length == 0 && schedule == NotificationSettings.Off)
+                        throw new ApiError(400, "请至少选择一种要推送的告警，或开启定期报表");
                     if (
                         console.Length > 0
                         && (
@@ -136,12 +142,21 @@ static partial class Endpoints
                             Secret = (r.Secret ?? current.Secret).Trim(),
                             Types = types,
                             ConsoleUrl = console,
+                            ReportSchedule = schedule,
                         };
                         await tx.PutSetting(NotificationSettings.Key, Wire.Serialize(next));
                         await tx.Audit(
                             u.Username,
                             "SetNotifications",
-                            r.Enabled ? $"开启（{channel}）" : "关闭",
+                            r.Enabled
+                                ? $"开启（{channel}）"
+                                    + schedule switch
+                                    {
+                                        NotificationSettings.Weekly => "，每周推送报表",
+                                        NotificationSettings.Monthly => "，每月推送报表",
+                                        _ => "",
+                                    }
+                                : "关闭",
                             s.Now
                         );
                         return new NotificationsSaved(await NotificationsVersion(tx));

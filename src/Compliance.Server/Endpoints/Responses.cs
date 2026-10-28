@@ -106,7 +106,8 @@ public record NotificationView(
     bool HasSecret,
     string[] Types,
     string ConsoleUrl,
-    string Version
+    string Version,
+    string ReportSchedule
 );
 
 /// <param name="Version">The saved settings' new <see cref="NotificationView.Version"/>.</param>

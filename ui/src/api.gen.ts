@@ -1683,6 +1683,82 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/reports/compliance": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          from?: string;
+          to?: string;
+          offset?: number;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PeriodReport"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/reports/compliance.md": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          from?: string;
+          to?: string;
+          offset?: number;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/alerts": {
     parameters: {
       query?: never;
@@ -3384,6 +3460,16 @@ export interface components {
       /** Format: date-time */
       lastHeartbeat: null | string;
     };
+    LingeringDevice: {
+      deviceId: string;
+      hostName: string;
+      note: string;
+      group: string;
+      /** Format: date-time */
+      since: string;
+      /** Format: int32 */
+      violationCount: number;
+    };
     LogForwardingRequest: {
       enabled: boolean;
       host: null | string;
@@ -3494,6 +3580,7 @@ export interface components {
       types: null | string[];
       consoleUrl: null | string;
       version?: null | string;
+      reportSchedule?: null | string;
     };
     NotificationResult: {
       /** Format: date-time */
@@ -3518,6 +3605,7 @@ export interface components {
       types: string[];
       consoleUrl: string;
       version: string;
+      reportSchedule: string;
     };
     OperatingSystemInfo: {
       name: string;
@@ -3538,6 +3626,21 @@ export interface components {
     PasswordRequest: {
       currentPassword: null | string;
       newPassword: null | string;
+    };
+    PeriodReport: {
+      /** Format: date */
+      from: string;
+      /** Format: date */
+      to: string;
+      /** Format: date-time */
+      generatedAt: string;
+      start: components["schemas"]["ReportCounts"];
+      end: components["schemas"]["ReportCounts"];
+      days: components["schemas"]["TrendDay"][];
+      groups: components["schemas"]["ReportGroup"][];
+      issues: components["schemas"]["ReportIssue"][];
+      alertTypes: components["schemas"]["ReportAlertType"][];
+      lingering: components["schemas"]["LingeringDevice"][];
     };
     PolicyDocument: {
       /** Format: int32 */
@@ -3616,6 +3719,42 @@ export interface components {
       adapterNames: string[];
       npmPackages: string[];
       pipPackages: string[];
+    };
+    ReportAlertType: {
+      type: string;
+      /** Format: int32 */
+      opened: number;
+      /** Format: int32 */
+      devices: number;
+    };
+    ReportCounts: {
+      /** Format: int32 */
+      devices: number;
+      /** Format: int32 */
+      pass: number;
+      /** Format: int32 */
+      fail: number;
+      /** Format: int32 */
+      unknown: number;
+    };
+    ReportGroup: {
+      group: string;
+      /** Format: int32 */
+      devices: number;
+      /** Format: int32 */
+      pass: number;
+      /** Format: int32 */
+      fail: number;
+      /** Format: int32 */
+      unknown: number;
+    };
+    ReportIssue: {
+      type: string;
+      subject: string;
+      /** Format: int32 */
+      devices: number;
+      /** Format: int32 */
+      alerts: number;
     };
     RequireTwoFactorRequest: {
       required: boolean;

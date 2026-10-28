@@ -19,6 +19,7 @@ import {
   FileProtectOutlined,
   InfoCircleOutlined,
   KeyOutlined,
+  LineChartOutlined,
   LockOutlined,
   SafetyCertificateOutlined,
   LogoutOutlined,
@@ -47,6 +48,7 @@ import { Devices } from "./pages/Devices";
 import { Overview } from "./pages/Overview";
 import { Policies } from "./pages/Policies";
 import { Registration } from "./pages/Registration";
+import { ReportsPage } from "./pages/Reports";
 import { SystemPage } from "./pages/System";
 import type { Session } from "./types";
 
@@ -56,6 +58,7 @@ const pages: { path: string; label: string; icon: ReactNode }[] = [
   { path: "/assets", label: "资产清单", icon: <DatabaseOutlined /> },
   { path: "/alerts", label: "告警中心", icon: <AlertOutlined /> },
   { path: "/exceptions", label: "例外审批", icon: <SafetyCertificateOutlined /> },
+  { path: "/reports", label: "合规报表", icon: <LineChartOutlined /> },
   { path: "/policies", label: "策略管理", icon: <FileProtectOutlined /> },
   { path: "/registration", label: "终端登记", icon: <KeyOutlined /> },
   { path: "/audit", label: "审计记录", icon: <AuditOutlined /> },
@@ -409,6 +412,10 @@ export function App() {
                       openDevice={(id) => navigate(devicePath(id))}
                     />
                   }
+                />
+                <Route
+                  path="/reports"
+                  element={<ReportsPage openDevice={(id) => navigate(devicePath(id))} />}
                 />
                 <Route path="/policies" element={<Policies session={session} />} />
                 <Route path="/registration" element={<Registration session={session} />} />

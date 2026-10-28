@@ -915,3 +915,45 @@ body {
   border-radius: 6px;
   background: #eef3fe;
 }
+
+.report-period {
+  margin-bottom: 16px;
+}
+
+/* Reports print as the page content alone; the browser's print dialog also saves them as PDF. */
+@media print {
+  .topbar,
+  .sidebar,
+  .no-print {
+    display: none !important;
+  }
+  body,
+  .app-shell,
+  .main,
+  .content {
+    background: #fff !important;
+  }
+  /* One block flow, so the report starts on the first page and spans the paper's width. */
+  .app-shell,
+  .below-top,
+  .main {
+    display: block !important;
+  }
+  /* Ant Design gives the column beside a sider zero width and lets flex grow it. */
+  .main {
+    width: auto !important;
+  }
+  .content {
+    padding: 0 !important;
+    max-width: none;
+  }
+  .report-body {
+    display: block !important;
+  }
+  .report-body > .ant-space-item + .ant-space-item {
+    margin-top: 16px;
+  }
+  .panel {
+    break-inside: avoid;
+  }
+}
