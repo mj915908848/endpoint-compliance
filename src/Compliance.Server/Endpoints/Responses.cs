@@ -195,3 +195,32 @@ public record UsbEventRow(
     string InstanceId,
     string Detail
 );
+
+/// <summary>An exception request from a device's user, or an exception an administrator created.</summary>
+/// <param name="Status">Pending, Approved, Rejected or Revoked; approved ones past <see cref="ExpiresAt"/> read Expired.</param>
+/// <param name="RequestedAt">Null for exceptions an administrator created.</param>
+/// <param name="ObjectKey">The request event's object key, which names its alert.</param>
+public record StoredException(
+    string Id,
+    string DeviceId,
+    string HostName,
+    string Note,
+    string Group,
+    string Kind,
+    string Target,
+    string Label,
+    string Reason,
+    int Days,
+    string RequestedBy,
+    DateTimeOffset? RequestedAt,
+    string Status,
+    string DecidedBy,
+    DateTimeOffset? DecidedAt,
+    DateTimeOffset? ExpiresAt,
+    string DecisionNote,
+    [property: System.Text.Json.Serialization.JsonIgnore] string ObjectKey
+);
+
+public record ExceptionDecision(int? Days, string? Note);
+
+public record NewException(string DeviceId, string Kind, string Target, string? Label, string Reason, int Days);

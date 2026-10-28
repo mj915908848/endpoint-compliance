@@ -52,6 +52,7 @@ public static class Migrations
         new(20, "log forwarding", LogForwarding),
         new(21, "asset inventory", AssetInventory),
         new(22, "usb storage events", UsbEvents),
+        new(23, "policy exceptions", PolicyExceptions),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -271,6 +272,34 @@ public static class Migrations
         );
         await tx.Execute("CREATE INDEX IF NOT EXISTS inventory_changes_device ON inventory_changes(device_id, at)");
         await tx.Execute("CREATE INDEX IF NOT EXISTS inventory_changes_at ON inventory_changes(at)");
+    }
+
+    static async Task PolicyExceptions(Transaction tx)
+    {
+        await tx.Execute(
+            """
+            CREATE TABLE IF NOT EXISTS policy_exceptions(
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                target TEXT NOT NULL,
+                label TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                days BIGINT NOT NULL,
+                requested_by TEXT NOT NULL,
+                requested_at BIGINT NULL,
+                status TEXT NOT NULL,
+                decided_by TEXT NOT NULL,
+                decided_at BIGINT NULL,
+                expires_at BIGINT NULL,
+                decision_note TEXT NOT NULL,
+                object_key TEXT NOT NULL)
+            """
+        );
+        await tx.Execute("CREATE INDEX IF NOT EXISTS policy_exceptions_device ON policy_exceptions(device_id)");
+        await tx.Execute(
+            "CREATE INDEX IF NOT EXISTS policy_exceptions_status ON policy_exceptions(status, expires_at)"
+        );
     }
 
     static async Task UsbEvents(Transaction tx)

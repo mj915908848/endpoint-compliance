@@ -125,6 +125,7 @@ public static class PolicyCrypto
         Baseline.Validate(doc.Baseline);
         UninstallPassword.Validate(doc.Tamper);
         UsbStorage.Validate(doc.Usb);
+        PolicyExceptions.Validate(doc.Exceptions);
         DomainRules.CompileEdge(doc.BlockDomains);
         foreach (var rule in doc.ApplicationRules)
             if (
@@ -354,6 +355,8 @@ public static class ReportRenderer
             b.AppendLine("- " + Cell(reason));
         if (report.Reasons.Length == 0)
             b.AppendLine("未发现确认违规。结论的完整性以“检查覆盖”一节为准。");
+        foreach (var note in report.ExceptionNotes)
+            b.AppendLine("- 例外：" + Cell(note));
         b.AppendLine("\n## 4. 软件、敏感文件与安全基线\n");
         Table(
             b,

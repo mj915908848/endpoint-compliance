@@ -1502,6 +1502,187 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/exceptions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["StoredException"][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["NewException"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["StoredException"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/exceptions/{id}/approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["ExceptionDecision"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["StoredException"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/exceptions/{id}/reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["ExceptionDecision"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["StoredException"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/exceptions/{id}/revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["ExceptionDecision"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["StoredException"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/alerts": {
     parameters: {
       query?: never;
@@ -2962,6 +3143,7 @@ export interface components {
       snapshot: components["schemas"]["ScanSnapshot"];
       sensitiveFileNotes: string[];
       baselineNotes: string[];
+      exceptionNotes: string[];
       policyName: string;
       /** Format: int64 */
       policyVersion: number;
@@ -3118,6 +3300,11 @@ export interface components {
       | "BlockedAttempt"
       | "SensitiveFile"
       | "Baseline";
+    ExceptionDecision: {
+      /** Format: int32 */
+      days: null | number;
+      note: null | string;
+    };
     HardwareInfo: {
       manufacturer: string;
       model: string;
@@ -3282,6 +3469,15 @@ export interface components {
       /** @default  */
       group: string;
     };
+    NewException: {
+      deviceId: string;
+      kind: string;
+      target: string;
+      label: null | string;
+      reason: string;
+      /** Format: int32 */
+      days: number;
+    };
     NewUserRequest: {
       username: null | string;
       password: null | string;
@@ -3378,6 +3574,18 @@ export interface components {
       baseline: components["schemas"]["BaselinePolicy"];
       tamper: components["schemas"]["TamperPolicy"];
       usb: components["schemas"]["UsbPolicy"];
+      exceptions: components["schemas"]["PolicyException"][];
+    };
+    PolicyException: {
+      id: string;
+      deviceId: string;
+      kind: string;
+      target: string;
+      /** Format: date-time */
+      expiresAt: string;
+      label: string;
+      /** Format: date-time */
+      grantedAt: string;
     };
     PolicyHistoryItem: {
       /** Format: int64 */
@@ -3511,6 +3719,29 @@ export interface components {
       version: string;
       /** Format: int32 */
       devices: number;
+    };
+    StoredException: {
+      id: string;
+      deviceId: string;
+      hostName: string;
+      note: string;
+      group: string;
+      kind: string;
+      target: string;
+      label: string;
+      reason: string;
+      /** Format: int32 */
+      days: number;
+      requestedBy: string;
+      /** Format: date-time */
+      requestedAt: null | string;
+      status: string;
+      decidedBy: string;
+      /** Format: date-time */
+      decidedAt: null | string;
+      /** Format: date-time */
+      expiresAt: null | string;
+      decisionNote: string;
     };
     TamperPolicy: {
       uninstallPassword: string;

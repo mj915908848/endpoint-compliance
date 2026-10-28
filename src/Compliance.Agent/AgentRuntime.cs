@@ -537,7 +537,9 @@ public sealed class AgentRuntime(
             DataAclRepaired = false;
         }
         var pipeTask =
-            OperatingSystem.IsWindows() && !once ? new NotificationPipe(notices).RunAsync(ct) : Task.CompletedTask;
+            OperatingSystem.IsWindows() && !once
+                ? new NotificationPipe(notices, ExceptionDesk(queue, notices)).RunAsync(ct)
+                : Task.CompletedTask;
         await LoadCachedPolicy();
         // One copy of each volume's file records serves the sensitive file scan and the program file scan.
         volumes = OperatingSystem.IsWindows() && !simulated ? new VolumeCatalog(NtfsVolume.TryOpen) : null;
@@ -599,7 +601,7 @@ public sealed class AgentRuntime(
             if (pipeTask.IsFaulted && OperatingSystem.IsWindows())
             {
                 await ReportTaskFailureAsync(queue, notices, failures, "notification-pipe", pipeTask.Exception!, ct);
-                pipeTask = new NotificationPipe(notices).RunAsync(ct);
+                pipeTask = new NotificationPipe(notices, ExceptionDesk(queue, notices)).RunAsync(ct);
             }
             if (enforceTask.IsFaulted)
             {
@@ -918,7 +920,10 @@ public sealed class AgentRuntime(
             List<BlockedProcess> blocked;
             try
             {
-                blocked = processes.Sweep(current, DateTimeOffset.UtcNow);
+                blocked = processes.Sweep(
+                    PolicyExceptions.ForEnforcement(current, config.DeviceId!, DateTimeOffset.UtcNow),
+                    DateTimeOffset.UtcNow
+                );
                 foreach (var reason in processes.Skipped)
                     Console.WriteLine("发现同名程序但未确认：" + reason);
                 processes.Skipped.Clear();
@@ -974,7 +979,7 @@ public sealed class AgentRuntime(
         List<UsbEvent> events;
         try
         {
-            events = usb.Sweep(current);
+            events = usb.Sweep(PolicyExceptions.ForEnforcement(current, config.DeviceId!, DateTimeOffset.UtcNow));
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
@@ -1003,6 +1008,117 @@ public sealed class AgentRuntime(
             {
                 Console.Error.WriteLine($"移动存储记录入队失败：{ex.GetType().Name}: {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>Tells the users of this device about exceptions approved for it in the last day, once each.</summary>
+    private async Task ApprovedExceptionsAsync(PolicyDocument current, NotificationStore notices, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (
+            var e in PolicyExceptions.Active(current, config.DeviceId!, now).Where(e => e.GrantedAt > now.AddDays(-1))
+        )
+            try
+            {
+                await notices.AddAsync(
+                    "exception:" + e.Id,
+                    null,
+                    $"Approved: {PolicyExceptions.KindLabel(e.Kind)}“{e.Label}”，有效至 {e.ExpiresAt.ToLocalTime():yyyy-MM-dd HH:mm}",
+                    ct
+                );
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"例外提示写入失败：{ex.GetType().Name}: {ex.Message}");
+            }
+    }
+
+    // When each user last asked for each thing, so a user clicking again does not flood the administrators.
+    private readonly Dictionary<(string Sid, string Kind, string Target), DateTimeOffset> askedAt = [];
+
+    /// <summary>
+    /// What users of this device may ask exceptions for: forbidden products found here and USB disks the policy
+    /// restricts, less what an exception already allows.
+    /// </summary>
+    private ExceptionOption[] ExceptionOptions()
+    {
+        if (policy is not { } current || config.DeviceId is not { } device)
+            return [];
+        var now = DateTimeOffset.UtcNow;
+        var active = PolicyExceptions.Active(current, device, now);
+        bool Excepted(string kind, string target) => active.Any(e => e.Kind == kind && e.Target == target);
+        var products = (latest?.Evidence ?? [])
+            .Where(e =>
+                e.Confirmed && e.Kind is EvidenceKind.Installation or EvidenceKind.Process or EvidenceKind.Extension
+            )
+            .Select(e => current.Products.FirstOrDefault(p => p.Id == e.ProductId))
+            .OfType<ProductRule>()
+            .DistinctBy(p => p.Id)
+            .Where(p => !Excepted(PolicyExceptions.Product, p.Id))
+            .Select(p => new ExceptionOption(PolicyExceptions.Product, p.Id, p.Name));
+        var disks = (usb?.Seen() ?? [])
+            .Where(d =>
+                UsbStorage.Access(current.Usb, d.InstanceId) != UsbStorage.Allow
+                && !Excepted(PolicyExceptions.Usb, d.InstanceId)
+            )
+            .Select(d => new ExceptionOption(PolicyExceptions.Usb, d.InstanceId, UsbGuard.Describe(d)));
+        return [.. products, .. disks];
+    }
+
+    private ExceptionDesk ExceptionDesk(EventOutbox queue, NotificationStore notices) =>
+        new(
+            ExceptionOptions,
+            async (sid, asked, ct) =>
+            {
+                if (PolicyExceptions.Check(asked) is not { } request)
+                    return "申请内容不完整：请填写理由，天数为 1 到 90 天";
+                var option = ExceptionOptions()
+                    .FirstOrDefault(o => o.Kind == request.Kind && o.Target == request.Target);
+                if (option is null)
+                    return "本机当前没有需要申请例外的这一项";
+                var user = latest?.Users.FirstOrDefault(u => u.Sid == sid)?.Name ?? AccountName(sid) ?? sid;
+                var key = $"exception:{request.Kind}:{request.Target}";
+                var label = option.Label.Length > 200 ? option.Label[..200] : option.Label;
+                if (PolicyExceptions.Serialize(request with { Label = label, User = user }) is not { } detail)
+                    return "申请内容太长，请缩短理由";
+                var now = DateTimeOffset.UtcNow;
+                lock (askedAt)
+                {
+                    if (
+                        askedAt.TryGetValue((sid, request.Kind, request.Target), out var at)
+                        && at > now.AddMinutes(-10)
+                    )
+                        return "刚刚已经提交过这一项，请等待管理员处理";
+                    askedAt[(sid, request.Kind, request.Target)] = now;
+                }
+                await TryEnqueueAsync(
+                    queue,
+                    notices,
+                    PolicyExceptions.RequestEvent,
+                    key.Length > 256 ? key[..256] : key,
+                    null,
+                    detail,
+                    ct
+                );
+                Console.WriteLine($"用户 {user} 申请例外：{PolicyExceptions.KindLabel(request.Kind)} {option.Label}");
+                return null;
+            }
+        );
+
+    private static string? AccountName(string sid)
+    {
+        if (!OperatingSystem.IsWindows())
+            return null;
+        try
+        {
+            return new System.Security.Principal.SecurityIdentifier(sid)
+                .Translate(typeof(System.Security.Principal.NTAccount))
+                .Value;
+        }
+        // Accounts that no longer exist, or a domain that cannot be reached.
+        catch (SystemException)
+        {
+            return null;
         }
     }
 
@@ -1247,6 +1363,7 @@ public sealed class AgentRuntime(
         }
         if (policy.ExpiresAt < DateTimeOffset.UtcNow)
             policyIssue = "Last signed policy expired; OS controls retained";
+        await ApprovedExceptionsAsync(policy, notices, ct);
         DeviceCommand[] commands = [];
         try
         {

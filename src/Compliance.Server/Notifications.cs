@@ -36,6 +36,7 @@ public sealed record NotificationSettings
         "Health",
         "BlockedAttempt",
         "UsbBlocked",
+        "ExceptionRequest",
         "Offline",
     ];
 

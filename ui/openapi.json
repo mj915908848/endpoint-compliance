@@ -1158,6 +1158,172 @@
         }
       }
     },
+    "/api/exceptions": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StoredException"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewException"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredException"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exceptions/{id}/approve": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExceptionDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredException"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exceptions/{id}/reject": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExceptionDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredException"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exceptions/{id}/revoke": {
+      "post": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExceptionDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredException"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/alerts": {
       "get": {
         "tags": [
@@ -2707,6 +2873,7 @@
           "snapshot",
           "sensitiveFileNotes",
           "baselineNotes",
+          "exceptionNotes",
           "policyName",
           "policyVersion"
         ],
@@ -2751,6 +2918,12 @@
             }
           },
           "baselineNotes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "exceptionNotes": {
             "type": "array",
             "items": {
               "type": "string"
@@ -3336,6 +3509,28 @@
           "SensitiveFile",
           "Baseline"
         ]
+      },
+      "ExceptionDecision": {
+        "required": [
+          "days",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "HardwareInfo": {
         "required": [
@@ -3928,6 +4123,41 @@
           }
         }
       },
+      "NewException": {
+        "required": [
+          "deviceId",
+          "kind",
+          "target",
+          "label",
+          "reason",
+          "days"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "days": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "NewUserRequest": {
         "required": [
           "username",
@@ -4223,7 +4453,8 @@
           "sensitiveFiles",
           "baseline",
           "tamper",
-          "usb"
+          "usb",
+          "exceptions"
         ],
         "type": "object",
         "properties": {
@@ -4334,6 +4565,49 @@
           },
           "usb": {
             "$ref": "#/components/schemas/UsbPolicy"
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyException"
+            }
+          }
+        }
+      },
+      "PolicyException": {
+        "required": [
+          "id",
+          "deviceId",
+          "kind",
+          "target",
+          "expiresAt",
+          "label",
+          "grantedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "label": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -4879,6 +5153,94 @@
           "devices": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "StoredException": {
+        "required": [
+          "id",
+          "deviceId",
+          "hostName",
+          "note",
+          "group",
+          "kind",
+          "target",
+          "label",
+          "reason",
+          "days",
+          "requestedBy",
+          "requestedAt",
+          "status",
+          "decidedBy",
+          "decidedAt",
+          "expiresAt",
+          "decisionNote"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "days": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "decisionNote": {
+            "type": "string"
           }
         }
       },

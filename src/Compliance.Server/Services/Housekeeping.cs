@@ -189,6 +189,12 @@ public sealed class MaintenanceService(ComplianceService service, ILogger<Mainte
                 try
                 {
                     var removed = await service.Housekeeping.Maintain(stoppingToken);
+                    // Expired exceptions leave the policies, so devices stop carrying them.
+                    await service.Tx(async tx =>
+                    {
+                        await tx.Lock(PolicyService.PolicyLock);
+                        return await service.Policies.RefreshExceptions(tx);
+                    });
                     if (removed > 0)
                         logger.LogInformation("Removed {Count} expired events, sessions and commands", removed);
                 }

@@ -301,6 +301,7 @@ describe("device detail", () => {
       snapshot,
       sensitiveFileNotes: [],
       baselineNotes: [],
+      exceptionNotes: [],
       policyName: "默认策略",
       policyVersion: 1,
     };

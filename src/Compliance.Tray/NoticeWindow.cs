@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Compliance.Tray;
 
-/// <summary>A notice from the service. Messages are stored as "Type: detail" (Violation, Reminder, Recovered, Blocked) or plain text.</summary>
+/// <summary>A notice from the service. Messages are stored as "Type: detail" (Violation, Reminder, Recovered, Blocked, Approved) or plain text.</summary>
 public sealed record Notice(string Id, string Message, DateTimeOffset At, bool Acknowledged)
 {
     public (string Label, Color Color, string Text) Parse()
@@ -15,6 +15,7 @@ public sealed record Notice(string Id, string Message, DateTimeOffset At, bool A
                 ("Reminder: ", "仍未处理", Theme.Warning),
                 ("Blocked: ", "已拦截", Theme.Danger),
                 ("Recovered: ", "已恢复", Theme.Good),
+                ("Approved: ", "已批准", Theme.Good),
             }
         )
             if (Message.StartsWith(prefix, StringComparison.Ordinal))

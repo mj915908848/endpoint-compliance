@@ -172,6 +172,12 @@ public record PolicyDocument
 
     /// <summary>USB disks and sticks; the client records them being plugged in and removed either way.</summary>
     public UsbPolicy Usb { get; init; } = new();
+
+    /// <summary>
+    /// Exceptions administrators approved for single devices; the server fills them in on every release, and each
+    /// device uses its own until they expire.
+    /// </summary>
+    public PolicyException[] Exceptions { get; init; } = [];
 }
 
 /// <summary>
@@ -341,6 +347,9 @@ public record ComplianceReport(
 
     /// <summary>Incomplete baseline checks whose rules only alert; they do not affect the verdict.</summary>
     public string[] BaselineNotes { get; init; } = [];
+
+    /// <summary>Products found that an exception allows on this device for now, with until when.</summary>
+    public string[] ExceptionNotes { get; init; } = [];
 
     /// <summary>The name of the policy the report judged against.</summary>
     public string PolicyName { get; init; } = "";

@@ -96,6 +96,11 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
             }
             else if (e.Type != "Snapshot")
             {
+                // A request for an exception is kept for approval, and its alert says what was asked in words.
+                var detail =
+                    e.Type == PolicyExceptions.RequestEvent ? await ExceptionRequest(tx, d, e) : safe.Detail ?? e.Type;
+                if (detail is null)
+                    continue;
                 var incidentId = deviceId + ":" + Secrets.Hash(e.ObjectKey);
                 // Snapshot alerts use other ids, so this map stays current while snapshots are handled in between.
                 alerts ??= await tx.DeviceAlerts(deviceId);
@@ -110,7 +115,7 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
                             d.HostName,
                             type,
                             safe.ObjectKey,
-                            safe.Detail ?? e.Type,
+                            detail,
                             e.Type == "Recovered" ? "Resolved" : "Active",
                             e.Sequence,
                             alert?.FirstSeen ?? e.SourceTime,
@@ -130,6 +135,58 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
             await verdicts.StoreVerdict(tx, d, (await verdicts.Evaluate(tx, d)).Verdict);
         }
         return new(accepted.ToArray());
+    }
+
+    /// <summary>
+    /// Keeps a request for an exception: a new pending one, or the pending one for the same thing updated. Returns
+    /// the alert's text, or null when the request is not one (an old or broken client), which raises no alert.
+    /// </summary>
+    async Task<string?> ExceptionRequest(Transaction tx, DeviceRecord d, AgentEvent e)
+    {
+        ExceptionRequest? asked;
+        try
+        {
+            asked = PolicyExceptions.Check(Wire.Read<ExceptionRequest>(e.Detail ?? ""));
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            asked = null;
+        }
+        if (asked is null)
+            return null;
+        var r = asked with
+        {
+            Label = EvidenceSanitizer.Clean(asked.Label),
+            Reason = EvidenceSanitizer.Clean(asked.Reason),
+            User = EvidenceSanitizer.Clean(asked.User),
+        };
+        var label = r.Label.Length > 0 ? r.Label : r.Target;
+        if (await tx.PendingException(d.Id, r.Kind, r.Target) is { } pending)
+            await tx.RenewPendingException(pending.Id, r.Reason, r.Days, r.User, e.SourceTime);
+        else
+            await tx.InsertException(
+                new StoredException(
+                    "r-" + Secrets.Hash(d.Id + ":" + e.EventId)[..24],
+                    d.Id,
+                    d.HostName,
+                    "",
+                    "",
+                    r.Kind,
+                    r.Target,
+                    label,
+                    r.Reason,
+                    r.Days,
+                    r.User,
+                    e.SourceTime,
+                    PolicyExceptions.Pending,
+                    "",
+                    null,
+                    null,
+                    "",
+                    e.ObjectKey
+                )
+            );
+        return $"{r.User} 申请{PolicyExceptions.KindLabel(r.Kind)}：{label}，{r.Days} 天。理由：{r.Reason}";
     }
 
     void Validate(string deviceId, AgentEvent e)
@@ -154,6 +211,7 @@ public sealed class IngestService(VerdictService verdicts, PolicyService policie
                     or UsbStorage.Connected
                     or UsbStorage.Removed
                     or UsbStorage.Blocked
+                    or PolicyExceptions.RequestEvent
                 )
         )
             throw new ApiError(400, "Invalid event");

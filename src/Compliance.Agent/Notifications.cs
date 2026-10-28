@@ -147,7 +147,20 @@ public sealed class NotificationStore : IAsyncDisposable
 /// request is answered with <see cref="TrayPipe.NotEnrolled"/>.
 /// </summary>
 [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-public sealed class NotificationPipe(NotificationStore? store)
+/// <summary>The service's side of exception requests from the tray, for the user with the given SID.</summary>
+public sealed class ExceptionDesk(
+    Func<ExceptionOption[]> options,
+    Func<string, ExceptionRequest, CancellationToken, Task<string?>> submit
+)
+{
+    public ExceptionOption[] Options() => options();
+
+    /// <summary>Null when the request was taken, otherwise why not, in words for the user.</summary>
+    public Task<string?> SubmitAsync(string sid, ExceptionRequest request, CancellationToken ct) =>
+        submit(sid, request, ct);
+}
+
+public sealed class NotificationPipe(NotificationStore? store, ExceptionDesk? desk = null)
 {
     public async Task RunAsync(CancellationToken ct)
     {
@@ -291,6 +304,11 @@ public sealed class NotificationPipe(NotificationStore? store)
                     { Action: TrayPipe.Ack, EventId: { Length: > 0 } eventId } => new TrayAck(
                         await store.AckAsync(sid, eventId, ct)
                     ),
+                    { Action: TrayPipe.ExceptionOptions } when desk is not null => desk.Options(),
+                    { Action: TrayPipe.RequestException, Exception: { } asked } when desk is not null =>
+                        await desk.SubmitAsync(sid, asked, ct) is { } refused
+                            ? new TrayError(refused)
+                            : new TrayAck(true),
                     _ => new TrayError("Unsupported notification request"),
                 };
             await writer.WriteLineAsync(Wire.Serialize(reply));

@@ -114,6 +114,7 @@ public static class Labels
             "Baseline" => "安全基线",
             "Tamper" => "防篡改",
             "UsbBlocked" => "移动存储拦截",
+            "ExceptionRequest" => "例外申请",
             _ => type,
         };
 }
