@@ -13,6 +13,7 @@ import {
   ControlList,
   CoverageGuide,
   CoverageTable,
+  InventoryView,
   AgentVersion,
   ago,
   DeviceGuide,
@@ -29,7 +30,14 @@ import {
   VerdictHistory,
 } from "../components";
 import { role } from "../session";
-import type { ClientHealth, DeviceDetail, Report, Session, VerdictChange } from "../types";
+import type {
+  ClientHealth,
+  DeviceDetail,
+  DeviceInventory,
+  Report,
+  Session,
+  VerdictChange,
+} from "../types";
 
 export function DeviceDetailPage({
   id,
@@ -46,6 +54,11 @@ export function DeviceDetailPage({
     detail = useResource<DeviceDetail>(`/api/devices/${encoded}`),
     report = useResource<Report>(detail.data?.snapshot ? `/api/devices/${encoded}/report` : null),
     history = useResource<VerdictChange[]>(`/api/devices/${encoded}/history`);
+  const [tab, setTab] = useState("report");
+  // Read when its tab is first opened: a device can list thousands of programs.
+  const inventory = useResource<DeviceInventory>(
+    tab === "assets" ? `/api/devices/${encoded}/inventory` : null,
+  );
   const [busy, setBusy] = useState(false);
   const d = detail.data?.device;
   // The name and note stay while a refresh fails, so a note being typed is not thrown away.
@@ -272,7 +285,8 @@ export function DeviceDetailPage({
             </DeviceGuide>
             <div className="panel tabs-panel">
               <Tabs
-                defaultActiveKey="report"
+                activeKey={tab}
+                onChange={setTab}
                 items={[
                   {
                     key: "report",
@@ -305,6 +319,15 @@ export function DeviceDetailPage({
                     children: (
                       <Fresh error={history.error} loading={history.loading}>
                         {history.data && <VerdictHistory changes={history.data} />}
+                      </Fresh>
+                    ),
+                  },
+                  {
+                    key: "assets",
+                    label: "资产",
+                    children: (
+                      <Fresh error={inventory.error} loading={inventory.loading}>
+                        {inventory.data && <InventoryView data={inventory.data} />}
                       </Fresh>
                     ),
                   },

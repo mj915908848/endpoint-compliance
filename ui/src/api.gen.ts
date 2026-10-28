@@ -43,6 +43,82 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/agent/inventory": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["AssetInventory"];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Done"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/devices/{id}/inventory": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["DeviceInventory"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/status": {
     parameters: {
       query?: never;
@@ -1136,6 +1212,216 @@ export interface paths {
         };
       };
     };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/assets": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["AssetRow"][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/assets/export.csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/assets/software": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SoftwareSummary"][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/assets/software/devices": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          name?: string;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SoftwareInstall"][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/assets/software/export.csv": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content?: never;
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/assets/changes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: {
+      parameters: {
+        query?: {
+          days?: number;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["InventoryChangeRow"][];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -2490,6 +2776,31 @@ export interface components {
       /** Format: int32 */
       days: number;
     };
+    AssetInventory: {
+      /** Format: date-time */
+      collectedAt: string;
+      hardware: components["schemas"]["HardwareInfo"];
+      operatingSystem: components["schemas"]["OperatingSystemInfo"];
+      disks: components["schemas"]["DiskInfo"][];
+      volumes: components["schemas"]["VolumeInfo"][];
+      software: components["schemas"]["InstalledProgram"][];
+    };
+    AssetRow: {
+      deviceId: string;
+      hostName: string;
+      note: string;
+      group: string;
+      hardware: components["schemas"]["HardwareInfo"];
+      operatingSystem: components["schemas"]["OperatingSystemInfo"];
+      disks: components["schemas"]["DiskInfo"][];
+      volumes: components["schemas"]["VolumeInfo"][];
+      /** Format: int32 */
+      softwareCount: number;
+      /** Format: date-time */
+      collectedAt: string;
+      /** Format: date-time */
+      receivedAt: string;
+    };
     AuditRecord: {
       id: string;
       actor: string;
@@ -2618,6 +2929,12 @@ export interface components {
     DeviceIdsRequest: {
       ids: null | string[];
     };
+    DeviceInventory: {
+      inventory: null | components["schemas"]["AssetInventory"];
+      /** Format: date-time */
+      receivedAt: null | string;
+      changes: components["schemas"]["InventoryChange"][];
+    };
     DevicesChanged: {
       /** Format: int32 */
       done: number;
@@ -2660,6 +2977,13 @@ export interface components {
     DisableTwoFactorRequest: {
       password: null | string;
       code: null | string;
+    };
+    DiskInfo: {
+      model: string;
+      /** Format: int64 */
+      sizeBytes: number;
+      mediaType: string;
+      busType: string;
     };
     Done: {
       /** @default true */
@@ -2720,6 +3044,19 @@ export interface components {
       | "BlockedAttempt"
       | "SensitiveFile"
       | "Baseline";
+    HardwareInfo: {
+      manufacturer: string;
+      model: string;
+      serialNumber: string;
+      biosVersion: string;
+      processor: string;
+      /** Format: int32 */
+      cores: number;
+      /** Format: int32 */
+      logicalProcessors: number;
+      /** Format: int64 */
+      memoryBytes: number;
+    };
     HeartbeatReply: {
       ok: boolean;
       gzipUploads: boolean;
@@ -2744,6 +3081,31 @@ export interface components {
       policyKeyIds?: null | string[];
       health?: null | components["schemas"]["ClientHealth"];
       upgrade?: null | components["schemas"]["UpgradeOutcome"];
+    };
+    InstalledProgram: {
+      name: string;
+      version: string;
+      publisher: string;
+      installedOn: string;
+      scope: string;
+    };
+    InventoryChange: {
+      /** Format: date-time */
+      at: string;
+      kind: string;
+      subject: string;
+      detail: string;
+    };
+    InventoryChangeRow: {
+      deviceId: string;
+      hostName: string;
+      note: string;
+      group: string;
+      /** Format: date-time */
+      at: string;
+      kind: string;
+      subject: string;
+      detail: string;
     };
     KeyRotationProgress: {
       nextKeyId: string;
@@ -2886,6 +3248,16 @@ export interface components {
       types: string[];
       consoleUrl: string;
       version: string;
+    };
+    OperatingSystemInfo: {
+      name: string;
+      version: string;
+      displayVersion: string;
+      architecture: string;
+      /** Format: date-time */
+      installedAt: null | string;
+      /** Format: date-time */
+      lastBootAt: null | string;
     };
     PasswordChanged: {
       /** Format: int32 */
@@ -3044,6 +3416,27 @@ export interface components {
       keyId: string;
       rotation: null | components["schemas"]["KeyRotationProgress"];
     };
+    SoftwareInstall: {
+      deviceId: string;
+      hostName: string;
+      note: string;
+      group: string;
+      version: string;
+      scope: string;
+      installedOn: string;
+    };
+    SoftwareSummary: {
+      name: string;
+      publisher: string;
+      /** Format: int32 */
+      devices: number;
+      versions: components["schemas"]["SoftwareVersion"][];
+    };
+    SoftwareVersion: {
+      version: string;
+      /** Format: int32 */
+      devices: number;
+    };
     TamperPolicy: {
       uninstallPassword: string;
     };
@@ -3118,6 +3511,15 @@ export interface components {
       violationCount: number;
       /** Format: int64 */
       policyVersion: number;
+    };
+    VolumeInfo: {
+      name: string;
+      label: string;
+      fileSystem: string;
+      /** Format: int64 */
+      sizeBytes: number;
+      /** Format: int64 */
+      freeBytes: number;
     };
   };
   responses: never;

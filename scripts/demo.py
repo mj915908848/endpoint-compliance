@@ -91,10 +91,27 @@ try:
 
     csrf = api("/api/auth/login", {"username": "demo-admin", "password": password})["csrfToken"]
 
-    def endpoint(name, host, evidence):
+    def inventory(maker, model, serial, cpu, cores, threads, memory_gb, disk, disk_gb, programs):
+        gb = 1024 ** 3
+        return {
+            "collectedAt": datetime.now(timezone.utc).isoformat(),
+            "hardware": {"manufacturer": maker, "model": model, "serialNumber": serial, "biosVersion": "1.20.0",
+                         "processor": cpu, "cores": cores, "logicalProcessors": threads, "memoryBytes": memory_gb * gb},
+            "operatingSystem": {"name": "Windows 11 专业版", "version": "10.0.26100.2314", "displayVersion": "24H2",
+                                "architecture": "64 位", "installedAt": "2025-03-18T02:00:00Z",
+                                "lastBootAt": datetime.now(timezone.utc).isoformat()},
+            "disks": [{"model": disk, "sizeBytes": disk_gb * 1000 ** 3, "mediaType": "SSD", "busType": "NVMe"}],
+            "volumes": [{"name": "C:", "label": "", "fileSystem": "NTFS", "sizeBytes": disk_gb * 1000 ** 3 - 10 ** 9,
+                         "freeBytes": disk_gb * 1000 ** 3 // 3}],
+            "software": [{"name": n, "version": v, "publisher": p, "installedOn": "20250410", "scope": s}
+                         for n, v, p, s in programs],
+        }
+
+    def endpoint(name, host, evidence, inventory):
         folder = data / "agents" / name
         folder.mkdir(parents=True, exist_ok=True)
         now = datetime.now(timezone.utc).isoformat()
+        (folder / "inventory.json").write_text(json.dumps(inventory, ensure_ascii=False))
         modules = ["installed", "processes", "proxy", "extensions", "appx", "ports", "users", "cli"]
         (folder / "snapshot.json").write_text(json.dumps({
             "deviceId": "fixture", "hostName": host, "platform": "Windows", "simulated": True,
@@ -117,8 +134,22 @@ try:
         {"productId": "cursor", "productName": "Cursor", "kind": "Process", "objectKey": "pid:4242",
          "source": "demo process", "summary": "Cursor.exe 正在运行（模拟数据）", "userSid": "S-1-5-21-1-2-3-1001",
          "confirmed": True},
-    ])
-    endpoint("clean", "DEMO-PC-02", [])
+    ], inventory("LENOVO", "ThinkPad T14 Gen 4", "PF4DEMO1", "Intel(R) Core(TM) i7-1365U", 10, 12, 32,
+                 "SAMSUNG MZVL21T0", 1024, [
+                     ("Cursor", "1.7.38", "Anysphere", "zhangsan"),
+                     ("Google Chrome", "131.0.6778.86", "Google LLC", "machine"),
+                     ("微信", "3.9.12.17", "腾讯科技(深圳)有限公司", "zhangsan"),
+                     ("7-Zip 24.08 (x64)", "24.08", "Igor Pavlov", "machine"),
+                     ("Microsoft 365 企业应用版 - zh-cn", "16.0.18129.20158", "Microsoft Corporation", "machine"),
+                 ]))
+    endpoint("clean", "DEMO-PC-02", [], inventory(
+        "Dell Inc.", "OptiPlex 7010", "8XKDEMO2", "13th Gen Intel(R) Core(TM) i5-13500", 14, 20, 16,
+        "KIOXIA KBG50ZNV512G", 512, [
+            ("Google Chrome", "130.0.6723.117", "Google LLC", "machine"),
+            ("钉钉", "7.6.15", "钉钉(中国)信息技术有限公司", "lisi"),
+            ("WPS Office", "12.1.0.18608", "Kingsoft Corp.", "machine"),
+            ("7-Zip 24.08 (x64)", "24.08", "Igor Pavlov", "machine"),
+        ]))
 
     print(f"""
 Demo running at {base}

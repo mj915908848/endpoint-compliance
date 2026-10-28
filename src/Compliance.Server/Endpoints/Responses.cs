@@ -137,3 +137,48 @@ public record HeartbeatReply(
 
 /// <param name="Last">The last attempt to send since the server started; null before one.</param>
 public record LogForwardingView(LogForwardingSettings Settings, LogForwardingResult? Last);
+
+/// <param name="Inventory">Null until the device's client sends one (clients from this release on).</param>
+/// <param name="Changes">What changed between its inventories, newest first.</param>
+public record DeviceInventory(AssetInventory? Inventory, DateTimeOffset? ReceivedAt, InventoryChange[] Changes);
+
+/// <summary>One device's hardware for the asset list.</summary>
+public record AssetRow(
+    string DeviceId,
+    string HostName,
+    string Note,
+    string Group,
+    HardwareInfo Hardware,
+    OperatingSystemInfo OperatingSystem,
+    DiskInfo[] Disks,
+    VolumeInfo[] Volumes,
+    int SoftwareCount,
+    DateTimeOffset CollectedAt,
+    DateTimeOffset ReceivedAt
+);
+
+public record SoftwareVersion(string Version, int Devices);
+
+/// <param name="Devices">Devices in use with any version of the program.</param>
+public record SoftwareSummary(string Name, string Publisher, int Devices, SoftwareVersion[] Versions);
+
+public record SoftwareInstall(
+    string DeviceId,
+    string HostName,
+    string Note,
+    string Group,
+    string Version,
+    string Scope,
+    string InstalledOn
+);
+
+public record InventoryChangeRow(
+    string DeviceId,
+    string HostName,
+    string Note,
+    string Group,
+    DateTimeOffset At,
+    string Kind,
+    string Subject,
+    string Detail
+);

@@ -142,6 +142,9 @@ public sealed partial class Transaction
         await Execute("DELETE FROM commands WHERE device_id = @id", ("id", id));
         await Execute("DELETE FROM verdict_history WHERE device_id = @id", ("id", id));
         await Execute("DELETE FROM nonces WHERE device = @id", ("id", id));
+        await Execute("DELETE FROM device_inventory WHERE device_id = @id", ("id", id));
+        await Execute("DELETE FROM device_software WHERE device_id = @id", ("id", id));
+        await Execute("DELETE FROM inventory_changes WHERE device_id = @id", ("id", id));
         await Execute("DELETE FROM devices WHERE id = @id", ("id", id));
     }
 

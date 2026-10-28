@@ -312,10 +312,10 @@ static partial class Endpoints
     }
 
     /// <summary>
-    /// The device list for Excel: UTF-8 with a byte order mark, every field quoted, and fields that start like a
-    /// formula prefixed with an apostrophe so a host name or note cannot run as one.
+    /// A table for Excel: UTF-8 with a byte order mark, every field quoted, and fields that start like a formula
+    /// prefixed with an apostrophe so a host name, note or program name cannot run as one.
     /// </summary>
-    static string DeviceCsv(List<(DeviceSummary Device, string[] Reasons)> rows)
+    static string Csv(IEnumerable<IEnumerable<string>> lines)
     {
         static string Field(string value)
         {
@@ -323,10 +323,20 @@ static partial class Endpoints
                 value = "'" + value;
             return "\"" + value.Replace("\"", "\"\"") + "\"";
         }
-        static string Time(DateTimeOffset? t) => t is { } v ? v.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "";
-
         var b = new StringBuilder("\uFEFF");
-        void Line(IEnumerable<string> fields) => b.Append(string.Join(",", fields.Select(Field))).Append("\r\n");
+        foreach (var fields in lines)
+            b.Append(string.Join(",", fields.Select(Field))).Append("\r\n");
+        return b.ToString();
+    }
+
+    static string CsvTime(DateTimeOffset? t) => t is { } v ? v.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "";
+
+    /// <summary>The device list for Excel (see <see cref="Csv"/>).</summary>
+    static string DeviceCsv(List<(DeviceSummary Device, string[] Reasons)> rows)
+    {
+        var lines = new List<IEnumerable<string>>();
+        void Line(IEnumerable<string> fields) => lines.Add(fields);
+        static string Time(DateTimeOffset? t) => CsvTime(t);
         Line([
             "计算机名",
             "备注",
@@ -376,6 +386,6 @@ static partial class Endpoints
                 d.SourceAddress,
                 d.Id,
             ]);
-        return b.ToString();
+        return Csv(lines);
     }
 }

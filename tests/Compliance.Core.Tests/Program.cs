@@ -1038,5 +1038,63 @@ Test(
         Eq("", Wire.Read<PolicyDocument>("{\"products\":[]}").Tamper.UninstallPassword);
     }
 );
+Test(
+    "asset inventories are normalized and their changes say what was installed, removed, updated or replaced",
+    () =>
+    {
+        const long GB = 1024L * 1024 * 1024;
+        AssetInventory Inv(long memory, params InstalledProgram[] software) =>
+            Inventory.Normalize(
+                new(
+                    now,
+                    new(" Dell ", "OptiPlex", "ABC123", "", "i5", 6, 12, memory),
+                    new("Windows 11 专业版", "10.0.22631.4317", "23H2", "64 位", null, null),
+                    [new("Disk", 256 * GB, "SSD", "NVMe")],
+                    [new("C:", "", "NTFS", 100, 500)],
+                    software
+                )
+            );
+        InstalledProgram P(string name, string version, string scope = "") => new(name, version, "", "20250102", scope);
+
+        var before = Inv(8 * GB, P("b", "1"), P("a", "1"), P("a", "1"), P(" ", "1"), P("c", "2", "zhang"));
+        Eq("Dell", before.Hardware.Manufacturer);
+        Eq("a,b,c", string.Join(",", before.Software.Select(x => x.Name)));
+        Eq(Inventory.Machine, before.Software[0].Scope);
+        Eq("2025-01-02", before.Software[0].InstalledOn);
+        // Free space cannot exceed the volume's size.
+        Eq(100L, before.Volumes[0].FreeBytes);
+        Eq("", Inventory.ValidDate("2025/01/02"));
+        Eq("", Inventory.ValidDate("19000101"));
+        Eq("2025-01-02", Inventory.ValidDate("2025-01-02"));
+        Eq("8 GB", Inventory.Bytes(8 * GB));
+        Eq("1 TB", Inventory.Bytes(1024 * GB));
+
+        Eq(0, Inventory.Changes(before, before, now).Count);
+        var after = Inv(16 * GB, P("a", "2"), P("c", "2"), P("d", "")) with
+        {
+            OperatingSystem = before.OperatingSystem with { Version = "10.0.22631.4460" },
+        };
+        var changes = Inventory.Changes(before, after, now).Select(c => $"{c.Kind}|{c.Subject}|{c.Detail}").ToArray();
+        Eq(
+            string.Join(
+                "\n",
+                "SystemUpdated|操作系统|Windows 11 专业版 23H2 10.0.22631.4317 → Windows 11 专业版 23H2 10.0.22631.4460",
+                "HardwareChanged|内存|8 GB → 16 GB",
+                "SoftwareUpdated|a|1 → 2",
+                "SoftwareInstalled|c|版本 2",
+                "SoftwareInstalled|d|",
+                "SoftwareRemoved|b|版本 1",
+                "SoftwareRemoved|c|版本 2（用户 zhang）"
+            ),
+            string.Join("\n", changes)
+        );
+
+        // A device that changes a great deal has its changes bounded, the last saying how many more there were.
+        var many = Inv(8 * GB, [.. Enumerable.Range(0, 400).Select(i => P("p" + i, "1"))]);
+        var bounded = Inventory.Changes(before, many, now);
+        Eq(Inventory.MaxChanges, bounded.Count);
+        Eq("另有 104 项变更未逐条记录", bounded[^1].Detail);
+    }
+);
 Console.WriteLine($"Core tests: {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

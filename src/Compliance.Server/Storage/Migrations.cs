@@ -50,6 +50,7 @@ public static class Migrations
         new(18, "device groups", DeviceGroups),
         new(19, "accounts and two-step sign-in", Accounts),
         new(20, "log forwarding", LogForwarding),
+        new(21, "asset inventory", AssetInventory),
     ];
 
     public static async Task<bool> Apply(Transaction tx)
@@ -225,6 +226,50 @@ public static class Migrations
         await tx.Execute("ALTER TABLE alerts ADD COLUMN forwarded_state TEXT NOT NULL DEFAULT ''");
         await tx.Execute("ALTER TABLE alerts ADD COLUMN forwarded_activation BIGINT NOT NULL DEFAULT 0");
         await tx.Execute("UPDATE alerts SET forwarded_state = state, forwarded_activation = activations");
+    }
+
+    /// <summary>
+    /// Each device's latest inventory: the hardware part as JSON, the programs one row each so they can be counted
+    /// across devices, and what changed between inventories.
+    /// </summary>
+    static async Task AssetInventory(Transaction tx)
+    {
+        await tx.Execute(
+            """
+            CREATE TABLE IF NOT EXISTS device_inventory(
+                device_id TEXT PRIMARY KEY,
+                collected_at BIGINT NOT NULL,
+                received_at BIGINT NOT NULL,
+                hardware TEXT NOT NULL,
+                software_count BIGINT NOT NULL)
+            """
+        );
+        await tx.Execute(
+            """
+            CREATE TABLE IF NOT EXISTS device_software(
+                device_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                version TEXT NOT NULL,
+                publisher TEXT NOT NULL,
+                installed_on TEXT NOT NULL,
+                scope TEXT NOT NULL)
+            """
+        );
+        await tx.Execute("CREATE INDEX IF NOT EXISTS device_software_device ON device_software(device_id)");
+        await tx.Execute("CREATE INDEX IF NOT EXISTS device_software_name ON device_software(name)");
+        await tx.Execute(
+            """
+            CREATE TABLE IF NOT EXISTS inventory_changes(
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                at BIGINT NOT NULL,
+                kind TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                detail TEXT NOT NULL)
+            """
+        );
+        await tx.Execute("CREATE INDEX IF NOT EXISTS inventory_changes_device ON inventory_changes(device_id, at)");
+        await tx.Execute("CREATE INDEX IF NOT EXISTS inventory_changes_at ON inventory_changes(at)");
     }
 
     static async Task DeviceGroups(Transaction tx)
