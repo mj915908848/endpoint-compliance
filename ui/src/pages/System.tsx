@@ -78,6 +78,12 @@ const pushTypes = [
   "Offline",
 ];
 
+const reportSchedules = [
+  { value: "Off", label: "不推送" },
+  { value: "Weekly", label: "每周一 9:00 推送上周报表" },
+  { value: "Monthly", label: "每月 1 日 9:00 推送上月报表" },
+];
+
 const retentionChoices = [
   { value: 0, label: "永久保留" },
   { value: 180, label: "180 天" },
@@ -108,6 +114,7 @@ function NotificationPanel({
     [secret, setSecret] = useState<string | null>(null),
     [types, setTypes] = useState(start.types),
     [consoleUrl, setConsoleUrl] = useState(start.consoleUrl || window.location.origin),
+    [reportSchedule, setReportSchedule] = useState(start.reportSchedule),
     // The saved settings this form was filled from; a save over a newer one is refused.
     [base, setBase] = useState(start.version),
     [busy, setBusy] = useState(false),
@@ -124,6 +131,7 @@ function NotificationPanel({
     setSecret(null);
     setTypes(saved.types);
     setConsoleUrl(saved.consoleUrl || window.location.origin);
+    setReportSchedule(saved.reportSchedule);
     setBase(saved.version);
     setError(null);
   }
@@ -134,7 +142,16 @@ function NotificationPanel({
     try {
       const r = await request<{ version: string }>("/api/settings/notifications", {
         method: "PUT",
-        body: { enabled, channel, webhookUrl: url, secret, types, consoleUrl, version: base },
+        body: {
+          enabled,
+          channel,
+          webhookUrl: url,
+          secret,
+          types,
+          consoleUrl,
+          reportSchedule,
+          version: base,
+        },
         csrfToken: session.csrfToken,
       });
       setBase(r.version);
@@ -190,7 +207,7 @@ function NotificationPanel({
           <Form layout="vertical" style={{ maxWidth: 640 }} onFinish={save}>
             <Form.Item
               label="推送新告警"
-              extra="开启后，新出现的告警约 30 秒内推送到群里；同时出现多条时合并成一条消息。"
+              extra="开启后，新出现的告警约 30 秒内推送到群里，同时出现多条时合并成一条消息；下面的定期报表也要开启这里才会发送。"
             >
               <Switch aria-label="推送新告警" checked={enabled} onChange={setEnabled} />
             </Form.Item>
@@ -253,8 +270,19 @@ function NotificationPanel({
               )}
             </Form.Item>
             <Form.Item
+              label="定期报表"
+              extra="开启推送后，按设置把上一周或上个月的合规报表摘要发到群里，附报表链接；时间按管理端服务器所在时区。"
+            >
+              <Select
+                aria-label="定期报表"
+                value={reportSchedule}
+                onChange={setReportSchedule}
+                options={reportSchedules}
+              />
+            </Form.Item>
+            <Form.Item
               label="管理端地址"
-              extra="消息里附上告警页面的链接，经网关访问时填网关上的域名。"
+              extra="消息里附上告警或报表页面的链接，经网关访问时填网关上的域名。"
             >
               <Input
                 aria-label="管理端地址"

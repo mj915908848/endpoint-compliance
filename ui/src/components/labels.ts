@@ -152,6 +152,7 @@ export const auditActionLabel = lookup({
   ExportAssets: "导出硬件资产",
   ExportSoftware: "导出软件清单",
   ExportUsbEvents: "导出移动存储记录",
+  ExportReport: "导出合规报表",
   CreateException: "新增例外",
   ApproveException: "批准例外申请",
   RejectException: "驳回例外申请",

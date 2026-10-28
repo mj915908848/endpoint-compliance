@@ -1324,6 +1324,85 @@
         }
       }
     },
+    "/api/reports/compliance": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reports/compliance.md": {
+      "get": {
+        "tags": [
+          "Compliance.Server"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/alerts": {
       "get": {
         "tags": [
@@ -3845,6 +3924,39 @@
           }
         }
       },
+      "LingeringDevice": {
+        "required": [
+          "deviceId",
+          "hostName",
+          "note",
+          "group",
+          "since",
+          "violationCount"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "hostName": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "violationCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "LogForwardingRequest": {
         "required": [
           "enabled",
@@ -4255,6 +4367,12 @@
               "null",
               "string"
             ]
+          },
+          "reportSchedule": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -4320,7 +4438,8 @@
           "hasSecret",
           "types",
           "consoleUrl",
-          "version"
+          "version",
+          "reportSchedule"
         ],
         "type": "object",
         "properties": {
@@ -4346,6 +4465,9 @@
             "type": "string"
           },
           "version": {
+            "type": "string"
+          },
+          "reportSchedule": {
             "type": "string"
           }
         }
@@ -4424,6 +4546,71 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "PeriodReport": {
+        "required": [
+          "from",
+          "to",
+          "generatedAt",
+          "start",
+          "end",
+          "days",
+          "groups",
+          "issues",
+          "alertTypes",
+          "lingering"
+        ],
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "start": {
+            "$ref": "#/components/schemas/ReportCounts"
+          },
+          "end": {
+            "$ref": "#/components/schemas/ReportCounts"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrendDay"
+            }
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportGroup"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportIssue"
+            }
+          },
+          "alertTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportAlertType"
+            }
+          },
+          "lingering": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LingeringDevice"
+            }
           }
         }
       },
@@ -4737,6 +4924,110 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "ReportAlertType": {
+        "required": [
+          "type",
+          "opened",
+          "devices"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "opened": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ReportCounts": {
+        "required": [
+          "devices",
+          "pass",
+          "fail",
+          "unknown"
+        ],
+        "type": "object",
+        "properties": {
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pass": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fail": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unknown": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ReportGroup": {
+        "required": [
+          "group",
+          "devices",
+          "pass",
+          "fail",
+          "unknown"
+        ],
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pass": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "fail": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unknown": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "ReportIssue": {
+        "required": [
+          "type",
+          "subject",
+          "devices",
+          "alerts"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "devices": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "alerts": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },

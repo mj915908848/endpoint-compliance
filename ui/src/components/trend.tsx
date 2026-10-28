@@ -18,7 +18,14 @@ export const trendOffset = () => -new Date().getTimezoneOffset();
  * One stacked bar per day: devices that failed at the bottom, then unknown, then passed. Counts are each device's
  * stored verdict at the end of the day, whether or not it was online.
  */
-export function VerdictTrendChart({ days: all }: { days: TrendDay[] }) {
+export function VerdictTrendChart({
+  days: all,
+  endLabel = "今天",
+}: {
+  days: TrendDay[];
+  /** What the last day is called under the chart. */
+  endLabel?: string;
+}) {
   // Days before the first recorded verdict are left out rather than drawn as empty bars.
   const first = all.findIndex((d) => d.pass + d.fail + d.unknown > 0);
   if (first < 0)
@@ -75,7 +82,7 @@ export function VerdictTrendChart({ days: all }: { days: TrendDay[] }) {
       </svg>
       <Flex justify="space-between" className="trend-axis">
         <span>{days[0].date.slice(5)}</span>
-        <span>今天</span>
+        <span>{endLabel}</span>
       </Flex>
       <Space size={16} wrap>
         {series.map((s) => (
