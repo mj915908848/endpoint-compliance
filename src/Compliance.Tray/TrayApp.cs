@@ -104,7 +104,7 @@ public sealed class TrayApp : ApplicationContext
     public TrayApp(bool showNotices, string? setupSource = null, EventWaitHandle? show = null)
     {
         this.setupSource = setupSource;
-        var menu = new ContextMenuStrip { Font = Theme.Body };
+        var menu = new ContextMenuStrip { Font = Theme.Body, Renderer = new Theme.MenuRenderer() };
         enrollItem = menu.Items.Add("登记到管理端…", null, (_, _) => ShowSetup(null));
         enrollItem.Visible = false;
         menu.Items.Add("打开通知中心", null, (_, _) => ShowWindow());

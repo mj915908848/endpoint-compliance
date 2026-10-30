@@ -17,16 +17,15 @@ import {
   DashboardOutlined,
   DesktopOutlined,
   FileProtectOutlined,
-  InfoCircleOutlined,
   KeyOutlined,
   LineChartOutlined,
   LockOutlined,
   SafetyCertificateOutlined,
   LogoutOutlined,
   SafetyOutlined,
+  SettingOutlined,
   MenuOutlined,
   UpOutlined,
-  DownOutlined,
 } from "@ant-design/icons";
 import { HttpError, idleMs, markUse, onSessionLost, request } from "./api";
 import {
@@ -52,18 +51,40 @@ import { ReportsPage } from "./pages/Reports";
 import { SystemPage } from "./pages/System";
 import type { Session } from "./types";
 
-const pages: { path: string; label: string; icon: ReactNode }[] = [
-  { path: "/", label: "总览", icon: <DashboardOutlined /> },
-  { path: "/devices", label: "终端设备", icon: <DesktopOutlined /> },
-  { path: "/assets", label: "资产清单", icon: <DatabaseOutlined /> },
-  { path: "/alerts", label: "告警中心", icon: <AlertOutlined /> },
-  { path: "/exceptions", label: "例外审批", icon: <SafetyCertificateOutlined /> },
-  { path: "/reports", label: "合规报表", icon: <LineChartOutlined /> },
-  { path: "/policies", label: "策略管理", icon: <FileProtectOutlined /> },
-  { path: "/registration", label: "终端登记", icon: <KeyOutlined /> },
-  { path: "/audit", label: "审计记录", icon: <AuditOutlined /> },
-  { path: "/system", label: "系统设置", icon: <InfoCircleOutlined /> },
+type Page = { path: string; label: string; icon: ReactNode };
+
+// Grouped as the administrator's day goes: watch, act, look back, configure.
+const groups: { label: string; pages: Page[] }[] = [
+  {
+    label: "监控",
+    pages: [
+      { path: "/", label: "总览", icon: <DashboardOutlined /> },
+      { path: "/devices", label: "终端设备", icon: <DesktopOutlined /> },
+      { path: "/alerts", label: "告警中心", icon: <AlertOutlined /> },
+    ],
+  },
+  {
+    label: "管控",
+    pages: [
+      { path: "/policies", label: "策略管理", icon: <FileProtectOutlined /> },
+      { path: "/exceptions", label: "例外审批", icon: <SafetyCertificateOutlined /> },
+      { path: "/registration", label: "终端登记", icon: <KeyOutlined /> },
+    ],
+  },
+  {
+    label: "资产与报表",
+    pages: [
+      { path: "/assets", label: "资产清单", icon: <DatabaseOutlined /> },
+      { path: "/reports", label: "合规报表", icon: <LineChartOutlined /> },
+      { path: "/audit", label: "审计记录", icon: <AuditOutlined /> },
+    ],
+  },
+  {
+    label: "系统",
+    pages: [{ path: "/system", label: "系统设置", icon: <SettingOutlined /> }],
+  },
 ];
+const pages = groups.flatMap((g) => g.pages);
 
 const roleLabels: Record<string, string> = {
   Reader: "只读",
@@ -242,19 +263,23 @@ export function App() {
   const page = currentPage(location.pathname);
   const nav = (
     <Menu
-      theme="dark"
       mode="inline"
       aria-label="主导航"
       selectedKeys={page ? [page.path] : []}
       onClick={() => setNavOpen(false)}
-      items={pages.map((p) => ({
-        key: p.path,
-        icon: p.icon,
-        label: (
-          <NavLink to={p.path} end={p.path === "/"}>
-            {p.label}
-          </NavLink>
-        ),
+      items={groups.map((g) => ({
+        type: "group" as const,
+        key: g.label,
+        label: g.label,
+        children: g.pages.map((p) => ({
+          key: p.path,
+          icon: p.icon,
+          label: (
+            <NavLink to={p.path} end={p.path === "/"}>
+              {p.label}
+            </NavLink>
+          ),
+        })),
       }))}
     />
   );
@@ -280,18 +305,8 @@ export function App() {
       {session.username.slice(0, 1).toUpperCase()}
     </Avatar>
   );
-  // In the top bar on wide screens, at the foot of the navigation drawer on narrow ones.
-  const topAccount = (
-    <Dropdown trigger={["click"]} placement="bottomRight" menu={accountMenu}>
-      <button type="button" className="top-account" aria-label={`账号 ${session.username}`}>
-        {avatar}
-        <span className="top-account-name">{session.username}</span>
-        <span className="top-account-role">{accountRole(session.roles)}</span>
-        <DownOutlined className="top-account-caret" />
-      </button>
-    </Dropdown>
-  );
-  const drawerAccount = (
+  // At the foot of the sidebar, and of the navigation drawer on narrow screens.
+  const account = (
     <Dropdown trigger={["click"]} placement="topLeft" menu={accountMenu}>
       <button type="button" className="sidebar-account" aria-label={`账号 ${session.username}`}>
         <Flex align="center" gap={10}>
@@ -308,26 +323,21 @@ export function App() {
   const brand = (
     <NavLink to="/" className="brand" aria-label="终端合规管控 首页">
       <img src="/brand/logo.svg" alt="" className="brand-logo" />
-      <span className="brand-name">
-        终端合规管控
-        <small>恺域科技</small>
-      </span>
+      <span className="brand-name">终端合规管控</span>
     </NavLink>
   );
+  const sidebar = (
+    <Flex vertical style={{ height: "100%" }}>
+      {brand}
+      <div className="sidebar-nav">{nav}</div>
+      {account}
+    </Flex>
+  );
   return (
-    <Layout className="app-shell">
-      <header className="topbar">
-        <Button
-          type="text"
-          className="topbar-menu"
-          aria-label="打开导航"
-          icon={<MenuOutlined />}
-          onClick={() => setNavOpen(true)}
-        />
-        {brand}
-        <span className="topbar-page">{page?.label ?? "终端合规"}</span>
-        <div className="topbar-end">{topAccount}</div>
-      </header>
+    <Layout className="app-shell" hasSider>
+      <Layout.Sider width={224} className="sidebar">
+        {sidebar}
+      </Layout.Sider>
       <Drawer
         placement="left"
         size={248}
@@ -337,17 +347,7 @@ export function App() {
         className="sidebar sidebar-drawer"
         styles={{ body: { padding: 0 } }}
       >
-        <Flex vertical style={{ height: "100%" }}>
-          <div className="drawer-brand">
-            <img src="/brand/logo.svg" alt="" />
-            <span className="brand-name">
-              终端合规管控
-              <small>恺域科技</small>
-            </span>
-          </div>
-          <div className="sidebar-nav">{nav}</div>
-          {drawerAccount}
-        </Flex>
+        {sidebar}
       </Drawer>
       <PasswordDialog
         session={session}
@@ -360,72 +360,74 @@ export function App() {
         onClose={() => setTwoFactorOpen(false)}
         onChanged={reloadSession}
       />
-      <Layout className="below-top">
-        <Layout.Sider width={208} className="sidebar">
-          <div className="sidebar-nav">{nav}</div>
-        </Layout.Sider>
-        <Layout className="main">
-          <Layout.Content className="content">
-            <ErrorNotice error={authError} />
-            {idleWarning && (
-              <Alert
-                type="warning"
-                showIcon
-                title={`${idleMinutes} 分钟未操作将自动退出，移动鼠标或按任意键继续使用。`}
-                style={{ marginBottom: 16 }}
+      <Layout className="main">
+        {/* Only below the lg breakpoint, where the sidebar moves into the drawer. */}
+        <header className="topbar">
+          <Button
+            type="text"
+            className="topbar-menu"
+            aria-label="打开导航"
+            icon={<MenuOutlined />}
+            onClick={() => setNavOpen(true)}
+          />
+          <span className="topbar-page">{page?.label ?? "终端合规"}</span>
+        </header>
+        <Layout.Content className="content">
+          <ErrorNotice error={authError} />
+          {idleWarning && (
+            <Alert
+              type="warning"
+              showIcon
+              title={`${idleMinutes} 分钟未操作将自动退出，移动鼠标或按任意键继续使用。`}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <ErrorBoundary key={location.pathname}>
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <Overview
+                    openDevice={(id) => navigate(devicePath(id))}
+                    openDevices={(filter) => navigate(`/devices?filter=${filter}`)}
+                    openAlerts={() => navigate("/alerts")}
+                    openExceptions={() => navigate("/exceptions")}
+                  />
+                }
               />
-            )}
-            <ErrorBoundary key={location.pathname}>
-              <Routes>
-                <Route
-                  path="/"
-                  element={
-                    <Overview
-                      openDevice={(id) => navigate(devicePath(id))}
-                      openDevices={(filter) => navigate(`/devices?filter=${filter}`)}
-                      openAlerts={() => navigate("/alerts")}
-                    />
-                  }
-                />
-                <Route
-                  path="/devices"
-                  element={
-                    <Devices session={session} openDevice={(id) => navigate(devicePath(id))} />
-                  }
-                />
-                <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
-                <Route
-                  path="/assets"
-                  element={<AssetsPage openDevice={(id) => navigate(devicePath(id))} />}
-                />
-                <Route
-                  path="/alerts"
-                  element={
-                    <Alerts session={session} openDevice={(id) => navigate(devicePath(id))} />
-                  }
-                />
-                <Route
-                  path="/exceptions"
-                  element={
-                    <ExceptionsPage
-                      session={session}
-                      openDevice={(id) => navigate(devicePath(id))}
-                    />
-                  }
-                />
-                <Route
-                  path="/reports"
-                  element={<ReportsPage openDevice={(id) => navigate(devicePath(id))} />}
-                />
-                <Route path="/policies" element={<Policies session={session} />} />
-                <Route path="/registration" element={<Registration session={session} />} />
-                <Route path="/audit" element={<AuditPage />} />
-                <Route path="/system" element={<SystemPage session={session} />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </ErrorBoundary>
-          </Layout.Content>
-        </Layout>
+              <Route
+                path="/devices"
+                element={
+                  <Devices session={session} openDevice={(id) => navigate(devicePath(id))} />
+                }
+              />
+              <Route path="/devices/:id" element={<DeviceRoute session={session} />} />
+              <Route
+                path="/assets"
+                element={<AssetsPage openDevice={(id) => navigate(devicePath(id))} />}
+              />
+              <Route
+                path="/alerts"
+                element={<Alerts session={session} openDevice={(id) => navigate(devicePath(id))} />}
+              />
+              <Route
+                path="/exceptions"
+                element={
+                  <ExceptionsPage session={session} openDevice={(id) => navigate(devicePath(id))} />
+                }
+              />
+              <Route
+                path="/reports"
+                element={<ReportsPage openDevice={(id) => navigate(devicePath(id))} />}
+              />
+              <Route path="/policies" element={<Policies session={session} />} />
+              <Route path="/registration" element={<Registration session={session} />} />
+              <Route path="/audit" element={<AuditPage />} />
+              <Route path="/system" element={<SystemPage session={session} />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ErrorBoundary>
+        </Layout.Content>
       </Layout>
     </Layout>
   );

@@ -105,20 +105,31 @@ export function PageHeading({
   title: ReactNode;
   description?: ReactNode;
   action?: ReactNode;
+  /** Shown after the description on the same line, e.g. when the data was read. */
   extra?: ReactNode;
 }) {
   return (
     <Flex className="page-heading" justify="space-between" align="end" gap={16} wrap>
-      <div>
+      <div style={{ minWidth: 0, flex: "1 1 360px" }}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           {title}
         </Typography.Title>
-        {description && (
-          <Typography.Paragraph type="secondary" style={{ margin: "4px 0 0" }}>
+        {typeof description === "string" ? (
+          <div className="page-meta">
             {description}
-          </Typography.Paragraph>
+            {extra && (
+              <>
+                {" · "}
+                <span className="page-updated">{extra}</span>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            {description && <div className="page-meta">{description}</div>}
+            {extra && <div className="page-meta page-updated">{extra}</div>}
+          </>
         )}
-        {extra}
       </div>
       {action}
     </Flex>

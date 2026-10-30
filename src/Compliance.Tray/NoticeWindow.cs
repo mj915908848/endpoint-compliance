@@ -27,7 +27,7 @@ public sealed record Notice(string Id, string Message, DateTimeOffset At, bool A
 /// <summary>The notification center opened from the tray: what the administrator asked this user to know or fix.</summary>
 public sealed class NoticeWindow : Form
 {
-    private readonly Label status;
+    private readonly StatusBanner banner;
     private readonly LinkLabel readAll;
     private readonly Panel list;
     private readonly Func<string, Task> acknowledge;
@@ -42,7 +42,7 @@ public sealed class NoticeWindow : Form
         this.acknowledge = acknowledge;
         this.refresh = refresh;
         int S(int v) => LogicalToDeviceUnits(v);
-        Text = "终端合规管控";
+        Text = TrayApp.DisplayName;
         Icon = Icons.Window(Icons.App);
         Font = Theme.Body;
         ForeColor = Theme.Text;
@@ -61,19 +61,16 @@ public sealed class NoticeWindow : Form
                 await acknowledge(notice.Id);
             await refresh();
         };
-        var header = new Theme.Bar(lineAtTop: false) { Dock = DockStyle.Top, Height = S(69) };
-        var logo = new PictureBox
+        var header = new Theme.Bar(lineAtTop: false) { Dock = DockStyle.Top, Height = S(98) };
+        banner = new StatusBanner();
+        banner.Controls.Add(readAll);
+        header.Controls.Add(banner);
+        header.Layout += (_, _) =>
         {
-            Image = Icons.Image(Icons.App, S(36)),
-            SizeMode = PictureBoxSizeMode.Zoom,
-            Bounds = new Rectangle(S(20), S(16), S(36), S(36)),
+            banner.Bounds = new Rectangle(S(16), S(12), header.Width - S(32), S(74));
+            readAll.BackColor = banner.Fill;
+            readAll.Location = new Point(banner.Width - readAll.Width - S(14), (banner.Height - readAll.Height) / 2);
         };
-        var title = Theme.Label("终端合规管控", Theme.Title, Theme.Text);
-        title.Location = new Point(S(66), S(13));
-        status = Theme.Label("", Theme.Small, Theme.Muted);
-        status.Location = new Point(S(67), S(38));
-        header.Controls.AddRange([logo, title, status, readAll]);
-        header.Layout += (_, _) => readAll.Location = new Point(header.Width - readAll.Width - S(20), S(25));
 
         var log = Theme.Link("运行日志", Theme.Small);
         log.LinkClicked += (_, _) => LogWindow.Open();
@@ -92,16 +89,24 @@ public sealed class NoticeWindow : Form
 
     private void ShowLoading()
     {
-        status.Text = "正在连接客户端服务…";
-        status.ForeColor = Theme.Muted;
+        banner.SetState(Icons.App, Theme.Muted, "正在连接客户端服务…", "请稍候");
         readAll.Visible = false;
     }
 
     public void ShowNotices(Notice[] notices)
     {
         var unread = notices.Count(n => !n.Acknowledged);
-        status.Text = unread > 0 ? $"客户端运行正常 · {unread} 条未读" : "客户端运行正常";
-        status.ForeColor = Theme.Muted;
+        // Red while anything unread asks this user to act, blue for other news, green when all is read.
+        var urgent = notices.Any(n => !n.Acknowledged && n.Parse().Color == Theme.Danger);
+        if (unread == 0)
+            banner.SetState(Icons.App, Theme.Good, "本机运行正常", "客户端运行正常 · 已连接管理端");
+        else
+            banner.SetState(
+                Icons.Alert,
+                urgent ? Theme.Danger : Theme.Primary,
+                urgent ? $"有 {unread} 条通知需要处理" : $"有 {unread} 条未读通知",
+                "客户端运行正常 · 已连接管理端"
+            );
         readAll.Visible = unread > 0;
         readAll.Enabled = true;
         // The tray refreshes every 20 seconds; rebuilding an unchanged list would scroll the reader back to the top.
@@ -132,7 +137,7 @@ public sealed class NoticeWindow : Form
 
     public void ShowDisconnected()
     {
-        ShowState("未连接客户端服务");
+        ShowState(Theme.Muted, "未连接客户端服务", "托盘每 20 秒自动重试");
         var retry = ActionButton("重试");
         retry.Click += async (_, _) =>
         {
@@ -152,7 +157,7 @@ public sealed class NoticeWindow : Form
     /// <summary>The service is installed and waits for an enrollment.</summary>
     public void ShowNotEnrolled(Action enroll)
     {
-        ShowState("尚未登记");
+        ShowState(Theme.Warning, "尚未登记到管理端", "登记后才会开始检查和上报");
         var button = ActionButton("登记到管理端");
         button.Click += (_, _) => enroll();
         Fill(
@@ -165,12 +170,11 @@ public sealed class NoticeWindow : Form
         );
     }
 
-    private void ShowState(string text)
+    private void ShowState(Color tone, string title, string detail)
     {
         shown = [];
         listed = false;
-        status.Text = text;
-        status.ForeColor = Theme.Danger;
+        banner.SetState(Icons.Offline, tone, title, detail);
         readAll.Visible = false;
     }
 
@@ -344,9 +348,9 @@ public sealed class NoticeWindow : Form
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            using (var path = Theme.Rounded(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), S(8)))
+            using (var path = Theme.Rounded(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), S(10)))
             using (var fill = new SolidBrush(Ink(Theme.Surface)))
-            using (var pen = new Pen(notice.Acknowledged ? Ink(Theme.Line) : Theme.Blend(color, Theme.Surface, 0.4)))
+            using (var pen = new Pen(Ink(Theme.Line)))
             {
                 g.FillPath(fill, path);
                 g.DrawPath(pen, path);
@@ -356,7 +360,7 @@ public sealed class NoticeWindow : Form
             var y = S(12);
             var tagText = TextRenderer.MeasureText(label, Theme.Small, Size.Empty, TextFormatFlags.NoPrefix);
             var tag = new Rectangle(x, y, tagText.Width + S(8), S(22));
-            using (var path = Theme.Rounded(tag, S(4)))
+            using (var path = Theme.Rounded(tag, S(5)))
             using (var fill = new SolidBrush(Ink(Theme.Blend(color, Theme.Surface, 0.12))))
                 g.FillPath(fill, path);
             var center = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix;
@@ -387,6 +391,84 @@ public sealed class NoticeWindow : Form
                 Ink(Theme.Text),
                 Wrap
             );
+        }
+    }
+
+    /// <summary>The header's state: a tinted rounded box with the tray icon, a one-line verdict and a detail line.</summary>
+    private sealed class StatusBanner : Control
+    {
+        private Bitmap? image;
+        private Color tone = Theme.Muted;
+        private string title = "";
+        private string detail = "";
+
+        public StatusBanner()
+        {
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw,
+                true
+            );
+            BackColor = Theme.Surface;
+        }
+
+        public Color Fill => Theme.Blend(tone, Theme.Surface, 0.07);
+
+        public void SetState(string icon, Color tone, string title, string detail)
+        {
+            if (this.tone == tone && this.title == title && this.detail == detail)
+                return;
+            image?.Dispose();
+            image = Icons.Image(icon, LogicalToDeviceUnits(40));
+            this.tone = tone;
+            this.title = title;
+            this.detail = detail;
+            foreach (Control child in Controls)
+                child.BackColor = Fill;
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            int S(int v) => LogicalToDeviceUnits(v);
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            using (var path = Theme.Rounded(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), S(10)))
+            using (var fill = new SolidBrush(Fill))
+            using (var pen = new Pen(Theme.Blend(tone, Theme.Surface, 0.22)))
+            {
+                g.FillPath(fill, path);
+                g.DrawPath(pen, path);
+            }
+            var size = S(40);
+            if (image is not null)
+                g.DrawImage(image, new Rectangle(S(16), (Height - size) / 2, size, size));
+            var x = S(16) + size + S(14);
+            var right = Controls.Cast<Control>().Where(c => c.Visible).Select(c => c.Left).DefaultIfEmpty(Width).Min();
+            var flags = TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine;
+            TextRenderer.DrawText(
+                g,
+                title,
+                Theme.Title,
+                new Rectangle(x, S(14), right - x - S(8), S(26)),
+                Theme.Text,
+                flags
+            );
+            TextRenderer.DrawText(
+                g,
+                detail,
+                Theme.Small,
+                new Rectangle(x, S(42), right - x - S(8), S(20)),
+                Theme.Muted,
+                flags
+            );
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                image?.Dispose();
+            base.Dispose(disposing);
         }
     }
 
