@@ -116,12 +116,8 @@ export function Overview({
     <>
       <PageHeading
         title="总览"
-        description={
-          <>
-            {stats.total} 台终端 · 失联终端单独统计，其上次结论仅作历史参考{" "}
-            <UpdatedAt at={devices.updatedAt} refreshing={devices.refreshing} />
-          </>
-        }
+        description={`${stats.total} 台终端 · 失联终端单独统计，其上次结论仅作历史参考`}
+        extra={<UpdatedAt at={devices.updatedAt} refreshing={devices.refreshing} />}
         action={
           openByDevice.length > 0 && (
             <Button type="primary" onClick={openAlerts}>

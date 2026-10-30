@@ -150,6 +150,17 @@ body {
 .page-heading {
   margin: 0 0 20px;
 }
+.page-meta {
+  margin: 4px 0 0;
+  color: var(--text-2);
+}
+.page-meta .ant-typography {
+  color: inherit;
+}
+.page-updated {
+  white-space: nowrap;
+  font-size: 12px;
+}
 .ant-card.panel {
   border-color: transparent;
   box-shadow:
@@ -869,11 +880,48 @@ body {
   border-radius: 12px;
   box-shadow: none;
 }
+/* A panel that is not a Card (a list with its own switcher) looks like one. */
+div.panel:not(.ant-card):not(.tabs-panel) {
+  padding: 16px 20px 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.tabs-panel {
+  background: #fff;
+}
+/* Tables: plain header in small muted type, hairline rows. */
+.ant-table-wrapper .ant-table-thead > tr > th {
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom-color: var(--line);
+}
+/* Tags: soft fill, no outline. */
+.ant-tag {
+  border-color: transparent;
+  border-radius: 5px;
+}
+.ant-tag:not([class*="ant-tag-"]),
+.ant-tag.ant-tag-default {
+  background: #f1f3f7;
+}
 .ant-card.panel > .ant-card-head {
   border-bottom: 0;
 }
 .ant-card.panel > .ant-card-head + .ant-card-body {
   padding-top: 4px;
+}
+@media (max-width: 768px) {
+  /* A card's title and its tools (search, filters) stack instead of squeezing each other. */
+  .ant-card.panel > .ant-card-head .ant-card-head-wrapper {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 0;
+  }
+  .ant-card.panel > .ant-card-head .ant-card-extra {
+    margin-inline-start: 0;
+    width: 100%;
+  }
 }
 .page-heading .ant-typography h3,
 .page-heading h3.ant-typography {
