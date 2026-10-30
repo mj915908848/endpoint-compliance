@@ -12,6 +12,7 @@ public static class Program
     {
         // Notifications then carry the name and icon of the MSI's Start menu shortcut with this id.
         SetCurrentProcessExplicitAppUserModelID(TrayApp.AppUserModelId);
+        RegisterDisplayName();
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -49,6 +50,24 @@ public static class Program
         }
     }
 
+    /// <summary>
+    /// Names the AppUserModelID for this user too, so notifications read 终端合规客户端 even where the Start menu
+    /// shortcut or the MSI's machine-wide name is missing (script installs, a shortcut deleted by hand).
+    /// </summary>
+    private static void RegisterDisplayName()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
+                @"Software\Classes\AppUserModelId\" + TrayApp.AppUserModelId
+            );
+            if (key.GetValue("DisplayName") as string != TrayApp.DisplayName)
+                key.SetValue("DisplayName", TrayApp.DisplayName);
+        }
+        // Without it the shortcut's name still applies.
+        catch (Exception) { }
+    }
+
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 }
@@ -60,6 +79,9 @@ public sealed class TrayApp : ApplicationContext
 
     /// <summary>The tray's AppUserModelID, also set on the MSI's Start menu shortcut (Package.wxs).</summary>
     public const string AppUserModelId = "ComplianceAgent.Tray";
+
+    /// <summary>The name Windows shows on the tray's notifications; the shortcut and the MSI use the same.</summary>
+    public const string DisplayName = "终端合规客户端";
     public const string ShowEventName = @"Local\ComplianceAgent.Tray.Show";
 
     private readonly NotifyIcon icon;

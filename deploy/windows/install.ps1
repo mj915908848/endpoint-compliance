@@ -53,7 +53,9 @@ if (-not (Test-Path $configPath)) {
 $binary = '"' + (Join-Path $InstallDirectory 'Compliance.Agent.exe') + '" --config "' + $configPath + '"'
 # New-Service passes the quoted binary path straight to the service API; Windows PowerShell 5.1 mangles
 # embedded quotes when handing them to sc.exe on the command line.
-New-Service -Name ComplianceAgent -BinaryPathName $binary -DisplayName 'Compliance Agent' -StartupType Automatic | Out-Null
+# The display name is 终端合规客户端, escaped so this file stays ASCII for Windows PowerShell 5.1.
+$displayName = [regex]::Unescape('\u7ec8\u7aef\u5408\u89c4\u5ba2\u6237\u7aef')
+New-Service -Name ComplianceAgent -BinaryPathName $binary -DisplayName $displayName -StartupType Automatic | Out-Null
 $output = & sc.exe failure ComplianceAgent reset= 86400 actions= restart/60000/restart/60000/restart/300000
 if ($LASTEXITCODE -ne 0) { throw "SCM recovery configuration failed: $output" }
 $output = & sc.exe failureflag ComplianceAgent 1

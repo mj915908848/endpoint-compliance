@@ -55,7 +55,7 @@
         <File Id="AgentExe" Source="$(var.ClientDir)\Compliance.Agent.exe" KeyPath="yes" />
         <ServiceInstall
           Name="ComplianceAgent"
-          DisplayName="Compliance Agent"
+          DisplayName="终端合规客户端"
           Description="终端合规客户端服务"
           Type="ownProcess"
           Start="auto"
