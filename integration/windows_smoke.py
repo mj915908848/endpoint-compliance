@@ -509,6 +509,14 @@ try:
             assert aumid == "ComplianceAgent.Tray", f"The Start menu shortcut's AppUserModelID is {aumid!r}"
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Classes\AppUserModelId\ComplianceAgent.Tray") as key:
                 assert winreg.QueryValueEx(key, "DisplayName")[0] == "终端合规客户端"
+            # UAC, Task Manager and services.msc show these; none may fall back to the English assembly names.
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services\ComplianceAgent") as key:
+                assert winreg.QueryValueEx(key, "DisplayName")[0] == "终端合规客户端"
+            folder = pathlib.Path(os.environ["ProgramFiles"]) / "ComplianceAgent"
+            for exe, title in (("Compliance.Tray.exe", "终端合规客户端"), ("Compliance.Agent.exe", "终端合规客户端服务")):
+                script = f"(Get-Item '{folder / exe}').VersionInfo.FileDescription"
+                described = subprocess.run(["powershell", "-NoProfile", "-Command", "[Console]::OutputEncoding = [Text.Encoding]::UTF8; " + script], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
+                assert described == title, f"{exe} describes itself as {described!r}"
 
         def wait_alert(object_key, device_id, contains=""):
             deadline = time.monotonic() + 180
