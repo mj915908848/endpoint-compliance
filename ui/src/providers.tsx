@@ -4,44 +4,48 @@ import { App as AntApp, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import { createQueryClient } from "./useResource";
 
-// Blue primary and navy navigation, after the gateway consoles administrators already use.
-const primary = "#2457e6";
+// One clear blue on a light grey page with a white, grouped sidebar.
+const primary = "#2f6bff";
 const theme = {
   token: {
     colorPrimary: primary,
     colorInfo: primary,
     colorLink: primary,
-    colorSuccess: "#1f9d55",
+    colorSuccess: "#1fa463",
     colorError: "#e5484d",
     colorWarning: "#e8890c",
-    colorBgLayout: "#eef1f6",
-    colorBorderSecondary: "#e6e9f0",
-    colorText: "#1f2633",
-    borderRadius: 4,
+    colorBgLayout: "#f5f6f8",
+    colorBorder: "#dadde5",
+    colorBorderSecondary: "#e6e8ee",
+    colorText: "#1d2330",
+    colorTextSecondary: "#5d6576",
+    borderRadius: 8,
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
   },
   components: {
-    Card: { headerHeight: 48, headerFontSize: 15 },
+    Card: { headerHeight: 52, headerFontSize: 15, borderRadiusLG: 12 },
     Table: {
-      headerBg: "#f2f4f8",
-      headerColor: "#1f2633",
-      headerSplitColor: "#e1e5ee",
-      cellPaddingBlock: 10,
+      headerBg: "#fafbfc",
+      headerColor: "#5d6576",
+      headerSplitColor: "transparent",
+      cellPaddingBlock: 11,
       rowHoverBg: "#f5f8ff",
     },
     Tabs: { titleFontSize: 14 },
     Menu: {
-      darkItemBg: "transparent",
-      darkSubMenuItemBg: "transparent",
-      darkItemSelectedBg: primary,
-      darkItemSelectedColor: "#ffffff",
-      darkItemColor: "rgba(255, 255, 255, 0.78)",
-      darkItemHoverBg: "rgba(255, 255, 255, 0.08)",
-      itemHeight: 46,
+      itemBg: "transparent",
+      subMenuItemBg: "transparent",
+      itemSelectedBg: "#eef3ff",
+      itemSelectedColor: primary,
+      itemColor: "#3a4256",
+      itemHoverBg: "#f3f5f9",
+      itemHeight: 38,
       itemMarginInline: 0,
-      itemBorderRadius: 0,
-      itemMarginBlock: 0,
+      itemMarginBlock: 2,
+      itemBorderRadius: 8,
+      groupTitleColor: "#7b8294",
+      groupTitleFontSize: 12,
     },
   },
 };

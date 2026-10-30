@@ -5,13 +5,13 @@ namespace Compliance.Tray;
 /// <summary>The colors and fonts the tray's windows share, matching the management UI.</summary>
 public static class Theme
 {
-    public static readonly Color Page = Color.FromArgb(0xEE, 0xF1, 0xF6);
+    public static readonly Color Page = Color.FromArgb(0xF5, 0xF6, 0xF8);
     public static readonly Color Surface = Color.White;
-    public static readonly Color Line = Color.FromArgb(0xE6, 0xE9, 0xF0);
-    public static readonly Color Text = Color.FromArgb(0x1F, 0x26, 0x33);
-    public static readonly Color Muted = Color.FromArgb(0x86, 0x8E, 0x9C);
-    public static readonly Color Primary = Color.FromArgb(0x24, 0x57, 0xE6);
-    public static readonly Color Good = Color.FromArgb(0x1F, 0x9D, 0x55);
+    public static readonly Color Line = Color.FromArgb(0xE6, 0xE8, 0xEE);
+    public static readonly Color Text = Color.FromArgb(0x1D, 0x23, 0x30);
+    public static readonly Color Muted = Color.FromArgb(0x6B, 0x73, 0x85);
+    public static readonly Color Primary = Color.FromArgb(0x2F, 0x6B, 0xFF);
+    public static readonly Color Good = Color.FromArgb(0x1F, 0xA4, 0x63);
     public static readonly Color Warning = Color.FromArgb(0xE8, 0x89, 0x0C);
     public static readonly Color Danger = Color.FromArgb(0xE5, 0x48, 0x4D);
 
@@ -92,5 +92,32 @@ public static class Theme
             var y = lineAtTop ? 0 : Height - 1;
             e.Graphics.DrawLine(pen, 0, y, Width, y);
         }
+    }
+
+    /// <summary>Draws menus flat and white with the primary color's light tint on the hovered item.</summary>
+    public sealed class MenuRenderer() : ToolStripProfessionalRenderer(new MenuColors())
+    {
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Selected && e.Item.Enabled ? Blend(Primary, Text, 0.85) : Text;
+            base.OnRenderItemText(e);
+        }
+    }
+
+    private sealed class MenuColors : ProfessionalColorTable
+    {
+        private static readonly Color Hover = Blend(Primary, Surface, 0.1);
+
+        public override Color MenuItemSelected => Hover;
+        public override Color MenuItemSelectedGradientBegin => Hover;
+        public override Color MenuItemSelectedGradientEnd => Hover;
+        public override Color MenuItemBorder => Hover;
+        public override Color MenuBorder => Line;
+        public override Color ToolStripDropDownBackground => Surface;
+        public override Color ImageMarginGradientBegin => Surface;
+        public override Color ImageMarginGradientMiddle => Surface;
+        public override Color ImageMarginGradientEnd => Surface;
+        public override Color SeparatorDark => Line;
+        public override Color SeparatorLight => Surface;
     }
 }

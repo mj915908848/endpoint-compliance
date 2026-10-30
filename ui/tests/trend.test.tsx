@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { VerdictHistory, VerdictTrendChart } from "../src/components";
+import { ComplianceRateChart, VerdictHistory, VerdictTrendChart } from "../src/components";
 
 describe("verdict trend", () => {
   const day = (n: number, pass: number, fail = 0, unknown = 0) => ({
@@ -21,6 +21,14 @@ describe("verdict trend", () => {
     expect(container.querySelectorAll("svg > g")).toHaveLength(7);
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain(
       "今天通过 2 台，不通过 0 台，无法判断 1 台",
+    );
+  });
+
+  it("draws the share passing each day from the first recorded one", () => {
+    const days = [day(1, 0), ...[2, 3, 4, 5, 6, 7].map((n) => day(n, 1, 1)), day(8, 3, 0, 1)];
+    render(<ComplianceRateChart days={days} />);
+    expect(screen.getByRole("img").getAttribute("aria-label")).toBe(
+      "近 7 天合规率，从 50% 到今天 75%",
     );
   });
 

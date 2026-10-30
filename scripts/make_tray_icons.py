@@ -10,15 +10,15 @@ from PIL import Image, ImageDraw
 
 ASSETS = Path(__file__).resolve().parents[1] / "src" / "Compliance.Tray" / "Assets"
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-# The management UI's navy (#1f2a5a), check orange and danger red (#e5484d).
-NAVY = (31, 42, 90)
+# The management UI's blue (#2f6bff), check orange and danger red (#e5484d).
+BLUE = (47, 107, 255)
 CHECK = ((246, 195, 67), (239, 125, 26))
 BADGE = (229, 72, 77)
 GRAY = (128, 136, 150)
 GRAY_CHECK = ((236, 238, 242), (236, 238, 242))
 
 
-def tile(size: int, badge: bool, base=NAVY, check=CHECK) -> Image.Image:
+def tile(size: int, badge: bool, base=BLUE, check=CHECK) -> Image.Image:
     scale = 8  # draw large, then shrink for smooth edges
     s = size * scale
     u = s / 64  # the SVG's 64-unit grid
