@@ -42,7 +42,7 @@ public sealed class NoticeWindow : Form
         this.acknowledge = acknowledge;
         this.refresh = refresh;
         int S(int v) => LogicalToDeviceUnits(v);
-        Text = "终端合规客户端";
+        Text = TrayApp.DisplayName;
         Icon = Icons.Window(Icons.App);
         Font = Theme.Body;
         ForeColor = Theme.Text;
